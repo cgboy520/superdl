@@ -481,7 +481,7 @@ class TestAdminPreempt:
 
     async def test_admin_cannot_preempt_non_spot(self, client, sm, fake):
         """Non-spot instances do not take the reclamation path."""
-        _, uuid, _ = await provision_running(client, sm, fake, phone="u13922200031@test.local")
+        _, uuid, _ = await provision_running(client, sm, fake, email="u13922200031@test.local")
         admin_headers = await make_admin_headers(sm, client, "ops")
         resp = await client.post(
             f"/api/admin/v1/instances/{uuid}/preempt",

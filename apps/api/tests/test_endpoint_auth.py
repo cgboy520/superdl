@@ -38,7 +38,7 @@ async def call_auth(client, *, slug: str, key: str | None = None, path: str = ""
 class TestAuthMatrix:
     async def test_valid_key_passes_with_identity_headers(self, client, sm, fake):
         """A valid key passes and the two ownership headers are always returned."""
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000401@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000401@test.local")
         key = await issue_key(client, headers, svc["slug"])
         resp = await call_auth(client, slug=svc["slug"], key=key)
         assert resp.status_code == 200, resp.text
@@ -46,26 +46,26 @@ class TestAuthMatrix:
         assert resp.headers["x-superdl-key-id"].isdigit()
 
     async def test_bearer_header_also_accepted(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000402@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000402@test.local")
         key = await issue_key(client, headers, svc["slug"])
         resp = await call_auth(client, slug=svc["slug"], authorization=f"Bearer {key}")
         assert resp.status_code == 200, resp.text
 
     async def test_wrong_key_denied(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000403@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000403@test.local")
         await issue_key(client, headers, svc["slug"])
         assert (
             await call_auth(client, slug=svc["slug"], key="sk-not-a-real-key")
         ).status_code == 401
 
     async def test_missing_key_denied(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000404@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000404@test.local")
         await issue_key(client, headers, svc["slug"])
         assert (await call_auth(client, slug=svc["slug"])).status_code == 401
 
     async def test_revoked_key_denied(self, client, sm, fake):
         """Revocation takes effect at once (the cache entry is invalidated actively)."""
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000405@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000405@test.local")
         slug = svc["slug"]
         resp = await client.post(
             f"/api/v1/services/{slug}/api-keys", json={"name": "k"}, headers=headers
@@ -78,10 +78,10 @@ class TestAuthMatrix:
     async def test_cross_tenant_key_denied(self, client, sm, fake):
         """User A's key against user B's service → 401."""
         a_headers, a_svc, _ = await provision_service(
-            client, sm, fake, phone="u13900000406@test.local"
+            client, sm, fake, email="u13900000406@test.local"
         )
         _b_headers, b_svc, _ = await provision_service(
-            client, sm, fake, phone="u13900000407@test.local"
+            client, sm, fake, email="u13900000407@test.local"
         )
         a_key = await issue_key(client, a_headers, a_svc["slug"])
         assert (await call_auth(client, slug=b_svc["slug"], key=a_key)).status_code == 401
@@ -89,7 +89,7 @@ class TestAuthMatrix:
     async def test_same_user_other_service_denied(self, client, sm, fake):
         """The same user's key does not work across services."""
         headers, first, _ = await provision_service(
-            client, sm, fake, phone="u13900000412@test.local"
+            client, sm, fake, email="u13900000412@test.local"
         )
         second = await client.post(
             "/api/v1/services",
@@ -110,7 +110,7 @@ class TestAuthMatrix:
         """require_api_key=false passes without a key with the ownership headers; a PATCH back
         requires the key at once."""
         headers, svc, _ = await provision_service(
-            client, sm, fake, phone="u13900000408@test.local", require_api_key=False
+            client, sm, fake, email="u13900000408@test.local", require_api_key=False
         )
         slug = svc["slug"]
         resp = await call_auth(client, slug=slug)
@@ -125,14 +125,14 @@ class TestAuthMatrix:
 
     async def test_unknown_slug_denied(self, client, sm, fake):
         """Unknown service and wrong key share code and copy."""
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000409@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000409@test.local")
         key = await issue_key(client, headers, svc["slug"])
         resp = await call_auth(client, slug="svc-doesnotex", key=key)
         assert resp.status_code == 401
         assert resp.json()["code"] == "API_KEY_INVALID"
 
     async def test_foreign_host_denied(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000410@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000410@test.local")
         key = await issue_key(client, headers, svc["slug"])
         resp = await client.get(
             AUTH_PATH, headers={"host": "svc-abc.evil.example.com", "x-api-key": key}
@@ -142,7 +142,7 @@ class TestAuthMatrix:
     async def test_stopped_service_denied(self, client, sm, fake):
         """A non-running current instance is always refused."""
         headers, svc, user_id = await provision_service(
-            client, sm, fake, phone="u13900000411@test.local"
+            client, sm, fake, email="u13900000411@test.local"
         )
         slug = svc["slug"]
         key = await issue_key(client, headers, slug)
@@ -160,7 +160,7 @@ class TestAuthMatrix:
         """Deleting the service revokes every key and stops passing, even while the slug is still in
         the DB."""
         headers, svc, user_id = await provision_service(
-            client, sm, fake, phone="u13900000413@test.local"
+            client, sm, fake, email="u13900000413@test.local"
         )
         slug = svc["slug"]
         key = await issue_key(client, headers, slug)
@@ -174,7 +174,7 @@ class TestAuthMatrix:
 
 class TestLastUsed:
     async def test_last_used_throttled_per_key(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000421@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000421@test.local")
         key = await issue_key(client, headers, svc["slug"])
         assert (await call_auth(client, slug=svc["slug"], key=key)).status_code == 200
         async with sm() as session:
@@ -189,7 +189,7 @@ class TestAuthCache:
     async def test_cache_hit_skips_db(self, client, sm, fake):
         """A cache hit does not hit the origin: a revocation written straight to the DB still passes
         within the window and is refused after the TTL."""
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000422@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000422@test.local")
         key = await issue_key(client, headers, svc["slug"])
         assert (await call_auth(client, slug=svc["slug"], key=key)).status_code == 200
         async with sm() as session:
@@ -207,7 +207,7 @@ class TestAuthCache:
     async def test_concurrent_same_key_all_pass(self, client, sm, fake):
         import asyncio
 
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000423@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000423@test.local")
         key = await issue_key(client, headers, svc["slug"])
         results = await asyncio.gather(
             *(call_auth(client, slug=svc["slug"], key=key) for _ in range(20))
@@ -220,7 +220,7 @@ class TestAuthCache:
 
 class TestResponseDiscipline:
     async def test_denial_body_leaks_nothing(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000430@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000430@test.local")
         await issue_key(client, headers, svc["slug"])
         resp = await call_auth(client, slug=svc["slug"], key="sk-wrong")
         assert resp.status_code == 401
@@ -236,7 +236,7 @@ class TestResponseDiscipline:
         assert body["code"] == "API_KEY_INVALID"
 
     async def test_not_audited(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000431@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000431@test.local")
         key = await issue_key(client, headers, svc["slug"])
         async with sm() as session:
             before = (
@@ -259,14 +259,14 @@ class TestPathShapes:
     """The auth callback is an exact route, not a catch-all."""
 
     async def test_suffixes_do_not_authorize(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000442@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000442@test.local")
         key = await issue_key(client, headers, svc["slug"])
         for path in ("/", "/v1/chat/completions", "/健康?a=1"):  # non-ASCII path  # cjk-ok
             resp = await call_auth(client, slug=svc["slug"], key=key, path=path)
             assert not 200 <= resp.status_code < 300, f"{path}: {resp.status_code} {resp.text}"
 
     async def test_all_methods_accepted(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000441@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000441@test.local")
         key = await issue_key(client, headers, svc["slug"])
         for method in ("get", "post", "put", "patch", "delete", "head", "options"):
             resp = await getattr(client, method)(
@@ -285,7 +285,7 @@ class TestApiKeyQuotaRace:
         from app.modules.services import service as services_service
 
         headers, svc, user_id = await provision_service(
-            client, sm, fake, phone="u13900000460@test.local"
+            client, sm, fake, email="u13900000460@test.local"
         )
         monkeypatch.setattr(services_service, "MAX_API_KEYS_PER_SERVICE", 2)
         await issue_key(client, headers, svc["slug"])

@@ -9,6 +9,6 @@ export type AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang = typeof Ad
 
 
 export const AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetLang = {
-  'zh-CN': 'zh-CN',
   'en-US': 'en-US',
+  'zh-CN': 'zh-CN',
 } as const;

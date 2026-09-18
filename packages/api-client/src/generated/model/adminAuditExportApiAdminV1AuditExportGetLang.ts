@@ -9,6 +9,6 @@ export type AdminAuditExportApiAdminV1AuditExportGetLang = typeof AdminAuditExpo
 
 
 export const AdminAuditExportApiAdminV1AuditExportGetLang = {
-  'zh-CN': 'zh-CN',
   'en-US': 'en-US',
+  'zh-CN': 'zh-CN',
 } as const;

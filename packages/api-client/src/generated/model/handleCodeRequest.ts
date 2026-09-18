@@ -9,5 +9,9 @@
  * Start binding or replacing a contact handle on the signed-in account.
  */
 export interface HandleCodeRequest {
+  /**
+     * Login handle: an email address or an E.164 phone number
+     * @maxLength 254
+     */
   handle: string;
 }

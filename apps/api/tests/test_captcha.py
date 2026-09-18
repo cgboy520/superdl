@@ -47,6 +47,28 @@ class TestTurnstileChannel:
         assert await ch.verify("bad") is False
         assert "remoteip" not in seen[1]
 
+    async def test_secret_and_provider_errors_raise_token_errors_return_false(self):
+        """A bad secret or a Cloudflare outage must surface as a channel failure (502), not as a
+        rejected user token (400)."""
+
+        def by_token(request: httpx.Request) -> httpx.Response:
+            body = dict(pair.split("=", 1) for pair in request.content.decode().split("&"))
+            codes = {
+                "secret": ["invalid-input-secret"],
+                "outage": ["internal-error"],
+                "expired": ["timeout-or-duplicate"],
+                "bogus": ["invalid-input-response"],
+            }[body["response"]]
+            return httpx.Response(200, json={"success": False, "error-codes": codes})
+
+        ch = TurnstileCaptchaChannel("s", transport=httpx.MockTransport(by_token))
+        with pytest.raises(CaptchaError, match="invalid-input-secret"):
+            await ch.verify("secret")
+        with pytest.raises(CaptchaError, match="internal-error"):
+            await ch.verify("outage")
+        assert await ch.verify("expired") is False
+        assert await ch.verify("bogus") is False
+
     async def test_transport_and_malformed_raise(self):
         def boom(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("down", request=request)

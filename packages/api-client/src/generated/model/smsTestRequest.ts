@@ -6,5 +6,6 @@
  */
 
 export interface SmsTestRequest {
+  /** E.164 phone number; spaces, dashes, dots and parentheses are stripped */
   phone: string;
 }

@@ -9,6 +9,6 @@ export type AdminRefundsExportApiAdminV1RefundsExportGetLang = typeof AdminRefun
 
 
 export const AdminRefundsExportApiAdminV1RefundsExportGetLang = {
-  'zh-CN': 'zh-CN',
   'en-US': 'en-US',
+  'zh-CN': 'zh-CN',
 } as const;

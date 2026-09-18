@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-Locale = Literal["zh-CN", "en-US"]
+Locale = Literal["en-US", "zh-CN"]
 
 
 class LegalDocOut(BaseModel):

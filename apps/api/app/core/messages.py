@@ -384,6 +384,9 @@ MESSAGES: dict[str, str] = {
     "nodes.poolMigUnsupported": (
         "{model} does not support MIG partitioning, so it cannot move to the mig pool."
     ),
+    "nodes.poolModelUnknown": (
+        "The node's GPU model is not known yet; wait for the node patrol before switching pools."
+    ),
     "nodes.poolNotSwitchable": "Node pools can only be switched among {pools}.",
     "nodes.poolPassthroughUnsupported": (
         "{model} does not support whole-GPU passthrough, so it cannot move to the kata pool."

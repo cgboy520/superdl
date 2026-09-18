@@ -1,5 +1,6 @@
 """Development mock channel: no signature, class-level in-memory ledger."""
 
+import json
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, ClassVar
 
@@ -40,8 +41,6 @@ class MockChannel:
         return PaymentInit(f"superdl-mock-pay://{order.order_no}?amount={order.amount}")
 
     async def parse_callback(self, headers: dict[str, str], body: bytes) -> CallbackResult:  # noqa: ARG002
-        import json
-
         try:
             data = json.loads(body)
             result = CallbackResult(

@@ -295,12 +295,12 @@ async def switch_node_pool(
     # already in a GPU pool must keep a way back
     if current == POOL_CPU or (row.gpu_count <= 0 and current not in SWITCHABLE_POOLS):
         raise conflict(key="nodes.poolIncompatible")
+    if pool in (POOL_MIG, POOL_KATA) and not row.gpu_model:
+        raise conflict(key="nodes.poolModelUnknown")
     if pool == POOL_MIG and not supports_mig(row.gpu_model):
-        raise conflict(key="nodes.poolMigUnsupported", params={"model": row.gpu_model or "unknown"})
+        raise conflict(key="nodes.poolMigUnsupported", params={"model": row.gpu_model})
     if pool == POOL_KATA and not supports_passthrough(row.gpu_model):
-        raise conflict(
-            key="nodes.poolPassthroughUnsupported", params={"model": row.gpu_model or "unknown"}
-        )
+        raise conflict(key="nodes.poolPassthroughUnsupported", params={"model": row.gpu_model})
     await _assert_node_empty(session, node_name)
     await require_pool_runtime(session, pool)
 

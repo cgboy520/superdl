@@ -11,6 +11,10 @@ import type { VerificationCodeRequestPurpose } from './verificationCodeRequestPu
  */
 export interface VerificationCodeRequest {
   captcha_token?: string | null;
+  /**
+     * Login handle: an email address or an E.164 phone number
+     * @maxLength 254
+     */
   handle: string;
   purpose: VerificationCodeRequestPurpose;
 }

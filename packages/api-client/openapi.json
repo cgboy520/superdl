@@ -2802,6 +2802,12 @@
         "description": "Request deletion: retype one of the account's handles (email or phone) plus a reason.",
         "properties": {
           "handle": {
+            "description": "Login handle: an email address or an E.164 phone number",
+            "examples": [
+              "user@example.com",
+              "+14155550123"
+            ],
+            "maxLength": 254,
             "title": "Handle",
             "type": "string"
           },
@@ -3047,6 +3053,11 @@
       "EmailTestRequest": {
         "properties": {
           "email": {
+            "description": "Email address; trimmed and lower-cased",
+            "examples": [
+              "user@example.com"
+            ],
+            "maxLength": 254,
             "title": "Email",
             "type": "string"
           }
@@ -3283,6 +3294,12 @@
         "description": "Start binding or replacing a contact handle on the signed-in account.",
         "properties": {
           "handle": {
+            "description": "Login handle: an email address or an E.164 phone number",
+            "examples": [
+              "user@example.com",
+              "+14155550123"
+            ],
+            "maxLength": 254,
             "title": "Handle",
             "type": "string"
           }
@@ -3302,6 +3319,12 @@
             "type": "string"
           },
           "handle": {
+            "description": "Login handle: an email address or an E.164 phone number",
+            "examples": [
+              "user@example.com",
+              "+14155550123"
+            ],
+            "maxLength": 254,
             "title": "Handle",
             "type": "string"
           }
@@ -4619,8 +4642,8 @@
         "properties": {
           "locale": {
             "enum": [
-              "zh-CN",
-              "en-US"
+              "en-US",
+              "zh-CN"
             ],
             "title": "Locale",
             "type": "string"
@@ -4789,6 +4812,12 @@
             "title": "Code"
           },
           "handle": {
+            "description": "Login handle: an email address or an E.164 phone number",
+            "examples": [
+              "user@example.com",
+              "+14155550123"
+            ],
+            "maxLength": 254,
             "title": "Handle",
             "type": "string"
           },
@@ -6535,6 +6564,12 @@
             "type": "string"
           },
           "handle": {
+            "description": "Login handle: an email address or an E.164 phone number",
+            "examples": [
+              "user@example.com",
+              "+14155550123"
+            ],
+            "maxLength": 254,
             "title": "Handle",
             "type": "string"
           },
@@ -7561,6 +7596,11 @@
             "type": "boolean"
           },
           "email": {
+            "description": "Email address; trimmed and lower-cased",
+            "examples": [
+              "user@example.com"
+            ],
+            "maxLength": 254,
             "title": "Email",
             "type": "string"
           },
@@ -7586,6 +7626,10 @@
           "phone": {
             "anyOf": [
               {
+                "description": "E.164 phone number; spaces, dashes, dots and parentheses are stripped",
+                "examples": [
+                  "+14155550123"
+                ],
                 "type": "string"
               },
               {
@@ -9238,6 +9282,10 @@
       "SmsTestRequest": {
         "properties": {
           "phone": {
+            "description": "E.164 phone number; spaces, dashes, dots and parentheses are stripped",
+            "examples": [
+              "+14155550123"
+            ],
             "title": "Phone",
             "type": "string"
           }
@@ -10054,6 +10102,12 @@
             "title": "Captcha Token"
           },
           "handle": {
+            "description": "Login handle: an email address or an E.164 phone number",
+            "examples": [
+              "user@example.com",
+              "+14155550123"
+            ],
+            "maxLength": 254,
             "title": "Handle",
             "type": "string"
           },
@@ -10379,8 +10433,8 @@
               "anyOf": [
                 {
                   "enum": [
-                    "zh-CN",
-                    "en-US"
+                    "en-US",
+                    "zh-CN"
                   ],
                   "type": "string"
                 },
@@ -11351,8 +11405,8 @@
               "anyOf": [
                 {
                   "enum": [
-                    "zh-CN",
-                    "en-US"
+                    "en-US",
+                    "zh-CN"
                   ],
                   "type": "string"
                 },
@@ -13192,8 +13246,8 @@
               "anyOf": [
                 {
                   "enum": [
-                    "zh-CN",
-                    "en-US"
+                    "en-US",
+                    "zh-CN"
                   ],
                   "type": "string"
                 },
@@ -13572,8 +13626,8 @@
             "required": true,
             "schema": {
               "enum": [
-                "zh-CN",
-                "en-US"
+                "en-US",
+                "zh-CN"
               ],
               "title": "Locale",
               "type": "string"
@@ -14587,8 +14641,8 @@
               "anyOf": [
                 {
                   "enum": [
-                    "zh-CN",
-                    "en-US"
+                    "en-US",
+                    "zh-CN"
                   ],
                   "type": "string"
                 },
@@ -15145,8 +15199,8 @@
               "anyOf": [
                 {
                   "enum": [
-                    "zh-CN",
-                    "en-US"
+                    "en-US",
+                    "zh-CN"
                   ],
                   "type": "string"
                 },
@@ -15361,8 +15415,8 @@
               "anyOf": [
                 {
                   "enum": [
-                    "zh-CN",
-                    "en-US"
+                    "en-US",
+                    "zh-CN"
                   ],
                   "type": "string"
                 },
@@ -16597,8 +16651,8 @@
               "anyOf": [
                 {
                   "enum": [
-                    "zh-CN",
-                    "en-US"
+                    "en-US",
+                    "zh-CN"
                   ],
                   "type": "string"
                 },
@@ -17471,8 +17525,8 @@
               "anyOf": [
                 {
                   "enum": [
-                    "zh-CN",
-                    "en-US"
+                    "en-US",
+                    "zh-CN"
                   ],
                   "type": "string"
                 },

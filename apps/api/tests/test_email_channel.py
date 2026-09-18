@@ -135,6 +135,21 @@ class TestQuotaAndEndpoint:
         )
         assert bad.status_code == 422
 
+    async def test_admin_test_email_incomplete_smtp_config_is_502(self, client: AsyncClient, sm):
+        """SMTP selected without a host: the documented 502 with emailTestFailed, not a 500."""
+        from tests.helpers import set_platform_setting
+
+        await set_platform_setting(sm, "email_provider", "smtp")
+        headers = await admin_headers(sm, client)
+        resp = await client.post(
+            "/api/admin/v1/platform-config/test-email",
+            json={"email": "ops@example.com"},
+            headers=headers,
+        )
+        assert resp.status_code == 502, resp.text
+        assert resp.json()["message_key"] == "adminapi.emailTestFailed"
+        assert "smtp_host" in resp.json()["params"]["message"]
+
     async def test_admin_test_email_reports_channel_failure(self, client: AsyncClient, sm):
         class _Failing:
             async def send(self, to, subject, text, html=None):

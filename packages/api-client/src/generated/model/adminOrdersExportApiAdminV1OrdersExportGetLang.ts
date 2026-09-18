@@ -9,6 +9,6 @@ export type AdminOrdersExportApiAdminV1OrdersExportGetLang = typeof AdminOrdersE
 
 
 export const AdminOrdersExportApiAdminV1OrdersExportGetLang = {
-  'zh-CN': 'zh-CN',
   'en-US': 'en-US',
+  'zh-CN': 'zh-CN',
 } as const;

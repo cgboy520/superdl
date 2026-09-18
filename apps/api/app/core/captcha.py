@@ -71,10 +71,14 @@ class AliyunCaptchaChannel:
 
 
 class TurnstileCaptchaChannel:
-    """Cloudflare Turnstile siteverify; the client IP is forwarded as `remoteip` when known."""
+    """Cloudflare Turnstile siteverify; the client IP is forwarded as `remoteip` when known.
+    Token-specific rejections return False; secret / request / provider errors raise."""
 
     ENDPOINT = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
     TIMEOUT_SECONDS = 10.0
+    CHANNEL_ERROR_CODES = frozenset(
+        {"missing-input-secret", "invalid-input-secret", "bad-request", "internal-error"}
+    )
 
     def __init__(self, secret: str, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._secret = secret
@@ -98,7 +102,10 @@ class TurnstileCaptchaChannel:
         if not isinstance(body, dict) or not isinstance(body.get("success"), bool):
             raise CaptchaError(f"turnstile unexpected response: {body!r}")
         if not body["success"]:
-            logger.info("captcha_rejected", provider="turnstile", codes=body.get("error-codes"))
+            codes = body.get("error-codes")
+            if isinstance(codes, list) and self.CHANNEL_ERROR_CODES.intersection(codes):
+                raise CaptchaError(f"turnstile verification error: {codes}")
+            logger.info("captcha_rejected", provider="turnstile", codes=codes)
         return body["success"]
 
 

@@ -432,9 +432,9 @@ async def admin_test_sms(body: SmsTestRequest, session: DbSession, request: Requ
     await check_rate_limit("admin:test-sms", max_attempts=10, window_seconds=3600.0)
     await ensure_sms_platform_quota()
     cfg = await get_runtime_config(session)
-    channel = await get_sms_channel(session)
     code = f"{secrets.randbelow(10**6):06d}"
     try:
+        channel = await get_sms_channel(session)
         await channel.send(body.phone, "verify", {"code": code})
     except SmsError as exc:
         raise AppError(
@@ -460,9 +460,9 @@ async def admin_test_email(
     await check_rate_limit("admin:test-email", max_attempts=10, window_seconds=3600.0)
     await ensure_email_platform_quota()
     cfg = await get_runtime_config(session)
-    channel = await get_email_channel(session)
     content = code_email("test", f"{secrets.randbelow(10**6):06d}")
     try:
+        channel = await get_email_channel(session)
         await channel.send(body.email, content.subject, content.text, content.html)
     except EmailError as exc:
         raise AppError(

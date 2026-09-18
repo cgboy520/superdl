@@ -10,16 +10,17 @@ import re
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator
+from pydantic import AfterValidator, Field
 
-E164_RE = r"^\+[1-9]\d{6,14}$"
+E164_RE = r"^\+[1-9][0-9]{6,14}$"
 EMAIL_RE = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 EMAIL_MAX_LEN = 254
 _RATELIMIT_PLAIN_MAX = 48
 
 _E164 = re.compile(E164_RE)
 _EMAIL = re.compile(EMAIL_RE)
-_PHONE_LIKE = re.compile(r"^\+?\d{7,15}$")
+_PHONE_LIKE = re.compile(r"^\+?[0-9]{7,15}$")
+_PHONE_MASK_MIN_LEN = 11
 _PHONE_SEPARATORS = re.compile(r"[\s\-().]")
 
 HandleKind = Literal["email", "phone"]
@@ -58,14 +59,14 @@ def parse_handle(raw: str) -> Handle:
 
 
 def mask_handle(value: str | None) -> str:
-    """Email → first local-part character + `***@domain`; phone (E.164 or bare digits) → first 3 +
-    `****` + last 4; anything else or empty → `******`."""
+    """Valid email → first local-part character + `***@domain`; phone (E.164 or bare digits, at
+    least 11 characters) → first 3 + `****` + last 4; anything else or empty → `******`."""
     if not value:
         return "******"
-    if "@" in value:
+    if _EMAIL.match(value) and len(value) <= EMAIL_MAX_LEN:
         local, _, domain = value.partition("@")
         return f"{local[:1]}***@{domain}"
-    if _PHONE_LIKE.match(value):
+    if _PHONE_LIKE.match(value) and len(value) >= _PHONE_MASK_MIN_LEN:
         return f"{value[:3]}****{value[-4:]}"
     return "******"
 
@@ -82,6 +83,29 @@ def _normalize_handle(raw: str) -> str:
     return parse_handle(raw).value
 
 
-NormalizedEmail = Annotated[str, AfterValidator(normalize_email)]
-NormalizedPhone = Annotated[str, AfterValidator(normalize_phone)]
-NormalizedHandle = Annotated[str, AfterValidator(_normalize_handle)]
+NormalizedEmail = Annotated[
+    str,
+    AfterValidator(normalize_email),
+    Field(
+        max_length=EMAIL_MAX_LEN,
+        description="Email address; trimmed and lower-cased",
+        examples=["user@example.com"],
+    ),
+]
+NormalizedPhone = Annotated[
+    str,
+    AfterValidator(normalize_phone),
+    Field(
+        description="E.164 phone number; spaces, dashes, dots and parentheses are stripped",
+        examples=["+14155550123"],
+    ),
+]
+NormalizedHandle = Annotated[
+    str,
+    AfterValidator(_normalize_handle),
+    Field(
+        max_length=EMAIL_MAX_LEN,
+        description="Login handle: an email address or an E.164 phone number",
+        examples=["user@example.com", "+14155550123"],
+    ),
+]

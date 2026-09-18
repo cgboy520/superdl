@@ -72,7 +72,7 @@ max-statements = 60
 "alembic/*" = ["I"]
 "app/wiring.py" = ["PLC0415"]
 "app/main.py" = ["PLC0415"]
-"app/modules/billing/payment_channels/*" = ["PLC0415"]
+"app/modules/billing/payment_channels/{alipay,stripe,wechat}.py" = ["PLC0415"]
 "tests/*" = ["PLC0415", "ARG", "C901", "PLR0912", "PLR0915"]
 
 [tool.pytest.ini_options]

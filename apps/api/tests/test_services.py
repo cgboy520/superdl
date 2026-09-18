@@ -81,7 +81,7 @@ class TestDeploy:
     async def test_with_ssh_still_allocates_port(self, client, sm, fake):
         """A service with SSH enabled takes a port from the pool."""
         _headers, svc, user_id = await provision_service(
-            client, sm, fake, phone="u13900000302@test.local", with_ssh=True
+            client, sm, fake, email="u13900000302@test.local", with_ssh=True
         )
         uuid = svc["current_instance"]["uuid"]
         instance = await load_instance(sm, uuid)
@@ -98,7 +98,7 @@ class TestDeploy:
             client,
             sm,
             fake,
-            phone="u13900000303@test.local",
+            email="u13900000303@test.local",
             container_command=["python", "-m", "vllm.entrypoints.openai.api_server"],
             container_args=["--port", "8000"],
             health_path="/health",
@@ -134,7 +134,7 @@ class TestDeploy:
 
     async def test_other_users_service_is_404(self, client, sm, fake):
         """Non-owners always get 404."""
-        _, svc, _ = await provision_service(client, sm, fake, phone="u13900000342@test.local")
+        _, svc, _ = await provision_service(client, sm, fake, email="u13900000342@test.local")
         other, *_ = await new_user(client, sm, "u13900000343@test.local")
         slug = svc["slug"]
         for call in (
@@ -152,7 +152,7 @@ class TestInstanceBoundary:
 
     async def test_instance_lifecycle_endpoints_reject_service_instance(self, client, sm, fake):
         """DELETE / stop / start / restart on a service instance are always 409."""
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000471@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000471@test.local")
         uuid = svc["current_instance"]["uuid"]
         for call in (
             client.post(f"/api/v1/instances/{uuid}/stop", headers=headers),
@@ -178,7 +178,7 @@ class TestInstanceBoundary:
     async def test_access_shape(self, client, sm, fake):
         """Access information by form: service instances get the endpoint URL, no Jupyter; no SSH
         either when SSH is off."""
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000332@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000332@test.local")
         data = (
             await client.get(
                 f"/api/v1/instances/{svc['current_instance']['uuid']}/access", headers=headers
@@ -196,7 +196,7 @@ class TestEnvHandling:
             client,
             sm,
             fake,
-            phone="u13900000311@test.local",
+            email="u13900000311@test.local",
             env={"MAX_MODEL_LEN": "8192", "HF_TOKEN": "hf_super_secret"},
             env_secret_keys=["HF_TOKEN"],
         )
@@ -342,7 +342,7 @@ class TestServiceApi:
     async def test_patch_name_and_auth_switch(self, client, sm, fake):
         """Rename and the auth switch only change the services row: no redeployment, instance uuid
         and slug unchanged."""
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000330@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000330@test.local")
         resp = await client.patch(
             f"/api/v1/services/{svc['slug']}",
             json={"name": "renamed", "require_api_key": False},
@@ -354,8 +354,8 @@ class TestServiceApi:
         assert resp.json()["slug"] == svc["slug"]
 
     async def test_list_only_mine_and_not_released(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000331@test.local")
-        _, _other, _ = await provision_service(client, sm, fake, phone="u13900000334@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000331@test.local")
+        _, _other, _ = await provision_service(client, sm, fake, email="u13900000334@test.local")
         items = (await client.get("/api/v1/services", headers=headers)).json()["items"]
         assert [i["slug"] for i in items] == [svc["slug"]]
         by_slug = (
@@ -372,7 +372,7 @@ class TestLifecycle:
     async def test_stop_start_keeps_slug_and_instance(self, client, sm, fake):
         """Stop / start only touch the current instance, slug and API keys unchanged."""
         headers, svc, user_id = await provision_service(
-            client, sm, fake, phone="u13900000350@test.local"
+            client, sm, fake, email="u13900000350@test.local"
         )
         slug = svc["slug"]
         stopped = await client.post(f"/api/v1/services/{slug}/stop", headers=headers)
@@ -404,7 +404,7 @@ class TestLifecycle:
         """Cannot delete while running (409); deleting once stopped = release the instance + revoke
         every key, the released instance is the service's terminal state."""
         headers, svc, user_id = await provision_service(
-            client, sm, fake, phone="u13900000351@test.local"
+            client, sm, fake, email="u13900000351@test.local"
         )
         slug = svc["slug"]
         key = (
@@ -449,10 +449,10 @@ class TestAdminList:
         a user_id filter carries total;
         deleted services are hidden by default and listed only with include_released."""
         headers, svc, user_id = await provision_service(
-            client, sm, fake, phone="u13900000360@test.local"
+            client, sm, fake, email="u13900000360@test.local"
         )
         _, other, other_user = await provision_service(
-            client, sm, fake, phone="u13900000361@test.local"
+            client, sm, fake, email="u13900000361@test.local"
         )
         ah = await admin_headers(sm, client, role="readonly")
         listed = await client.get("/api/admin/v1/services", headers=ah)
@@ -530,7 +530,7 @@ class TestDeriveStatus:
 
 class TestApiKeyCrud:
     async def test_plaintext_only_once(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000340@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000340@test.local")
         slug = svc["slug"]
         resp = await client.post(
             f"/api/v1/services/{slug}/api-keys", json={"name": "prod"}, headers=headers
@@ -542,7 +542,7 @@ class TestApiKeyCrud:
         assert len(listed) == 1 and "key" not in listed[0]
 
     async def test_revoke_writes_timestamp_and_is_idempotent(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000341@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000341@test.local")
         slug = svc["slug"]
         key_id = (
             await client.post(
@@ -558,7 +558,7 @@ class TestApiKeyCrud:
         ).status_code == 404
 
     async def test_key_quota(self, client, sm, fake):
-        headers, svc, _ = await provision_service(client, sm, fake, phone="u13900000344@test.local")
+        headers, svc, _ = await provision_service(client, sm, fake, email="u13900000344@test.local")
         slug = svc["slug"]
         for i in range(service.MAX_API_KEYS_PER_SERVICE):
             resp = await client.post(

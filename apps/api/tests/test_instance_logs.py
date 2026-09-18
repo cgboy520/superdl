@@ -65,7 +65,7 @@ class TestInstanceLogs:
             resp = await _get_logs(client, headers, "0" * 32)
         else:
             other_headers, _other_uuid, _ = await provision_running(
-                client, sm, fake, phone="u13900000011@test.local"
+                client, sm, fake, email="u13900000011@test.local"
             )
             resp = await _get_logs(client, other_headers, uuid)
         assert resp.status_code == 404

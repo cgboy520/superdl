@@ -307,7 +307,7 @@ class TestUnreadyTimer:
         """Two rounds crossing the grace window judge the node lost: round one starts the timer,
         round two hits it."""
         headers, uuid, user_id = await provision_running(
-            client, sm, fake, phone="u13900000045@test.local"
+            client, sm, fake, email="u13900000045@test.local"
         )
         ns = f"tenant-{user_id}"
         clock = _Clock()
@@ -336,7 +336,7 @@ class TestUnreadyTimer:
         """Flapping restarts the timer: the ready round clears it, the next not-ready starts from
         zero."""
         headers, uuid, user_id = await provision_running(
-            client, sm, fake, phone="u13900000046@test.local"
+            client, sm, fake, email="u13900000046@test.local"
         )
         ns = f"tenant-{user_id}"
         clock = _Clock()

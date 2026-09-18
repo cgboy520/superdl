@@ -29,6 +29,39 @@ VALID_ID = "110101199001011237"
 OTHER_ID = "110101199001010007"
 
 
+class TestAliyunProvider:
+    async def test_result_carries_request_id_as_ref(self):
+        """A successful check must keep the provider's RequestId so `users.kyc_ref` is traceable."""
+        import httpx
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = dict(pair.split("=", 1) for pair in request.content.decode().split("&"))
+            assert body["Action"] == "Mobile3MetaSimpleVerify" and body["Mobile"] == "13800001111"
+            return httpx.Response(
+                200,
+                json={
+                    "Code": "200",
+                    "RequestId": "req-aliyun-42",
+                    "ResultObject": {"BizCode": "1"},
+                },
+            )
+
+        provider = AliyunMobile3Provider("ak", "sk", transport=httpx.MockTransport(handler))
+        result = await provider.verify(
+            KycSubject(
+                user_id=1,
+                full_name="Zhang San",
+                identity_number=VALID_ID,
+                phone="+8613800001111",
+                email="kyc@test.local",
+                country="CN",
+            )
+        )
+        assert result.verified is True
+        assert result.provider == "aliyun_mobile3" and result.ref == "req-aliyun-42"
+        assert result.identity_key == VALID_ID
+
+
 class _Provider:
     name = "fake"
 

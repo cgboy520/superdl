@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 API_DIR = Path(__file__).resolve().parent.parent
 PRE_IDENTITY_HEAD = "e2b7c4d9a1f6"
+LEGAL_SEED_PARENT = "f3a4b5c6d7e8"
 SCRATCH_DB = "identity_migration_scratch"
 
 
@@ -179,6 +180,40 @@ async def test_legal_en_us_drafts_seeded_once(scratch_url: str) -> None:
         ("privacy", "zh-CN", 1, "published"),
         ("terms", "en-US", 1, "draft"),
         ("terms", "zh-CN", 1, "published"),
+    ]
+
+
+async def test_legal_en_us_seed_preserves_existing_rows(scratch_url: str) -> None:
+    """An en-US document that already exists before the seed migration is left untouched while the
+    missing documents are still seeded; a dropped `NOT EXISTS` guard would duplicate or overwrite
+    it."""
+    up = _alembic(scratch_url, "upgrade", LEGAL_SEED_PARENT)
+    assert up.returncode == 0, up.stderr
+    engine = create_async_engine(scratch_url)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO legal_doc_versions"
+                " (doc_key, locale, version, title, content_md, status, effective_note)"
+                " VALUES ('terms', 'en-US', 1, 'Custom terms', '# custom', 'published', NULL)"
+            )
+        )
+    up = _alembic(scratch_url, "upgrade", "head")
+    assert up.returncode == 0, up.stderr
+    async with engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT doc_key, version, title, status FROM legal_doc_versions"
+                    " WHERE locale = 'en-US' ORDER BY doc_key"
+                )
+            )
+        ).all()
+    await engine.dispose()
+    assert [tuple(r) for r in rows] == [
+        ("deletion_notice", 1, "Data Deletion Notice", "draft"),
+        ("privacy", 1, "Privacy Policy", "draft"),
+        ("terms", 1, "Custom terms", "published"),
     ]
 
 
