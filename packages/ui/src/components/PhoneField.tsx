@@ -14,10 +14,21 @@ export interface PhoneFieldProps {
   disabled?: boolean;
   placeholder?: string;
   "aria-label"?: string;
+  /** Accessible name of the dial-code picker (localized by the caller). */
+  dialCodeLabel: string;
   id?: string;
 }
 
-export function PhoneField({ value, onChange, dialCodes = [], disabled, placeholder, id, ...rest }: PhoneFieldProps) {
+export function PhoneField({
+  value,
+  onChange,
+  dialCodes = [],
+  disabled,
+  placeholder,
+  dialCodeLabel,
+  id,
+  ...rest
+}: PhoneFieldProps) {
   const options = (dialCodes.length > 0 ? DIAL_CODES.filter((d) => dialCodes.includes(d.dial)) : DIAL_CODES).map(
     (d) => ({ value: d.dial, label: `+${d.dial} ${d.iso}` }),
   );
@@ -31,6 +42,8 @@ export function PhoneField({ value, onChange, dialCodes = [], disabled, placehol
     if (parts) {
       setDial(parts.dial);
       setNational(parts.national);
+    } else {
+      setNational("");
     }
   }
 
@@ -43,6 +56,7 @@ export function PhoneField({ value, onChange, dialCodes = [], disabled, placehol
       <Select
         showSearch={{ optionFilterProp: "label" }}
         disabled={disabled}
+        aria-label={dialCodeLabel}
         value={dial}
         options={options}
         style={{ width: 120 }}

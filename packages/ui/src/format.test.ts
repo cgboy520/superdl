@@ -223,20 +223,20 @@ describe("formatDateTime time-zone suffix", () => {
 
 describe("diskDailyEstimate", () => {
   it("monthly price to daily price, HALF_EVEN to the cent", () => {
-    expect(diskDailyEstimate("0.5000", 100)).toBe("1.67");
-    expect(diskDailyEstimate("0.5000", 60)).toBe("1.00");
-    expect(diskDailyEstimate("0.1000", 10)).toBe("0.03");
-    expect(diskDailyEstimate("1.2345", 30)).toBe("1.23");
+    expect(diskDailyEstimate("0.5000", 100, 2)).toBe("1.67");
+    expect(diskDailyEstimate("0.5000", 60, 2)).toBe("1.00");
+    expect(diskDailyEstimate("0.1000", 10, 2)).toBe("0.03");
+    expect(diskDailyEstimate("1.2345", 30, 2)).toBe("1.23");
   });
   it("cent ties round to even, the same semantics as the backend as_amount", () => {
-    expect(diskDailyEstimate("0.0350", 30)).toBe("0.04");
-    expect(diskDailyEstimate("0.0350", 90)).toBe("0.10");
-    expect(diskDailyEstimate("0.0500", 15)).toBe("0.02");
+    expect(diskDailyEstimate("0.0350", 30, 2)).toBe("0.04");
+    expect(diskDailyEstimate("0.0350", 90, 2)).toBe("0.10");
+    expect(diskDailyEstimate("0.0500", 15, 2)).toBe("0.02");
   });
   it("edge cases: empty price / 0 GB / non-integer GB return 0.00", () => {
-    expect(diskDailyEstimate("", 100)).toBe("0.00");
-    expect(diskDailyEstimate("0.50", 0)).toBe("0.00");
-    expect(diskDailyEstimate("0.50", 1.5)).toBe("0.00");
+    expect(diskDailyEstimate("", 100, 2)).toBe("0.00");
+    expect(diskDailyEstimate("0.50", 0, 2)).toBe("0.00");
+    expect(diskDailyEstimate("0.50", 1.5, 2)).toBe("0.00");
   });
   it("zero-decimal currencies round to whole units (HALF_EVEN)", () => {
     expect(diskDailyEstimate("15.0000", 100, 0)).toBe("50");
@@ -276,7 +276,7 @@ describe("quoteSubscription", () => {
     expect(q.listAmount).toBe("838857.60");
     expect(q.amount).toBe("587200.32");
   });
-  it("100 % discount (no discount) stays consistent", () => {
+  it("discountPct 100 (full list price, no discount) stays consistent", () => {
     const full = quoteSubscription("1.0000", { units: 1, period: "day", periodCount: 1, discountPct: 100 });
     expect(full.amount).toBe(full.listAmount);
     expect(full.discountAmount).toBe("0.00");

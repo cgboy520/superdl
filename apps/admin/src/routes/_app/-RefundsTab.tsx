@@ -14,7 +14,6 @@ import {
   formatDateTime,
   layout,
   metaOf,
-  payoutChannelForPayment,
   payoutChannelMap,
   refundStatusMap,
 } from "@superdl/ui";
@@ -75,7 +74,7 @@ export function PayoutModal({
       <Form.Item name="channel" label={t("finance.payoutChannelLabel")} rules={[{ required: true }]}>
         <Select
           options={Object.entries(payoutChannelMap)
-            .filter(([v]) => v === "offline" || v === payoutChannelForPayment[target.order_channel ?? ""])
+            .filter(([v]) => v === "offline" || v === target.order_payout_channel)
             .map(([v, m]) => ({
               value: v,
               label: t(m.labelKey),

@@ -122,7 +122,7 @@ export function buildSkuPayload(
 
 export type TFn = ReturnType<typeof useTranslation<["admin", "shared"]>>["t"];
 
-/** Alert params is a free backend map ({[key]: unknown}); accept strings/numbers only, treat the rest as missing */
+/** Alert params are a free backend map ({[key]: unknown}); accept strings/numbers only, treat the rest as missing */
 const strParam = (v: unknown): string => (typeof v === "string" || typeof v === "number" ? String(v) : "");
 
 export function warnText(t: TFn, w: CapacityWarning): string {

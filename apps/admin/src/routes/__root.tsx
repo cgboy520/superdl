@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useAppLocale } from "@superdl/ui";
-import { usePlatformConfig } from "../api";
+import { useDeployment } from "../api";
 import { useAuth } from "../stores/auth";
 
 export const Route = createRootRoute({
@@ -15,11 +15,11 @@ export const Route = createRootRoute({
   notFoundComponent: NotFoundPage,
 });
 
-/** Theme + locale + deployment currency (platform-config `deployment` block, only once signed in). */
+/** Theme + locale + deployment currency (`GET /deployment`, readable by every role, only once signed in). */
 function DarkShell({ children }: { children: ReactNode }) {
   const antdLocale = useAppLocale();
   const { accessToken } = useAuth();
-  const { data: platform } = usePlatformConfig({ enabled: accessToken != null });
+  const { data: deployment } = useDeployment({ enabled: accessToken != null });
   return (
     <ConfigProvider
       locale={antdLocale}
@@ -30,7 +30,7 @@ function DarkShell({ children }: { children: ReactNode }) {
       }}
     >
       <ThemeProvider value="admin">
-        <CurrencyProvider currency={platform?.deployment.currency ?? null}>{children}</CurrencyProvider>
+        <CurrencyProvider currency={deployment?.currency ?? null}>{children}</CurrencyProvider>
       </ThemeProvider>
     </ConfigProvider>
   );

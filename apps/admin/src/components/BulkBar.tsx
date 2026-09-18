@@ -38,7 +38,7 @@ export function BulkBar({ count, onClear, children }: { count: number; onClear: 
   );
 }
 
-/** Run one by one concurrently and return success/failure counts; the caller turns them into one summary message. */
+/** Start one operation per item concurrently and return success/failure counts; the caller turns them into one summary message. */
 export async function runBulk<T>(
   items: T[],
   fn: (item: T) => Promise<unknown>,

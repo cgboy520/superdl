@@ -226,7 +226,10 @@ function CreatePage() {
       : diskMode === "existing"
         ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
         : 0;
-  const diskDaily = diskPriceGbMonth === undefined ? undefined : diskDailyEstimate(diskPriceGbMonth, diskGb);
+  const diskDaily =
+    diskPriceGbMonth === undefined
+      ? undefined
+      : diskDailyEstimate(diskPriceGbMonth, diskGb, fmt.minorUnits === 0 ? 0 : 2);
 
   const periodBlocked = sku != null && !sku.period_enabled;
   const spotBlocked = (sku != null && !sku.spot_enabled) || spotPolicy == null;

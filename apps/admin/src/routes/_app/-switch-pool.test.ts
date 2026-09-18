@@ -37,10 +37,21 @@ describe("switchTargets", () => {
     ]);
   });
 
-  it("integrated GPU: both pools greyed, only hami remains", () => {
+  it("integrated GPU: both other pools greyed, nothing left to switch to", () => {
     expect(switchTargets(node({ gpu_model: "GB10" }))).toEqual([
       { pool: "kata", disabled: true },
       { pool: "mig", disabled: true },
+    ]);
+  });
+
+  it("the API flags are authoritative: contradictory flags override what the model name suggests", () => {
+    expect(switchTargets(node({ gpu_model: "RTX4090", supports_mig: true, supports_passthrough: false }))).toEqual([
+      { pool: "kata", disabled: true },
+      { pool: "mig", disabled: false },
+    ]);
+    expect(switchTargets(node({ gpu_model: "GB10", supports_mig: true, supports_passthrough: true }))).toEqual([
+      { pool: "kata", disabled: false },
+      { pool: "mig", disabled: false },
     ]);
   });
 

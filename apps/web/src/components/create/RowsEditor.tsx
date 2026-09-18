@@ -1,4 +1,6 @@
-/** Row editor skeleton (shared by command arguments / environment variables): the caller renders rows (render prop); this unifies "auto-focus on new rows / icon delete button / row separators / bulk paste Modal (parse preview + skip count, stays open with skips) / collapsible to "N items · expand to edit"". */
+/** Row editor skeleton (shared by command arguments / environment variables): the caller renders rows (render prop).
+ *  Shared behaviour: auto-focus on new rows, icon delete button, row separators, the bulk-paste Modal (parse preview
+ *  and skip count, stays open when rows were skipped) and the collapsed summary "N items · expand to edit". */
 
 import { DeleteOutlined } from "@ant-design/icons";
 import { fontSize, space } from "@superdl/ui";

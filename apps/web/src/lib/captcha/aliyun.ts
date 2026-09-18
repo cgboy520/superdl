@@ -14,9 +14,11 @@ declare global {
 }
 
 let sdkReady: Promise<void> | null = null;
-let sdkInitialized = false;
+/** `scene_id/prefix` the widget was initialised with; a change re-initialises it. */
+let initializedFor: string | null = null;
 let pendingResolve: ((token: string) => void) | null = null;
 let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+let queue: Promise<unknown> = Promise.resolve();
 
 function loadSdk(): Promise<void> {
   sdkReady ??= new Promise<void>((resolve, reject) => {
@@ -34,6 +36,7 @@ function loadSdk(): Promise<void> {
 }
 
 function ensureContainers(): void {
+  document.getElementById(BOX_ID)?.replaceChildren();
   if (!document.getElementById(TRIGGER_ID)) {
     const trigger = document.createElement("button");
     trigger.id = TRIGGER_ID;
@@ -49,7 +52,8 @@ function ensureContainers(): void {
 }
 
 async function init(cfg: CaptchaConfigOut): Promise<void> {
-  if (sdkInitialized) return;
+  const key = `${cfg.scene_id ?? ""}/${cfg.prefix ?? ""}`;
+  if (initializedFor === key) return;
   await loadSdk();
   if (typeof window.initAliyunCaptcha !== "function") {
     throw new Error("captcha sdk unavailable");
@@ -75,10 +79,10 @@ async function init(cfg: CaptchaConfigOut): Promise<void> {
     language: document.documentElement.lang.startsWith("en") ? "en" : "cn",
     region: "cn",
   });
-  sdkInitialized = true;
+  initializedFor = key;
 }
 
-export async function requestAliyunToken(cfg: CaptchaConfigOut): Promise<string> {
+async function acquire(cfg: CaptchaConfigOut): Promise<string> {
   await init(cfg);
   return new Promise<string>((resolve, reject) => {
     pendingResolve = resolve;
@@ -89,4 +93,14 @@ export async function requestAliyunToken(cfg: CaptchaConfigOut): Promise<string>
     }, CAPTCHA_TIMEOUT_MS);
     document.getElementById(TRIGGER_ID)?.click();
   });
+}
+
+/** One challenge at a time: a second request waits for the first to settle. */
+export function requestAliyunToken(cfg: CaptchaConfigOut): Promise<string> {
+  const run = queue.then(
+    () => acquire(cfg),
+    () => acquire(cfg),
+  );
+  queue = run.catch(() => undefined);
+  return run;
 }

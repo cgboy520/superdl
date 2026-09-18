@@ -12,7 +12,7 @@ import { useFormDraft } from "@superdl/ui";
 import { type EnrollmentCommandOut, useCreateEnrollment } from "../../api";
 import { POOL_LABEL_KEY, type Pool } from "../../lib/pools";
 
-/** Command display (shared by create / regenerate): the token is shown only this once */
+/** Command display (shared by create / regenerate): the token is shown only once */
 export function CommandPanel({ result }: { result: EnrollmentCommandOut }) {
   const { t } = useTranslation();
   return (

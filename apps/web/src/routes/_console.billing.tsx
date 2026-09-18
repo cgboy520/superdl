@@ -114,7 +114,8 @@ function BillingPage() {
   const { data: wallet } = walletQ;
   const { data: me } = useMe();
   const { data: policies } = usePolicies();
-  const { data: site } = useSiteConfig();
+  const siteQ = useSiteConfig();
+  const { data: site } = siteQ;
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const month = monthParam ?? currentMonth;
@@ -190,7 +191,10 @@ function BillingPage() {
       ),
     });
   }
-  if (site?.kyc_form && policies?.real_name_required_for_recharge && me != null && me.kyc_status !== "verified") {
+  // Only a successful site-config answer without a KYC form hides the warning; a failed
+  // /site-config keeps it because the server-side recharge gate stays active.
+  const kycMayBeRequired = siteQ.isError || Boolean(site?.kyc_form);
+  if (kycMayBeRequired && policies?.real_name_required_for_recharge && me != null && me.kyc_status !== "verified") {
     attention.push({
       key: "realName",
       severity: "warning",

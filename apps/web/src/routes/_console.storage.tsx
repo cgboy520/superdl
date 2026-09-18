@@ -162,6 +162,7 @@ function ExpiryCell({
 
 function StoragePage() {
   const { t } = useTranslation();
+  const { formatMoney, formatPrice, minorUnits } = useFormat();
   const { message } = App.useApp();
   const auto = useAutoRefresh(POLL.steady);
   const {
@@ -185,7 +186,7 @@ function StoragePage() {
   const createSizeValue = createSize ?? policies?.disk_min_gb ?? 100;
 
   const priceText = policies
-    ? t("common.gbMonthPrice", { price: policies.disk_price_gb_month })
+    ? t("common.gbMonthPrice", { price: formatPrice(policies.disk_price_gb_month) })
     : t("storage.priceFallback");
   const graceDays = policies?.disk_grace_days;
   const frozenDays = policies?.disk_frozen_days;
@@ -263,9 +264,11 @@ function StoragePage() {
                   title: t("storage.colBilling"),
                   render: (_, r) => (
                     <Space orientation="vertical" size={0}>
-                      <span>{t("common.gbMonthPrice", { price: r.price_gb_month })}</span>
+                      <span>{t("common.gbMonthPrice", { price: formatPrice(r.price_gb_month) })}</span>
                       <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                        {t("common.dailyApprox", { amount: diskDailyEstimate(r.price_gb_month, r.size_gb) })}
+                        {t("common.dailyApprox", {
+                          amount: formatMoney(diskDailyEstimate(r.price_gb_month, r.size_gb, minorUnits === 0 ? 0 : 2)),
+                        })}
                       </Typography.Text>
                     </Space>
                   ),

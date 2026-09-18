@@ -327,7 +327,11 @@ function LoginPage() {
                       extra={t("login.phoneRequiredHint")}
                       rules={[{ required: true, message: t("login.phoneInvalid") }]}
                     >
-                      <PhoneField dialCodes={dialCodes} placeholder={t("login.phonePlaceholder")} />
+                      <PhoneField
+                        dialCodes={dialCodes}
+                        placeholder={t("login.phonePlaceholder")}
+                        dialCodeLabel={t("login.dialCodeLabel")}
+                      />
                     </Form.Item>
                     <CodeField
                       code={phoneCodes}
