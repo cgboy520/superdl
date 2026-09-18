@@ -40,7 +40,7 @@ export const Route = createFileRoute("/_app")({
       throw redirect({ to: "/login", search: { returnTo: location.href } });
     }
     try {
-      const me = await queryClient.ensureQueryData({
+      const me = await queryClient.query({
         queryKey: ["admin", "me"],
         queryFn: fetchAdminMe,
         staleTime: 15_000,
