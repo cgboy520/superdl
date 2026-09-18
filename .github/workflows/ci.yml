@@ -167,7 +167,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3
+      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2
         with:
           config: .github/kind-config.yaml
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
