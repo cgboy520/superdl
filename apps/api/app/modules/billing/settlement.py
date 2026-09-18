@@ -586,13 +586,27 @@ async def _catchup_settle(
         async with sm() as session:
             done_through = await get_watermark(session, kind)
             await _refresh_gap_gauge(session)
-        lag = (
-            0.0
-            if done_through is None
-            else (target_start - done_through).total_seconds() / step.total_seconds()
-        )
-        SETTLEMENT_LAG.labels(kind=kind).set(max(0.0, lag))
+        SETTLEMENT_LAG.labels(kind=kind).set(_lag_windows(done_through, target_start, step, shift))
     return settled
+
+
+def _lag_windows(
+    done_through: datetime | None,
+    target_start: datetime,
+    step: timedelta,
+    shift: Callable[[datetime, int], datetime] | None,
+) -> float:
+    """Windows between the watermark and the target: elapsed ÷ step for fixed windows, counted
+    `shift` steps for calendar windows (a DST day is still one window)."""
+    if done_through is None or done_through >= target_start:
+        return 0.0
+    if shift is None:
+        return (target_start - done_through).total_seconds() / step.total_seconds()
+    count, cursor = 0, done_through
+    while cursor < target_start:
+        cursor = shift(cursor, 1)
+        count += 1
+    return float(count)
 
 
 def _hourly_attempt(

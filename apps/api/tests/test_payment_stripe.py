@@ -365,6 +365,61 @@ class TestApiRoundTrip:
             ).scalar_one()
             assert frozen == Decimal("50.00")
 
+    async def test_refund_delivered_before_success_still_freezes(
+        self, client: AsyncClient, sm, monkeypatch
+    ):
+        """Stripe does not order webhooks: a charge.refunded that arrives first is remembered on
+        the pending order (not turned into a failure), and the later success credits and freezes
+        the amount in one go."""
+        await self._enable(sm, monkeypatch)
+        headers = await user_headers(client, "u13700000502@test.local")
+        resp = await client.post(
+            "/api/v1/wallet/recharges",
+            json={"amount": "40.00", "channel": "stripe"},
+            headers=headers,
+        )
+        assert resp.status_code == 201, resp.text
+        order = resp.json()
+        currency = get_settings().platform_currency
+        charge = {
+            "id": "ch_early",
+            "object": "charge",
+            "payment_intent": "pi_early",
+            "amount": to_minor(Decimal("40.00"), currency),
+            "amount_refunded": to_minor(Decimal("40.00"), currency),
+            "currency": currency.lower(),
+            "metadata": {"order_no": order["order_no"]},
+        }
+        sig_headers, body = _signed(_event("charge.refunded", charge))
+        hook = await client.post("/api/v1/webhooks/stripe", content=body, headers=sig_headers)
+        assert hook.status_code == 200, hook.text
+        async with sm() as session:
+            row = (
+                await session.execute(select(Order).where(Order.order_no == order["order_no"]))
+            ).scalar_one()
+            assert row.status == "pending" and row.channel_reversed_at is not None
+        paid = _session_obj(
+            client_reference_id=order["order_no"],
+            payment_intent="pi_early",
+            amount_total=to_minor(Decimal("40.00"), currency),
+            currency=currency.lower(),
+            metadata={"order_no": order["order_no"]},
+        )
+        sig_headers, body = _signed(_event("checkout.session.completed", paid))
+        hook = await client.post("/api/v1/webhooks/stripe", content=body, headers=sig_headers)
+        assert hook.status_code == 200, hook.text
+        wallet = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert wallet["balance"] == "40.00"
+        async with sm() as session:
+            row = (
+                await session.execute(select(Order).where(Order.order_no == order["order_no"]))
+            ).scalar_one()
+            assert row.status == "paid"
+            frozen = (
+                await session.execute(select(Wallet.frozen).where(Wallet.user_id == row.user_id))
+            ).scalar_one()
+            assert frozen == Decimal("40.00")
+
     async def test_bad_signature_is_channel_error(self, client: AsyncClient, sm, monkeypatch):
         await self._enable(sm, monkeypatch)
         resp = await client.post(

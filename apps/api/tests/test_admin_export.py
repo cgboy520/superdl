@@ -52,6 +52,23 @@ class TestOrdersExport:
         only_pending = resp.text
         assert "SDL-EXP-1" in only_pending and "SDL-EXP-0" not in only_pending
 
+    async def test_lang_defaults_to_profile_locale(self, client: AsyncClient, sm, monkeypatch):
+        """cn profile + omitted lang → Chinese headers; an explicit lang always wins."""
+        from app.core.config import get_settings
+
+        await _make_orders(sm, 1)
+        fin = await admin_headers(sm, client, role="finance", username="fin-lang")
+        monkeypatch.setattr(get_settings(), "compliance_profile", "cn")
+        zh = await client.get("/api/admin/v1/orders/export", headers=fin)
+        assert zh.text.lstrip("\ufeff").startswith("订单号")  # cjk-ok
+        en = await client.get("/api/admin/v1/orders/export", params={"lang": "en-US"}, headers=fin)
+        assert en.text.lstrip("\ufeff").startswith("Order no")
+        monkeypatch.setattr(get_settings(), "compliance_profile", None)
+        zh_explicit = await client.get(
+            "/api/admin/v1/orders/export", params={"lang": "zh-CN"}, headers=fin
+        )
+        assert zh_explicit.text.lstrip("\ufeff").startswith("订单号")  # cjk-ok
+
 
 async def _make_refunds(sm: async_sessionmaker[AsyncSession], count: int = 2) -> None:
     from app.modules.billing.models import RefundRequest

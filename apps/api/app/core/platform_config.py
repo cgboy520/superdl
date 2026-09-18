@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal, get_args
 
-from sqlalchemy import String, Text, delete, func, select
+from sqlalchemy import String, Text, delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
@@ -20,8 +20,10 @@ from app.core import crypto
 from app.core.compliance import ComplianceProfile, profile_for
 from app.core.config import check_real_name_invariant, get_settings
 from app.core.db import Base
+from app.core.locks import LockKey
 from app.core.logging import get_logger
 from app.core.metrics import PLATFORM_CONFIG_WRITE_TOTAL
+from app.core.money import as_amount, minor_units, platform_currency
 from app.core.registry import effective_image_allowlist
 
 logger = get_logger(__name__)
@@ -911,6 +913,16 @@ def _validate_shape(key: str, value: str, spec: SettingSpec) -> None:
         raise ValueError(f"{key} is malformed{suffix}")
     if spec.forbid_contains and spec.forbid_contains in value:
         raise ValueError(f"{key} is malformed{suffix}")
+    if key == "recharge_presets":
+        for part in value.split(","):
+            if part and Decimal(part) != as_amount(part):
+                raise ValueError(
+                    f"recharge preset {part} is not a whole {platform_currency()} amount"
+                    f" ({minor_units()} decimals)"
+                )
+
+
+_RECHARGE_AMOUNT_KEYS = frozenset({"recharge_min", "recharge_max"})
 
 
 def _validate_number(key: str, value: str, spec: SettingSpec) -> str:
@@ -923,6 +935,10 @@ def _validate_number(key: str, value: str, spec: SettingSpec) -> str:
         raise ValueError(f"{key} must be an integer: {value}")
     if not spec.lo <= num <= spec.hi:
         raise ValueError(f"{key} must be between {spec.lo} and {spec.hi}")
+    if key in _RECHARGE_AMOUNT_KEYS and num != as_amount(num):
+        raise ValueError(
+            f"{key} must be a whole {platform_currency()} amount ({minor_units()} decimals)"
+        )
     if key == "spot_grace_seconds":
         budget = get_settings().creating_timeout_seconds - PREEMPT_TIME_RESERVE_SECONDS
         if num > budget:
@@ -1007,8 +1023,13 @@ async def set_platform_settings(
     """Write overrides (no commit; the caller commits together with the audit). Empty string =
     clear the override, back to the env default.
     allowed_groups limits the groups this entry point may write: /policies only the policy group,
-    /platform-config never the policy group.
+    /platform-config never the policy group. Writes touching a cross-key invariant take a
+    transaction-scoped advisory lock so concurrent writers cannot commit an invalid pair.
     """
+    if updates.keys() & _CROSS_KEY_INVARIANT_KEYS:
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(:key)"), {"key": int(LockKey.PLATFORM_CONFIG_WRITE)}
+        )
     for key, raw in updates.items():
         spec = SETTING_SPECS.get(key)
         if spec is None or (allowed_groups is not None and spec.group not in allowed_groups):

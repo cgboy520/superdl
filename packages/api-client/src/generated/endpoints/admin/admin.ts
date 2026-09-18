@@ -76,6 +76,7 @@ import type {
   ClusterStatusOut,
   ComponentProbeOut,
   DeadTaskOut,
+  DeploymentIdentityOut,
   EmailTestOut,
   EmailTestRequest,
   EnrollmentCommandOut,
@@ -959,6 +960,31 @@ export const adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost = 
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(adminDeletionReject)
+  }
+);}
+
+
+export const getAdminGetDeploymentApiAdminV1DeploymentGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/deployment`
+}
+
+/**
+ * Read-only deployment identity (compliance profile, currency, billing time zone) for every
+ * console role; the consoles format money with it.
+ * @summary Admin Get Deployment
+ */
+export const adminGetDeploymentApiAdminV1DeploymentGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<DeploymentIdentityOut> => {
+
+  return customFetch<DeploymentIdentityOut>(getAdminGetDeploymentApiAdminV1DeploymentGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
   }
 );}
 

@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 from datetime import timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal
 from typing import TYPE_CHECKING, Any
 
 from fastapi import status
@@ -368,8 +368,8 @@ async def _alert_large_price_change(
                 baseline=price_label(baseline),
                 new=price_label(new),
                 pct=f"{cumulative:.0%}",
-                old=old,
-                new_raw=new,
+                old=price_label(old),
+                new_raw=price_label(new),
                 reason=reason,
             ),
             severity="critical",
@@ -511,10 +511,18 @@ async def admin_skus_out(session: AsyncSession) -> list[SkuAdminOut]:
         if item.capacity_gpus:
             nominal = Decimal(sold.get(sku.id, 0)) * Decimal(sku.gpu_cores_pct) / Decimal(100)
             cap = Decimal(item.capacity_gpus)
-            item.actual_oversell = str(as_amount(nominal / cap))
-            item.sold_share = str(as_amount(nominal / (cap * sku.oversell_cores)))
+            item.actual_oversell = str(_ratio(nominal / cap))
+            item.sold_share = str(_ratio(nominal / (cap * sku.oversell_cores)))
         out.append(item)
     return out
+
+
+RATIO_QUANT = Decimal("0.01")
+
+
+def _ratio(value: Decimal) -> Decimal:
+    """Two-decimal ratio for admin capacity output; currency-independent."""
+    return value.quantize(RATIO_QUANT, rounding=ROUND_HALF_EVEN)
 
 
 async def capacity_preview(

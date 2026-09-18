@@ -194,10 +194,12 @@ class RefundableOrderOut(BaseModel):
 
 class AdminRefundOut(RefundOut):
     """Admin refund request view: operators / times and the write-off ledger link;
-    `order_channel` decides the payout channel options."""
+    `order_payout_channel` is the registry's payout counterpart of `order_channel` (None = offline
+    only)."""
 
     user_id: int
     order_channel: str | None = None
+    order_payout_channel: str | None = None
     review_by: int | None
     review_at: datetime | None
     payout_by: int | None

@@ -262,6 +262,15 @@ class TestWechatCallbackSignature:
         result = await _wechat_channel(keypair).parse_callback(headers, body)
         assert result.currency == "USD" and result.amount == Decimal("100.00")
 
+    async def test_missing_currency_rejected(self, keypair):
+        """`amount.currency` is mandatory on the wire; without it the callback is not trusted on
+        amount alone."""
+        priv, _pub = keypair
+        headers, body = _wechat_notify(priv, _wx_resource(amount={"total": 10000}))
+        with pytest.raises(AppError) as exc:
+            await _wechat_channel(keypair).parse_callback(headers, body)
+        assert exc.value.message_key == "billing.wechatCallbackVerifyFailed"
+
     async def test_tampered_body_rejected(self, keypair):
         priv, _pub = keypair
         headers, body = _wechat_notify(priv, _wx_resource())

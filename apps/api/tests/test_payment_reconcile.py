@@ -48,6 +48,21 @@ class TestReconcilePoller:
         w = (await client.get("/api/v1/wallet", headers=headers)).json()
         assert w["balance"] == "66.00"
 
+    async def test_channel_currency_mismatch_is_not_credited(self, client: AsyncClient, sm):
+        """The channel side reports another currency: the poller refuses to credit; a matching
+        currency credits normally (the mock ledger keeps the currency it was paid in)."""
+        headers = await user_headers(client, "u13700000023@test.local")
+        order = await create_order(client, headers, "12.00")
+        MockChannel.mark_paid(order["order_no"], "txn-cur-1", "12.00", currency="XTS")
+        await _backdate_order(sm, order["order_no"], 2)
+        assert await reconcile_pending_orders(sm) == 0
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "0.00"
+        MockChannel.mark_paid(order["order_no"], "txn-cur-1", "12.00", currency=order["currency"])
+        assert await reconcile_pending_orders(sm) == 1
+        w = (await client.get("/api/v1/wallet", headers=headers)).json()
+        assert w["balance"] == "12.00"
+
     async def test_unpaid_order_untouched(self, client: AsyncClient, sm):
         headers = await user_headers(client, "u13700000022@test.local")
         order = await create_order(client, headers, "10.00")

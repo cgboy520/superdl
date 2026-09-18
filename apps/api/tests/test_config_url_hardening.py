@@ -22,6 +22,17 @@ def _settings(**overrides) -> Settings:
     )
 
 
+class TestRechargePolicyInvariant:
+    """The env layer is checked like the online write path: min ≤ max, presets inside."""
+
+    def test_min_above_max_or_preset_outside_refused(self):
+        with pytest.raises(ValidationError, match="recharge_min"):
+            _settings(recharge_min="100", recharge_max="50")
+        with pytest.raises(ValidationError, match="preset 5"):
+            _settings(recharge_min="10", recharge_max="50", recharge_presets="5,20")
+        assert _settings(recharge_min="10", recharge_max="50", recharge_presets="10,50")
+
+
 def _prod_kwargs() -> dict:
     """The smallest configuration that passes the prod check."""
     return {

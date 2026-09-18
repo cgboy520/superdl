@@ -505,6 +505,14 @@ class TestAdminFlow:
             await client.get("/api/admin/v1/refunds", params={"status": "paid"}, headers=reviewer)
         ).json()["items"] == []
         assert rows[0]["user_id"] is not None
+        assert rows[0]["order_channel"] == "mock" and rows[0]["order_payout_channel"] is None
+        async with sm() as session:
+            await session.execute(
+                update(Order).where(Order.order_no == order["order_no"]).values(channel="wechat")
+            )
+            await session.commit()
+        rows = (await client.get("/api/admin/v1/refunds", headers=reviewer)).json()["items"]
+        assert rows[0]["order_payout_channel"] == "wechat_transfer"
 
 
 class TestPartialRefunds:

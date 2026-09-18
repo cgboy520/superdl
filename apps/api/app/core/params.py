@@ -3,15 +3,23 @@
 from typing import Annotated
 
 from fastapi import Depends, Header, Query
+from pydantic import WithJsonSchema
 
 from app.core.compliance import current_profile
 from app.core.locale import Locale
 from app.core.pagination import MAX_LIMIT
 from app.core.timeutil import billing_offset_minutes
 
+_TZ_OFFSET_SCHEMA = {"type": "integer", "minimum": -720, "maximum": 840}
 
-def _tz_offset(tz_offset_minutes: int | None = Query(default=None, ge=-720, le=720)) -> int:
-    """Client UTC offset for display aggregation; omitted → the billing zone's current offset."""
+
+def _tz_offset(
+    tz_offset_minutes: Annotated[
+        int | None, Query(ge=-720, le=840), WithJsonSchema(_TZ_OFFSET_SCHEMA)
+    ] = None,
+) -> int:
+    """Client UTC offset for display aggregation (UTC-12 … UTC+14); omitted → the billing zone's
+    current offset. Published as an optional integer, never as nullable."""
     return tz_offset_minutes if tz_offset_minutes is not None else billing_offset_minutes()
 
 
