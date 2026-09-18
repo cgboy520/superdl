@@ -44,10 +44,8 @@ REPO_CJK_EXEMPT=(
   "e2e/tests/*"
 )
 
-# Still untranslated. Remove a prefix in the PR that translates it; never add one.
-REPO_CJK_ALLOW=(
-  "CLAUDE.md"
-)
+# Empty by design: nothing is waiting for translation any more; never add a prefix.
+REPO_CJK_ALLOW=()
 
 CJK_EXEMPT="$(printf '%s\n' "${REPO_CJK_EXEMPT[@]}")" \
 CJK_ALLOW="$(printf '%s\n' "${REPO_CJK_ALLOW[@]}")" \
