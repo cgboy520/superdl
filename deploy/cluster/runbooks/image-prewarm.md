@@ -1,44 +1,44 @@
-# 镜像缓存与预热 Runbook
+# Image cache and prewarm runbook
 
-三层结构:
+Three layers:
 
-1. **Spegel P2P**(RKE2 / k3s `embedded-registry: true` + 全节点 `registries.yaml` 的 `mirrors "*"`):节点间内网互拉已缓存镜像。
-2. **Harbor**:平台镜像与租户实例镜像的权威源;镜像引用一律 Harbor 全限定名并钉 digest `<host>/<项目>/<名>:<tag>@sha256:<digest>`。接入参数(地址 / 项目 / 机器人账户与 Secret / 自签 CA / 代理缓存映射)在管理端「平台配置 · 镜像仓库」,保存后「测试连接」。
-3. **平台预热**(管理端「镜像与预热」页 + worker 巡检):每镜像 × 每节点拉取 Job,覆盖率实时可见。
+1. **Spegel P2P** (RKE2 / k3s `embedded-registry: true` + `mirrors "*"` in every node's `registries.yaml`): nodes pull already-cached images from each other over the internal network.
+2. **Harbor**: the authoritative source of platform images and tenant instance images; image references are always Harbor fully qualified names pinned to a digest, `<host>/<project>/<name>:<tag>@sha256:<digest>`. The connection parameters (address / project / robot account and Secret / self-signed CA / proxy cache mappings) live under admin "Platform configuration · Image registry"; use "Test connection" after saving.
+3. **Platform prewarm** (admin "Images and prewarm" page + worker patrol): one pull Job per image × node, coverage visible live.
 
-## 拉取凭据(不落节点)
+## Pull credentials (never on nodes)
 
-- 平台在建实例 Pod / 预热 Job 之前,按生效配置把机器人凭据写成 `superdl-registry-pull`(`kubernetes.io/dockerconfigjson`)托管到平台 ns 与该租户 ns(annotation 指纹相同跳过),Pod / Job 以 `imagePullSecrets` 引用;项目为 public 时不生成、不引用。
-- 平台自身镜像(api / web / admin):首装按 `deploy/README.md`「生产发布流程」手建同名 Secret;配置中心录入机器人后 worker 按指纹覆写。
-- **轮换**:Harbor 生成新 Secret → 管理端「镜像仓库」保存 → 新建一台实例确认拉取成功 → 在 Harbor 撤销旧 Secret;不碰节点。
-- 节点 `registries.yaml`(GPU 节点由 node-join.sh 按平台配置生成;server 节点由 ansible 分发 `deploy/cluster/rke2/registries.yaml`)只承担 Spegel / 代理缓存 mirror / 自签 CA,不含 auth。
+- Before creating an instance Pod / prewarm Job the platform writes the robot credentials from the effective configuration as `superdl-registry-pull` (`kubernetes.io/dockerconfigjson`) into the platform namespace and the tenant's namespace (skipped when the annotation fingerprint matches); Pods / Jobs reference it through `imagePullSecrets`; with a public project nothing is generated or referenced.
+- The platform's own images (api / web / admin): at first install create the Secret of the same name by hand following `deploy/README.md` "Production release flow"; once the robot is entered in the configuration centre the worker overwrites it by fingerprint.
+- **Rotation**: generate a new Secret in Harbor → save under admin "Image registry" → create one instance and confirm the pull succeeds → revoke the old Secret in Harbor; nodes are not touched.
+- The node `registries.yaml` (generated on GPU nodes by node-join.sh from the platform configuration; distributed to server nodes by ansible from `deploy/cluster/rke2/registries.yaml`) only carries Spegel / proxy cache mirrors / the self-signed CA, no auth.
 
-## Harbor 侧一次性准备
+## One-time Harbor preparation
 
-1. 项目:`superdl`(平台镜像;私有)。可选代理缓存项目:`dockerhub`(上游 Docker Hub)、`ghcr`(上游 GHCR)等,设为 **public**,并在「镜像仓库」的代理缓存映射里逐行填 `docker.io=dockerhub`、`ghcr.io=ghcr`。
-2. 机器人账户:项目级 `robot$superdl+pull`,权限仅 Pull Repository + List Repository;CI 推送另建 `robot$superdl+push`(Push + Pull),只放 GitHub secrets,不进配置中心。
-3. 证书:公信证书无需配置;自签/私有 CA 把 PEM 粘进「镜像仓库 · CA 证书」(新节点自动落 `harbor-ca.crt`),server 节点经 ansible `harbor_ca_pem` 变量落盘。
+1. Projects: `superdl` (platform images; private). Optional proxy cache projects: `dockerhub` (upstream Docker Hub), `ghcr` (upstream GHCR) etc., set to **public**, entered line by line in the "Image registry" proxy cache mappings as `docker.io=dockerhub`, `ghcr.io=ghcr`.
+2. Robot accounts: project-level `robot$superdl+pull` with Pull Repository + List Repository only; CI pushes use a separate `robot$superdl+push` (Push + Pull) that lives only in GitHub secrets, never in the configuration centre.
+3. Certificates: publicly trusted certificates need no configuration; for a self-signed / private CA paste the PEM into "Image registry · CA certificate" (new nodes receive `harbor-ca.crt` automatically), server nodes get it through the ansible `harbor_ca_pem` variable.
 
-## 平台镜像上线 SOP
+## Platform image release SOP
 
-平台自带的 12 个实例镜像由 `deploy/instance-images/` 构建并推送(构建、推送前自检、digest 取法以那份 README 为准)。推完之后:
+The 12 bundled instance images are built and pushed from `deploy/instance-images/` (build, pre-push self-check and how to read the digest are in that README). After pushing:
 
-1. 管理端「镜像与预热」新建/编辑条目,`image_ref` 填 `harbor.<域>/superdl/<名>:<tag>@sha256:<digest>`。编辑已有条目时页面提示「变更镜像地址将清空全部节点缓存记录并按新地址重新预热」。
-2. 等巡检铺开(≤60s 发现节点),页面看每节点覆盖率;失败行有错误原因,可一键重试。
+1. Create / edit the entry under admin "Images and prewarm" with `image_ref` = `harbor.<domain>/superdl/<name>:<tag>@sha256:<digest>`. When editing an existing entry the page warns that changing the image address clears every node cache record and prewarms again from the new address.
+2. Wait for the patrol to spread (nodes discovered within 60 s) and watch the per-node coverage on the page; failed rows show the error and can be retried with one click.
 
-规则:
+Rules:
 
-- **`image_ref` 必须钉 digest,禁止只写 tag,禁止 latest。**
-- **重推同名 tag 之后必须回到第 1 步换 ref。**
-- **实例的 ref 是创建时快照且终身不变**:停机/开机/重启都用旧 digest;带修复的镜像上线后,存量实例须由用户删掉重建,发布时一并通知。
-- 换 Harbor 域名:SQL 批量改 `images.image_ref`(实例快照是历史值,不改);巡检比对 `image_node_cache.cached_ref` 与当前 ref,不一致即作废重拉,≤60s 自愈。
+- **`image_ref` must pin a digest; a bare tag and latest are forbidden.**
+- **After re-pushing the same tag, go back to step 1 and change the ref.**
+- **An instance's ref is a snapshot taken at creation and never changes**: stop / start / restart all use the old digest; after an image with fixes is released, existing instances must be deleted and recreated by their users, so notify them with the release.
+- Changing the Harbor domain: bulk-update `images.image_ref` in SQL (instance snapshots are historical values and stay); the patrol compares `image_node_cache.cached_ref` with the current ref and invalidates mismatches for a re-pull, self-healing within 60 s.
 
-## 灾备与容量
+## Disaster recovery and capacity
 
-- Harbor 自带冗余与 GC;实例镜像不做额外备份。
-- kubelet 磁盘压力会 GC 节点镜像缓存;平台巡检按 `prewarm_recheck_hours`(默认 24h)复检并重拉,覆盖率短暂下降属预期。
+- Harbor brings its own redundancy and GC; instance images get no extra backup.
+- kubelet disk pressure garbage-collects the node image cache; the platform patrol re-checks per `prewarm_recheck_hours` (default 24 h) and re-pulls, a short coverage dip is expected.
 
-## 安全边界
+## Security boundary
 
-- 拉取机器人仅 Pull + List 权限,按季度轮换;推送机器人只在 CI。
-- 租户 Pod Egress NetworkPolicy 禁全部私网段(app/core/k8s/real.py PRIVATE_CIDRS);Harbor 为公网地址时,确认其不在租户 Egress 白名单内(镜像拉取由 kubelet 发起,不经租户 Pod 网络策略)。
+- The pull robot has Pull + List only and is rotated quarterly; the push robot exists only in CI.
+- The tenant Pod egress NetworkPolicy denies every private range (PRIVATE_CIDRS in app/core/k8s/real.py); when Harbor has a public address, confirm it is not in the tenant egress allow-list (image pulls are made by kubelet and do not pass the tenant Pod network policy).

@@ -45,8 +45,8 @@ test: {enabled: false}
 monitoring:
   serviceMonitor:
     enabled: true
-# Loki 不访问 apiserver:关掉 ruler sidecar(它是 chart 里唯一要 configmaps/secrets 集群读权的部件),
-# 渲染出的 loki-clusterrole 为空规则;SA 与 Pod 均不挂 token。
+# Loki does not access the apiserver: the ruler sidecar is off (the only chart component needing cluster-wide configmaps/secrets read),
+# the rendered loki-clusterrole has empty rules; neither the SA nor the Pod mounts a token.
 sidecar:
   rules:
     enabled: false

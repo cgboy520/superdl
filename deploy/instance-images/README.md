@@ -1,81 +1,81 @@
-# 实例镜像(平台镜像目录的构建源)
+# Instance images (build source of the platform image catalogue)
 
-`images` 表里的 `image_ref` 指向这里构建出的镜像。平台创建 Pod 时**不覆盖 command/args**(见 `app/core/k8s/real.py::_create_pod_sync`),每个平台镜像必须自行满足下面的契约。
+`image_ref` in the `images` table points at images built here. The platform **does not override command/args** when creating Pods (see `app/core/k8s/real.py::_create_pod_sync`), so every platform image must satisfy the contract below on its own.
 
-## 服务型容器不受本契约约束
+## Service containers are outside this contract
 
-下面的契约管**开发机形态**(`workload_type='dev'`,SSH + JupyterLab)的平台镜像。
-服务型实例(`workload_type='service'`,见 [../../docs/reference/services.md](../../docs/reference/services.md))跑用户自己的镜像,平台只要求:在用户声明的 `service_port` 上监听 HTTP,且监听 `0.0.0.0`。
+The contract below governs platform images of the **dev-box form** (`workload_type='dev'`, SSH + JupyterLab).
+Service instances (`workload_type='service'`, see [../../docs/reference/services.md](../../docs/reference/services.md)) run the user's own image; the platform only requires listening for HTTP on the declared `service_port`, bound to `0.0.0.0`.
 
-服务型容器**不需要**:内置 sshd、内置 JupyterLab、`JUPYTER_TOKEN` / `AUTHORIZED_KEYS` 环境变量、`superdl_jupyter_auth` 扩展、Jupyter 套件、自己实现 API Key 鉴权(网关 `SecurityPolicy.extAuth` 负责)。
-可选两项:声明了 `health_path` 时在该路径返回 2xx(同时是 startupProbe 与 readinessProbe);勾了「同时开放 SSH」时需要 sshd,下面 SSH 相关条目重新适用。
+Service containers **do not need**: a built-in sshd, a built-in JupyterLab, the `JUPYTER_TOKEN` / `AUTHORIZED_KEYS` environment variables, the `superdl_jupyter_auth` extension, the Jupyter package set, or their own API key auth (the gateway `SecurityPolicy.extAuth` handles it).
+Two optional items: with a declared `health_path`, answer 2xx on that path (it is both the startupProbe and the readinessProbe); with "also enable SSH" ticked, sshd is required and the SSH items below apply again.
 
-容器可信任的平台注入头只有 `x-superdl-endpoint` 与 `x-superdl-key-id`(网关侧 `headersToBackend` 白名单);**其余同名头都可能是客户端伪造的**。
+The only platform-injected headers a container may trust are `x-superdl-endpoint` and `x-superdl-key-id` (the gateway `headersToBackend` allow-list); **any other header of the same name may be forged by the client**.
 
-## 平台镜像契约(不满足则实例不可用)
+## Platform image contract (an instance that violates it is unusable)
 
-| 约定 | 要求 |
+| Convention | Requirement |
 |---|---|
-| Jupyter 监听 | `--ip=0.0.0.0`,端口 `8888` |
-| Jupyter 鉴权 | 读环境变量 `JUPYTER_TOKEN` 作为 token,**缺失必须启动失败**;**必须显式传 `--IdentityProvider.token="$JUPYTER_TOKEN"`**(命令行优先级高于配置文件)。加载 `superdl_jupyter_auth` 扩展:`/superdl-bootstrap` 一次性票据(单次、60s,HMAC 密钥=token 本体)核销后种第一方 cookie,token 不进 URL |
-| Jupyter 默认界面 | `--ServerApp.default_url=/lab`,票据核销后 302 到 `/lab`;界面语言默认 zh-CN(`lab-overrides.json`,用户可在设置里改) |
-| Jupyter 终端 | entrypoint 导出 `SHELL=/bin/bash`,非 tty 下追加 `-l` 走登录 shell,读 `/etc/profile.d/superdl-env.sh`;基座必须带 bash |
-| Jupyter 进程 | 守护循环拉起(不用 exec 当 PID 1),连续秒退 5 次才放弃 |
-| Jupyter Origin | 读环境变量 `JUPYTER_ALLOW_ORIGIN`(本实例域名)作为 `ServerApp.allow_origin`;**禁止写死 `'*'`** |
-| Jupyter 套件 | 每个镜像必装:`jupyterlab` / `jupyter-ai[jupyternaut,magics]` / `jupyter-resource-usage` / `jupyterlab-language-pack-zh-CN` / `ipykernel` |
-| jupyter-ai | 必须带 `[jupyternaut,magics]` extra。entrypoint 另下发:模型提供方白名单(`openai` / `anthropic` / `github_copilot` / `ollama` / `ollama_chat`)与显式默认 persona(`::jupyter_ai_jupyternaut::`) |
-| 补充组命名 | entrypoint 为运行时注入的宿主 video/render 补充组补 `hostgrp<gid>` 记录,并把 `root` 写进成员列表(sshd 按 `/etc/group` 重建补充组) |
-| CUDA compat | 启动时探测 `cuInit`:失败才从 `LD_LIBRARY_PATH` 摘掉 `*/compat`;仍失败则还原 |
-| SSH 会话环境 | entrypoint 把 PID 1 的环境写进 `/etc/environment`(PAM)与 `/etc/profile.d/superdl-env.sh`(登录 shell)。**用黑名单不用白名单**:剔除 `JUPYTER_TOKEN` / `AUTHORIZED_KEYS`、含 TOKEN/SECRET/PASSWORD/KEY/CREDENTIAL 的变量与 shell 私有变量;**敏感值绝不落盘** |
-| SSH 可用性 | sshd 需要 `SYS_CHROOT` / `SETUID` / `SETGID` 三个 capability,平台在 `tenant_security_context()` 里 drop ALL 后单独 add 回。TopoLVM 把 `/root` 挂成 `2777`,entrypoint 起 sshd 前 `chmod g-w,o-w /root`(StrictModes) |
-| 用户安装的包 | 必须落在实例盘:entrypoint 下发 `PYTHONUSERBASE=/root/.local` + `PIP_USER=1`,`JULIA_DEPOT_PATH` 前置 `/root/.julia`(并把镜像自带的 `environments/vX.Y` 复制过去)。`/opt/conda`、`/opt/julia` 在容器可写层,Pod 重建即消失。`profile.d` 里定义 `pip` 包装:`$VIRTUAL_ENV` 非空时关掉 `--user` |
-| Lab 设置目录 | `lab-overrides.json` 构建期放到 root 属主的 `/opt/superdl/labsettings`,entrypoint 用 `--LabApp.app_settings_dir` 指过去;不用基座默认的 `<app_dir>/settings` |
-| SSH host key | 首次生成后持久化到实例盘(`/root/.ssh/host_keys`),`/etc/ssh` 下为符号链接 |
-| SSH 公钥 | 读环境变量 `AUTHORIZED_KEYS`(多行)**无条件覆写** `~/.ssh/authorized_keys`(空值也要清空文件),sshd 监听 `22`,仅密钥登录 |
-| 工作目录 | 用户数据放 `/root`(实例盘挂载点);数据盘挂 `/root/data` |
-| HOME 与运行目录 | `HOME=/root`,Jupyter 的 data 目录落在 `/root` 下。**runtime 与 config 两个目录放容器可写层**:`JUPYTER_RUNTIME_DIR=/run/jupyter`、`JUPYTER_CONFIG_DIR=/run/jupyter-config`,均不落实例盘 |
-| 基础镜像 | 与 SKU 的 `cuda_max` 兼容的 CUDA 运行时;Dockerfile 末尾 `ENV NVIDIA_VISIBLE_DEVICES=void` 覆盖 nvidia/cuda 基座的 `all`,可见卡只来自 HAMi / device-plugin 注入的容器 env |
-| 容器日志 | entrypoint 把自身与 Jupyter 的 stdout/stderr 经 `sed` 抹掉 `token=` 值再落容器日志;日志管道侧 Alloy 再抹一次 |
+| Jupyter listening | `--ip=0.0.0.0`, port `8888` |
+| Jupyter auth | Read the environment variable `JUPYTER_TOKEN` as the token, **startup must fail when it is missing**; **`--IdentityProvider.token="$JUPYTER_TOKEN"` must be passed explicitly** (the command line outranks configuration files). Load the `superdl_jupyter_auth` extension: `/superdl-bootstrap` one-time ticket (single use, 60 s, HMAC key = the token itself) sets a first-party cookie once redeemed, the token never enters the URL |
+| Jupyter default UI | `--ServerApp.default_url=/lab`, 302 to `/lab` after the ticket is redeemed; the UI language defaults to zh-CN (`lab-overrides.json`, users can change it in settings) |
+| Jupyter terminal | The entrypoint exports `SHELL=/bin/bash`, appends `-l` outside a tty for a login shell reading `/etc/profile.d/superdl-env.sh`; the base must ship bash |
+| Jupyter process | Started by a supervisor loop (not exec as PID 1), giving up only after 5 consecutive immediate exits |
+| Jupyter Origin | Read the environment variable `JUPYTER_ALLOW_ORIGIN` (this instance's domain) as `ServerApp.allow_origin`; **never hard-code `'*'`** |
+| Jupyter packages | Every image installs `jupyterlab` / `jupyter-ai[jupyternaut,magics]` / `jupyter-resource-usage` / `jupyterlab-language-pack-zh-CN` / `ipykernel` |
+| jupyter-ai | Must carry the `[jupyternaut,magics]` extra. The entrypoint also delivers the model provider allow-list (`openai` / `anthropic` / `github_copilot` / `ollama` / `ollama_chat`) and the explicit default persona (`::jupyter_ai_jupyternaut::`) |
+| Supplementary group naming | The entrypoint adds a `hostgrp<gid>` record for each host video/render supplementary group injected at runtime and writes `root` into its member list (sshd rebuilds supplementary groups from `/etc/group`) |
+| CUDA compat | Probe `cuInit` at startup: only on failure remove `*/compat` from `LD_LIBRARY_PATH`; restore it if it still fails |
+| SSH session environment | The entrypoint writes PID 1's environment to `/etc/environment` (PAM) and `/etc/profile.d/superdl-env.sh` (login shell). **Deny-list, not allow-list**: drop `JUPYTER_TOKEN` / `AUTHORIZED_KEYS`, variables containing TOKEN/SECRET/PASSWORD/KEY/CREDENTIAL, and shell-private variables; **sensitive values never touch disk** |
+| SSH availability | sshd needs the three capabilities `SYS_CHROOT` / `SETUID` / `SETGID`, which the platform adds back individually after drop ALL in `tenant_security_context()`. TopoLVM mounts `/root` as `2777`; the entrypoint runs `chmod g-w,o-w /root` before starting sshd (StrictModes) |
+| User-installed packages | Must land on the instance disk: the entrypoint sets `PYTHONUSERBASE=/root/.local` + `PIP_USER=1`, prepends `/root/.julia` to `JULIA_DEPOT_PATH` (copying the image's `environments/vX.Y` there). `/opt/conda`, `/opt/julia` live in the container's writable layer and vanish when the Pod is recreated. `profile.d` defines a `pip` wrapper that turns `--user` off while `$VIRTUAL_ENV` is set |
+| Lab settings directory | `lab-overrides.json` is placed at build time in the root-owned `/opt/superdl/labsettings`; the entrypoint points `--LabApp.app_settings_dir` at it instead of the base's default `<app_dir>/settings` |
+| SSH host key | Generated once and persisted on the instance disk (`/root/.ssh/host_keys`), with symlinks under `/etc/ssh` |
+| SSH public keys | Read the environment variable `AUTHORIZED_KEYS` (multi-line) and **unconditionally overwrite** `~/.ssh/authorized_keys` (an empty value empties the file too); sshd listens on `22`, key login only |
+| Working directory | User data lives in `/root` (the instance disk mount point); the data disk mounts at `/root/data` |
+| HOME and runtime directories | `HOME=/root`, Jupyter's data directory under `/root`. **The runtime and config directories live in the container's writable layer**: `JUPYTER_RUNTIME_DIR=/run/jupyter`, `JUPYTER_CONFIG_DIR=/run/jupyter-config`, neither on the instance disk |
+| Base image | A CUDA runtime compatible with the SKU's `cuda_max`; the Dockerfile ends with `ENV NVIDIA_VISIBLE_DEVICES=void` overriding the nvidia/cuda base's `all`, so visible cards come only from the container env injected by HAMi / the device plugin |
+| Container logs | The entrypoint pipes its own and Jupyter's stdout/stderr through `sed` to strip `token=` values before they reach the container log; Alloy strips once more on the log pipeline side |
 
-## 默认镜像矩阵(平台自带目录)
+## Default image matrix (the bundled catalogue)
 
-选版规则:
+Selection rules:
 
-- **框架版本**:只上「最新稳定版」+「最后一个支持 CUDA 11.8 的稳定版」;最新版本自己覆盖 11.8 时只留一个。不收 rc/beta。
-- **CUDA 线**:`13.2` / `12.9` / `11.8` 三条,取值以**框架官方轮子实际发布的 CUDA**为准,基座 `nvidia/cuda` 的小版本与之对齐。
-- **Python**:取该框架支持的**最高**版本;封顶了才降(TF 2.14 → 3.11),PaddlePaddle 用厂商基座自带的 3.10。
-- **框架镜像以同线 Miniconda 镜像为父镜像**。
+- **Framework versions**: only the "latest stable" + "the last stable release supporting CUDA 11.8"; when the latest covers 11.8 itself, keep one. No rc/beta.
+- **CUDA lines**: `13.2` / `12.9` / `11.8`; the value follows the **CUDA the framework's official wheels are actually published for**, and the `nvidia/cuda` base minor version is aligned with it.
+- **Python**: the **highest** version the framework supports; step down only when capped (TF 2.14 → 3.11); PaddlePaddle uses the 3.10 shipped by the vendor base.
+- **Framework images use the Miniconda image of the same line as their parent.**
 
-| 镜像 tag | 框架 | Python | CUDA | 基座 |
+| Image tag | Framework | Python | CUDA | Base |
 |---|---|---|---|---|
-| `miniconda:26.5.3-cu132-py313` | —(干净 conda) | 3.13 | 13.2 | `nvidia/cuda:13.2.1-cudnn-devel-ubuntu24.04` |
-| `pytorch:2.13.0-cu132-py313` | PyTorch 2.13.0 | 3.13 | 13.2 | ↑ 同线 miniconda |
-| `miniconda:26.5.3-cu129-py313` | —(干净 conda) | 3.13 | 12.9 | `nvidia/cuda:12.9.2-cudnn-devel-ubuntu24.04` |
-| `pytorch:2.13.0-cu129-py313` | PyTorch 2.13.0 | 3.13 | 12.9 | ↑ 同线 miniconda |
-| `tensorflow:2.21.0-cu129-py313` | TensorFlow 2.21.0 | 3.13 | 12.9 | ↑ 同线 miniconda |
-| `miniconda:26.5.3-cu118-py313` | —(干净 conda) | 3.13 | 11.8 | `nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04` |
-| `pytorch:2.7.1-cu118-py313` | PyTorch 2.7.1 | 3.13 | 11.8 | ↑ 同线 miniconda |
-| `tensorflow:2.14.1-cu118-py311` | TensorFlow 2.14.1 | 3.11 | 11.8 | CUDA 11.8 基座 + py311 conda(TF 2.14 无 cp313 轮子) |
-| `datascience:2026.08-py313` | 数据科学栈(无框架、无 CUDA):R 4.5.3 + Julia 1.12.7 + pandas/scikit-learn/scipy/matplotlib/seaborn/statsmodels | 3.13 | 无 | `quay.io/jupyter/datascience-notebook`(`latest` 的 digest 快照) |
+| `miniconda:26.5.3-cu132-py313` | — (clean conda) | 3.13 | 13.2 | `nvidia/cuda:13.2.1-cudnn-devel-ubuntu24.04` |
+| `pytorch:2.13.0-cu132-py313` | PyTorch 2.13.0 | 3.13 | 13.2 | ↑ same-line miniconda |
+| `miniconda:26.5.3-cu129-py313` | — (clean conda) | 3.13 | 12.9 | `nvidia/cuda:12.9.2-cudnn-devel-ubuntu24.04` |
+| `pytorch:2.13.0-cu129-py313` | PyTorch 2.13.0 | 3.13 | 12.9 | ↑ same-line miniconda |
+| `tensorflow:2.21.0-cu129-py313` | TensorFlow 2.21.0 | 3.13 | 12.9 | ↑ same-line miniconda |
+| `miniconda:26.5.3-cu118-py313` | — (clean conda) | 3.13 | 11.8 | `nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04` |
+| `pytorch:2.7.1-cu118-py313` | PyTorch 2.7.1 | 3.13 | 11.8 | ↑ same-line miniconda |
+| `tensorflow:2.14.1-cu118-py311` | TensorFlow 2.14.1 | 3.11 | 11.8 | CUDA 11.8 base + py311 conda (TF 2.14 has no cp313 wheel) |
+| `datascience:2026.08-py313` | Data science stack (no framework, no CUDA): R 4.5.3 + Julia 1.12.7 + pandas/scikit-learn/scipy/matplotlib/seaborn/statsmodels | 3.13 | none | `quay.io/jupyter/datascience-notebook` (digest snapshot of `latest`) |
 | `paddle:3.3.1-cu130-py310` | PaddlePaddle 3.3.1 | 3.10 | 13.0 | `paddlepaddle/paddle:3.3.1-gpu-cuda13.0-cudnn9.13` |
 | `paddle:3.3.1-cu129-py310` | PaddlePaddle 3.3.1 | 3.10 | 12.9 | `paddlepaddle/paddle:3.3.1-gpu-cuda12.9-cudnn9.9` |
 | `paddle:3.3.1-cu118-py310` | PaddlePaddle 3.3.1 | 3.10 | 11.8 | `paddlepaddle/paddle:3.3.1-gpu-cuda11.8-cudnn8.9` |
 
-已知空档:
+Known gaps:
 
-- **TensorFlow 无 13.x**:官方尚无 CUDA 13 轮子。
-- **PyTorch 2.13.0 两个镜像无 torchaudio**(torchaudio 停在 2.11.0);2.7.1 镜像三件套齐全。
-- **PaddlePaddle 的 CUDA 线按厂商**(13.0 / 12.9 / 11.8),用飞桨官方基座补平台契约层,不自建。
+- **No TensorFlow 13.x**: no official CUDA 13 wheels yet.
+- **The two PyTorch 2.13.0 images have no torchaudio** (torchaudio stopped at 2.11.0); the 2.7.1 image has all three.
+- **PaddlePaddle CUDA lines follow the vendor** (13.0 / 12.9 / 11.8); the platform contract layer is added on top of the official PaddlePaddle base, not self-built.
 
-## 构建与推送
+## Build and push
 
-一份 `Dockerfile` + `entrypoint.sh` + `superdl_jupyter_auth.py` + `lab-overrides.json`,构建上下文是本目录。`BASE_IMAGE` 必填,基座一律钉 digest。
+One `Dockerfile` + `entrypoint.sh` + `superdl_jupyter_auth.py` + `lab-overrides.json`, the build context is this directory. `BASE_IMAGE` is required and bases are always pinned by digest.
 
-- CUDA 基座 → Miniconda 镜像:同时传 `MINICONDA_INSTALLER`、对应官方 SHA-256 的 `MINICONDA_SHA256`、`CONDA_PATH_PREFIX` 与 `JUPYTER_PACKAGES`;换安装包时同步换哈希。
-- Miniconda 镜像 → 框架镜像:以同 CUDA 线 Miniconda 产物为 `BASE_IMAGE`,传 `FRAMEWORK_PIP` 与可选 `FRAMEWORK_PIP_INDEX`。
-- 厂商框架基座 → 平台镜像:传 `JUPYTER_PACKAGES`,使用基座自带 Python/pip,不传 Miniconda 安装参数或 `CONDA_PATH_PREFIX`。
+- CUDA base → Miniconda image: also pass `MINICONDA_INSTALLER`, the matching official SHA-256 as `MINICONDA_SHA256`, `CONDA_PATH_PREFIX` and `JUPYTER_PACKAGES`; change the hash together with the installer.
+- Miniconda image → framework image: use the Miniconda artifact of the same CUDA line as `BASE_IMAGE`, pass `FRAMEWORK_PIP` and optionally `FRAMEWORK_PIP_INDEX`.
+- Vendor framework base → platform image: pass `JUPYTER_PACKAGES`, use the base's own Python/pip, do not pass Miniconda installer arguments or `CONDA_PATH_PREFIX`.
 
-所有安装步骤之后统一跑一次 `apt full-upgrade`;OpenSSH 版本由基座 OS 决定(24.04 → 9.6p1、22.04 → 8.9p1),不从源码自建;该层在 CUDA 基座上约 **4GB**,不 hold CUDA 包。
+One `apt full-upgrade` runs after every install step; the OpenSSH version follows the base OS (24.04 → 9.6p1, 22.04 → 8.9p1) and is not built from source; that layer is about **4GB** on a CUDA base and does not hold CUDA packages.
 
 ```bash
 cd deploy/instance-images
@@ -122,7 +122,7 @@ docker build -t $REG/tensorflow:2.14.1-cu118-py311 \
   --build-arg FRAMEWORK_PIP="tensorflow==2.14.1" .
 
 docker build -t $REG/datascience:2026.08-py313 \
-  --build-arg BASE_IMAGE=quay.io/jupyter/datascience-notebook@sha256:<当次 digest> \
+  --build-arg BASE_IMAGE=quay.io/jupyter/datascience-notebook@sha256:<digest of this build> \
   --build-arg JUPYTER_PACKAGES="$JUP" .
 
 PADDLE=ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlepaddle/paddle
@@ -132,13 +132,13 @@ for pair in "cu130:3.3.1-gpu-cuda13.0-cudnn9.13" "cu129:3.3.1-gpu-cuda12.9-cudnn
 done
 ```
 
-推送前自检(五步;`deploy/instance-images` 下任何文件改动后重建都要重跑)。前四步全部通过才可推送:
+Pre-push self-check (five steps; re-run after every rebuild that follows any file change under `deploy/instance-images`). Push only when the first four pass:
 
-1. 扩展能在目标基座的 jupyter_server 上 import,输出 `ok`。
-2. Jupyter 套件齐全,jupyternaut persona 与 jupyter-ai-litellm 在位,输出 `ai ok`。
-3. 使用生产 capabilities 与 `2777` 的实例盘启动容器:无效票据返回 403,有效票据跳转 `/lab`,语言设置的默认值为 `zh_CN`。
-4. 实际 SSH 公钥认证成功,输出 `SSHOK`,Python 与补充组正常;会话环境中的敏感测试值匹配数为 0(`grep -c` 无匹配时退出码为 1)。
-5. 用有 push 权限的机器人推送,再取本次 digest,管理端登记 digest 而不是可变 tag。
+1. The extension imports on the target base's jupyter_server and prints `ok`.
+2. The Jupyter package set is complete, the jupyternaut persona and jupyter-ai-litellm are present, prints `ai ok`.
+3. Start the container with the production capabilities and a `2777` instance disk: an invalid ticket answers 403, a valid ticket redirects to `/lab`, the language setting's default is `zh_CN`.
+4. Real SSH public key authentication succeeds and prints `SSHOK`, Python and the supplementary groups are fine; the count of sensitive test values in the session environment is 0 (`grep -c` exits 1 when nothing matches).
+5. Push with a robot that has push permission, then read this build's digest; register the digest in the admin console, never the mutable tag.
 
 ```bash
 IMG=$REG/pytorch:2.13.0-cu132-py313
@@ -163,6 +163,6 @@ docker push $IMG
 echo "$IMG@$(docker inspect --format '{{index .RepoDigests 0}}' $IMG | cut -d@ -f2)"
 ```
 
-GPU 可用性在有卡的节点上验:推送并在管理端登记后,建一台实例跑 `python -c "import torch;print(torch.cuda.is_available())"` / `tf.config.list_physical_devices('GPU')` / `paddle.utils.run_check()`。
+GPU availability is verified on a node with cards: after pushing and registering in the admin console, create an instance and run `python -c "import torch;print(torch.cuda.is_available())"` / `tf.config.list_physical_devices('GPU')` / `paddle.utils.run_check()`.
 
-推完之后的上线动作(管理端登记 digest、`image_ref` 钉 digest、重推 tag 后换 ref、实例 ref 是创建时快照)见 `deploy/cluster/runbooks/image-prewarm.md`。
+The go-live actions after the push (registering the digest in the admin console, pinning `image_ref` to the digest, changing the ref after re-pushing a tag, the instance ref being a creation-time snapshot) are in `deploy/cluster/runbooks/image-prewarm.md`.

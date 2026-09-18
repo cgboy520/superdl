@@ -1,24 +1,24 @@
-# PostgreSQL 备份与恢复 Runbook
+# PostgreSQL backup and restore runbook
 
-恢复演练每季度一次。
+A restore drill runs once per quarter.
 
-> **上线前强制项(公众生产闸)**:分钟级 RPO 二选一:① 托管 PG:确认 PITR 与保留策略已开(preflight 以 `SUPERDL_MANAGED_PG_PITR_ACK=yes` 登记,full 档未登记判红);② 自建 cnpg 档:启用 `cnpg.enabled`(full 档默认开)且 preflight 全绿(S3 归档无占位符、ScheduledBackup 在跑)。
-> 首次切流前按「恢复步骤」+「PITR 抽检」完整演练一次并填 RTO 记录表。
+> **Mandatory before go-live (public production gate)**: minute-level RPO, one of two: ① managed PG: confirm PITR and the retention policy are on (recorded with `SUPERDL_MANAGED_PG_PITR_ACK=yes` in preflight; the full tier is red without it); ② self-hosted cnpg tier: enable `cnpg.enabled` (on by default in the full tier) with preflight all green (S3 archive without placeholders, ScheduledBackup running).
+> Before the first traffic switch, run the "Restore steps" + "PITR spot check" once in full and fill in the RTO log.
 
-## 备份分层
+## Backup layers
 
-| 层 | 手段 | RPO |
+| Layer | Method | RPO |
 |---|---|---|
-| 逻辑备份 | `deploy/app/k8s/06-pg-backup.yaml` 每日 `pg_dump -Fc` → **gpg AES256 客户端加密**(口令 = `superdl-pg-backup` 的 `BACKUP_ENCRYPT_KEY`)→ 对象存储;上传后 restore 冒烟(解密 + pg_restore + 要害表可查询),失败即 Job Failed 告警 | 24h |
-| 连续归档 | CloudNativePG barmanObjectStore S3 WAL 归档 + 每日基础备份(`values/cnpg-cluster.yaml`,cnpg 档);托管 PG 时用 RDS 自动备份 + PITR | 分钟级 |
-| 自建单实例(`deploy/pg/`) | `backup.sh` 每日 dump → gpg → 镜像机 + 恢复冒烟 + pg_hba 漂移比对;`wal-sync.sh` 每 5 分钟把 WAL 段 gpg 后同步(镜像机只有 `.gpg`)、每周日 `pg_basebackup`(gpg,密文 > 1 MiB 且已同步才算成功并建 `base/.done-<日期>`);指标 `superdl_pg_backup_last_success_timestamp_seconds` / `superdl_pg_wal_sync_last_success_timestamp_seconds` / `superdl_pg_basebackup_last_success_timestamp_seconds` / `superdl_pg_hba_drift`(node-exporter textfile),告警 `PgBackupStandaloneStale`(只看第一条) | dump 24h / WAL 5 分钟 |
-| 集群元数据 | RKE2 etcd 快照(每 6h,留 12 份,`rke2/server-config.yaml`);k3s 内嵌 etcd 快照(每 6h,留 28 份,`k3s/server-config.yaml`)+ `k3s/state-backup.sh` 每 6h 把 token / cred / tls / datastore 加密到 PG 镜像机 `k3s/`(指标 `superdl_k3s_state_backup_last_success_timestamp_seconds`;恢复见 `deploy/cluster/README.md`「集群状态备份与恢复」) | 6h |
+| Logical backup | `deploy/app/k8s/06-pg-backup.yaml` daily `pg_dump -Fc` → **gpg AES256 client-side encryption** (passphrase = `BACKUP_ENCRYPT_KEY` of `superdl-pg-backup`) → object storage; a restore smoke after upload (decrypt + pg_restore + key tables queryable), failure means Job Failed and an alert | 24 h |
+| Continuous archiving | CloudNativePG barmanObjectStore S3 WAL archiving + daily base backup (`values/cnpg-cluster.yaml`, cnpg tier); with managed PG the RDS automatic backups + PITR | minutes |
+| Self-hosted single instance (`deploy/pg/`) | `backup.sh` daily dump → gpg → mirror host + restore smoke + pg_hba drift comparison; `wal-sync.sh` every 5 minutes gpg-encrypts WAL segments and syncs them (the mirror holds only `.gpg`), every Sunday `pg_basebackup` (gpg, counts as success only when the ciphertext is > 1 MiB and synced, then creates `base/.done-<date>`); metrics `superdl_pg_backup_last_success_timestamp_seconds` / `superdl_pg_wal_sync_last_success_timestamp_seconds` / `superdl_pg_basebackup_last_success_timestamp_seconds` / `superdl_pg_hba_drift` (node-exporter textfile), alert `PgBackupStandaloneStale` (watches the first one only) | dump 24 h / WAL 5 minutes |
+| Cluster metadata | RKE2 etcd snapshots (every 6 h, 12 kept, `rke2/server-config.yaml`); k3s embedded etcd snapshots (every 6 h, 28 kept, `k3s/server-config.yaml`) + `k3s/state-backup.sh` every 6 h encrypting token / cred / tls / datastore to the PG mirror host's `k3s/` (metric `superdl_k3s_state_backup_last_success_timestamp_seconds`; restore in `deploy/cluster/README.md` "Cluster state backup and restore") | 6 h |
 
-对账:`balance_ledger` 追加式且每行带 `balance_after`,恢复后用 `GET /api/admin/v1/reconciliation` 与流水链校验资金一致性。
+Reconciliation: `balance_ledger` is append-only and every row carries `balance_after`; after a restore verify fund consistency with `GET /api/admin/v1/reconciliation` and the ledger chain.
 
-## 恢复步骤(逻辑备份)
+## Restore steps (logical backup)
 
-分段执行,不要把本节作为连续脚本运行。先下载最近的密文备份并解密,解密口令来自 `superdl-pg-backup` 的 `BACKUP_ENCRYPT_KEY`;恢复后立即清理明文。
+Run in stages; do not treat this section as one continuous script. First download the latest encrypted backup and decrypt it with the passphrase from `BACKUP_ENCRYPT_KEY` of `superdl-pg-backup`; remove the plaintext right after the restore.
 
 ```bash
 aws s3 ls s3://superdl-pg-backup/daily/ --endpoint-url $S3_ENDPOINT | tail -5
@@ -34,7 +34,7 @@ kubectl -n superdl scale deploy superdl-worker superdl-worker-tenant-mgr \
 
 ```
 
-确认 API 与全部 5 个 worker Deployment 已停止写入后,恢复到新库;**禁止原地覆盖生产库**。
+Once the API and all 5 worker Deployments have stopped writing, restore into a new database; **never overwrite the production database in place**.
 
 ```bash
 createdb superdl_restore
@@ -46,13 +46,13 @@ psql superdl_restore -c "SELECT version_num FROM alembic_version"
 
 ```
 
-核验恢复库的行数量级、最新流水时间与 Alembic 版本。核验通过后,将应用连接配置 `SUPERDL_DATABASE_URL` 切换到 `superdl_restore`,确认 API 与各 worker 将使用新连接,再单独启动 API:
+Check the restored database's row counts, latest ledger time and Alembic version. Once they pass, switch the application connection `SUPERDL_DATABASE_URL` to `superdl_restore`, confirm the API and every worker will use the new connection, then start the API alone:
 
 ```bash
 kubectl -n superdl scale deploy superdl-api --replicas=2
 ```
 
-API `/readyz` 与业务冒烟通过后,按 `03-worker.yaml` 的副本定义恢复全部 worker:
+After the API `/readyz` and the business smoke pass, restore every worker to the replica counts defined in `03-worker.yaml`:
 
 ```bash
 kubectl -n superdl scale deploy superdl-worker superdl-worker-tenant-mgr --replicas=2
@@ -60,16 +60,16 @@ kubectl -n superdl scale deploy superdl-worker-node-mgr superdl-worker-prewarm \
   superdl-worker-disk-ops --replicas=1
 ```
 
-公告用户恢复点;恢复点之后的充值以渠道对账单为准,走管理端「补单」逐笔补入。
+Announce the restore point to users; recharges after the restore point follow the channel statements and are credited one by one through the admin "Backfill".
 
-## PITR(自建单实例)
+## PITR (self-hosted single instance)
 
-材料全在镜像机 `pg-mirror/`:`base/base-<ts>.tar.gz.gpg`(取目标时间点之前最近一份)、`wal/*.gpg`(镜像机只有密文)、gpg 口令 `/etc/superdl/pg/backup-passphrase`(与备份机同一份,先复制到恢复机)。在隔离机器上、同版本 PG(镜像 digest 见 `deploy/pg/compose.yaml`;容器则把数据目录挂到镜像的 PGDATA `/var/lib/postgresql/18/docker`)执行:
+All material is on the mirror host under `pg-mirror/`: `base/base-<ts>.tar.gz.gpg` (take the latest one before the target time), `wal/*.gpg` (the mirror holds only ciphertext), the gpg passphrase `/etc/superdl/pg/backup-passphrase` (the same as on the backup host; copy it to the restore machine first). On an isolated machine with the same PG version (image digest in `deploy/pg/compose.yaml`; in a container mount the data directory at the image's PGDATA `/var/lib/postgresql/18/docker`):
 
 ```bash
 mkdir -p /restore/data /restore/wal
 gpg --batch --quiet --decrypt --passphrase-file /etc/superdl/pg/backup-passphrase base-<ts>.tar.gz.gpg | tar -xzf - -C /restore/data
-rsync -a '<镜像机>:/var/lib/superdl/pg-mirror/wal/' /restore/wal/
+rsync -a '<mirror host>:/var/lib/superdl/pg-mirror/wal/' /restore/wal/
 chown -R 999:999 /restore/data /restore/wal && chmod 0700 /restore/data
 touch /restore/data/recovery.signal
 cat >> /restore/data/postgresql.auto.conf <<'EOF'
@@ -79,30 +79,30 @@ recovery_target_action = 'promote'
 EOF
 ```
 
-`restore_command` 在 PG 进程里跑 `gpg`,PG 所在环境须有 gpg 与口令文件(容器则把 `/wal` 与口令文件只读挂进去);没有 gpg 的环境先在宿主机整批解密(`for f in /restore/wal/*.gpg; do gpg --batch --quiet --decrypt --passphrase-file /etc/superdl/pg/backup-passphrase -o "${f%.gpg}" "$f"; done`)再用 `restore_command = 'cp /wal/%f %p'`。启动后看日志到 `recovery stopping before commit of transaction … / database system is ready`,按「恢复步骤」核验流水与 Alembic 版本后再切流。
+`restore_command` runs `gpg` inside the PG process, so PG's environment needs gpg and the passphrase file (in a container mount `/wal` and the passphrase file read-only); without gpg, decrypt the whole batch on the host first (`for f in /restore/wal/*.gpg; do gpg --batch --quiet --decrypt --passphrase-file /etc/superdl/pg/backup-passphrase -o "${f%.gpg}" "$f"; done`) and use `restore_command = 'cp /wal/%f %p'`. After starting, watch the log until `recovery stopping before commit of transaction … / database system is ready`, then verify the ledger and the Alembic version as in "Restore steps" before switching traffic.
 
-## 恢复演练验收
+## Restore drill acceptance
 
-- [ ] 从最近一次每日备份完整恢复到新库 < 30 分钟
-- [ ] `alembic check` 通过;`/readyz` 就绪
-- [ ] 抽 3 个用户核对 余额 = 流水链尾部 `balance_after`
-- [ ] 管理端补单流程可把恢复点后的渠道已付订单补齐
+- [ ] Full restore of the latest daily backup into a new database < 30 minutes
+- [ ] `alembic check` passes; `/readyz` ready
+- [ ] Spot-check 3 users: balance = `balance_after` at the tail of the ledger chain
+- [ ] The admin backfill flow can credit the channel-paid orders after the restore point
 
-## 季度演练清单(每季度一次)
+## Quarterly drill checklist (once per quarter)
 
-- [ ] 日常冒烟在线:近 7 日 `pg-backup-daily` Job 全部成功(含 restore 冒烟),`PgBackupFailed` / `PgBackupStale` 无触发
-- [ ] 完整恢复计时:从对象存储取最近一次备份,按「恢复步骤」恢复到隔离库并计时,结果填入下方 RTO 记录表
-- [ ] 资金一致性:抽 3 个用户核对 余额 = 流水链尾部 `balance_after`;`alembic check` 通过
-- [ ] PITR 抽检:从 WAL 归档恢复到指定时间点(cnpg 档用 recovery 模式集群;托管 PG 用控制台时间点恢复;自建单实例按上文「PITR(自建单实例)」用镜像机上的 base + `.gpg` wal)
-- [ ] 自建单实例备份链在线:镜像机 `base/` 最新文件 > 1 MiB 且 mtime < 8 天;备份机 `base/.done-<最近周日>` 存在;`superdl_pg_wal_sync_last_success_timestamp_seconds` 距今 < 10 分钟、`superdl_pg_basebackup_last_success_timestamp_seconds` 距今 < 8 天;`superdl_pg_hba_drift == 0`
-- [ ] 集群状态备份在线(k3s):镜像机 `k3s/` 最新文件 mtime < 12 小时,`superdl_k3s_state_backup_last_success_timestamp_seconds` 距今 < 12 小时;镜像机不是承载租户负载的节点
-- [ ] 告警链路:手工 fail 一次备份(如临时改错 S3 凭据)确认 `PgBackupFailed` 触达值班,随后恢复
-- [ ] 记录归档:RTO 记录表更新 + 演练结论写入运维周报
+- [ ] Daily smoke online: every `pg-backup-daily` Job of the last 7 days succeeded (restore smoke included), no `PgBackupFailed` / `PgBackupStale` fired
+- [ ] Timed full restore: fetch the latest backup from object storage, restore it into an isolated database following "Restore steps" and time it; write the result into the RTO log below
+- [ ] Fund consistency: spot-check 3 users, balance = `balance_after` at the tail of the ledger chain; `alembic check` passes
+- [ ] PITR spot check: restore from the WAL archive to a given point in time (cnpg tier: a recovery-mode cluster; managed PG: the console's point-in-time restore; self-hosted single instance: "PITR (self-hosted single instance)" above with the base + `.gpg` WAL from the mirror host)
+- [ ] Self-hosted single-instance backup chain online: the newest file in the mirror's `base/` is > 1 MiB with mtime < 8 days; `base/.done-<latest Sunday>` exists on the backup host; `superdl_pg_wal_sync_last_success_timestamp_seconds` < 10 minutes old, `superdl_pg_basebackup_last_success_timestamp_seconds` < 8 days old; `superdl_pg_hba_drift == 0`
+- [ ] Cluster state backup online (k3s): the newest file in the mirror's `k3s/` has mtime < 12 hours, `superdl_k3s_state_backup_last_success_timestamp_seconds` < 12 hours old; the mirror host is not a node carrying tenant workloads
+- [ ] Alert chain: fail one backup by hand (e.g. temporarily break the S3 credentials), confirm `PgBackupFailed` reaches on-call, then restore
+- [ ] Records: update the RTO log + write the drill conclusion into the ops weekly report
 
-## RTO 记录表
+## RTO log
 
-目标 RTO:< 30 分钟(逻辑备份恢复到新库,不含业务切换公告)。
+Target RTO: < 30 minutes (logical backup restored into a new database, excluding the business switch announcement).
 
-| 日期 | 备份类型(逻辑/CNPG basebackup/RDS) | 数据量 | 恢复耗时 | RTO 达标 | 演练人 | 备注 |
+| Date | Backup type (logical / CNPG basebackup / RDS) | Data size | Restore time | RTO met | Operator | Notes |
 |---|---|---|---|---|---|---|
 | | | | | | | |

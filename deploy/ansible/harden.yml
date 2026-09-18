@@ -1,5 +1,5 @@
-# 宿主机加固(servers + agents,幂等):sshd 只公钥、可选 AllowUsers、清理账号、nftables 默认拒、内核 sysctl。
-# 变量、锁死前置与运行顺序见 README.md「harden.yml」。
+# Host hardening (servers + agents, idempotent): key-only sshd, optional AllowUsers, account cleanup, default-deny nftables, kernel sysctl.
+# Variables, the lock-out guard and the run order are in README.md "harden.yml".
 - hosts: all
   become: true
   vars:
@@ -11,15 +11,15 @@
     cluster_cidrs: []
     pod_cidr: "10.42.0.0/16"
     service_cidr: "10.43.0.0/16"
-    # 只对 cluster_cidrs 放行的集群端口;扩展在这里加
+    # Cluster ports allowed from cluster_cidrs only; extend here
     fw_cluster_tcp_ports:
       - "6443"       # kube-apiserver / k3s supervisor
       - "9345"       # rke2 supervisor
       - "10250"      # kubelet
       - "2379-2380"  # etcd(server)
-      - "5001"       # 内嵌镜像仓库 P2P(embedded-registry)
+      - "5001"       # embedded image registry P2P (embedded-registry)
       - "4240"       # Cilium health
-      - "9962-9965"  # Cilium agent / operator / Hubble 指标
+      - "9962-9965"  # Cilium agent / operator / Hubble metrics
       - "9100"       # node-exporter
       - "8080"       # kube-state-metrics
       - "9394"       # HAMi
@@ -30,10 +30,10 @@
     fw_cluster_udp_ports:
       - "8472"   # Cilium VXLAN
       - "51871"  # Cilium WireGuard
-    # 对任意来源放行
+    # Allowed from any source
     fw_public_tcp_ports:
-      - "30000-32767"  # NodePort(租户 SSH)
-    # 仅 servers 组对任意来源放行(Envoy 经 ServiceLB 挂在 server)
+      - "30000-32767"  # NodePort (tenant SSH)
+    # Allowed from any source on the servers group only (Envoy hangs off the server through ServiceLB)
     fw_server_public_tcp_ports:
       - "80"
       - "443"
@@ -44,18 +44,18 @@
       fs.protected_hardlinks: "1"
       fs.protected_symlinks: "1"
   tasks:
-    - name: 连接用户不在 remove_users 里
+    - name: The connecting user is not in remove_users
       assert:
         that: ansible_user_id not in remove_users
-        fail_msg: "remove_users 含当前连接用户 {{ ansible_user_id }}"
+        fail_msg: "remove_users contains the connecting user {{ ansible_user_id }}"
 
-    - name: 防火墙前置:cluster_cidrs 必须给出
+    - name: "Firewall prerequisite: cluster_cidrs must be given"
       assert:
         that: cluster_cidrs | length > 0
-        fail_msg: "cluster_cidrs 为空:填节点内网网段(如 10.0.0.0/24),否则集群端口全部被拒"
+        fail_msg: "cluster_cidrs is empty: fill in the node internal ranges (e.g. 10.0.0.0/24), otherwise every cluster port is refused"
       when: firewall_enabled
 
-    - name: 统计可登录公钥数(ssh_allow_users 非空只数这些用户,否则数 root 与 uid ≥ 1000 的用户)
+    - name: Count usable public keys (with a non-empty ssh_allow_users only those users count, otherwise root and users with uid ≥ 1000)
       shell: |
         users="{{ ssh_allow_users | join(' ') }}"
         [ -n "$users" ] || users="root $(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 { print $1 }' | tr '\n' ' ')"
@@ -75,16 +75,16 @@
       register: pubkey_count
       changed_when: false
 
-    - name: 关口令登录前必须已有公钥(否则锁死)
+    - name: A public key must exist before turning password login off (lock-out guard)
       assert:
         that: pubkey_count.stdout | int > 0
         fail_msg: >-
-          目标机没有任何可用公钥(root / ssh_allow_users 的 authorized_keys 为空):
-          先 ssh-copy-id 再跑本 playbook
+          the target has no usable public key (the authorized_keys of root / ssh_allow_users are empty):
+          run ssh-copy-id first, then this playbook
 
-    - name: sshd drop-in 落盘并自检
+    - name: Write the sshd drop-in and self-check
       block:
-        - name: sshd 加固 drop-in(10- 前缀排在 50-cloud-init.conf 之前)
+        - name: sshd hardening drop-in (the 10- prefix sorts before 50-cloud-init.conf)
           template:
             src: templates/sshd-superdl.conf.j2
             dest: /etc/ssh/sshd_config.d/10-superdl.conf
@@ -96,22 +96,22 @@
           command: /usr/sbin/sshd -t
           changed_when: false
       rescue:
-        - name: 自检失败:撤回 drop-in
+        - name: "Self-check failed: withdraw the drop-in"
           file:
             path: /etc/ssh/sshd_config.d/10-superdl.conf
             state: absent
-        - name: 中止
+        - name: Abort
           fail:
-            msg: "sshd -t 未通过,drop-in 已撤回;看上一步输出"
+            msg: "sshd -t failed, the drop-in has been withdrawn; see the previous step's output"
 
-    - name: 清理账号(remove_users;保留 home)
+    - name: Clean up accounts (remove_users; home kept)
       user:
         name: "{{ item }}"
         state: absent
         remove: false
       loop: "{{ remove_users }}"
 
-    - name: nftables 包
+    - name: nftables package
       apt:
         name: nftables
         state: present
@@ -119,14 +119,14 @@
         cache_valid_time: 3600
       when: firewall_enabled
 
-    - name: nftables.service drop-in 目录
+    - name: nftables.service drop-in directory
       file:
         path: /etc/systemd/system/nftables.service.d
         state: directory
         mode: "0755"
       when: firewall_enabled
 
-    - name: nftables.service 的 ExecStop 只删本表(发行版默认 flush ruleset 会连 Docker / Cilium / kubelet 的 iptables-nft 表一起清)
+    - name: nftables.service ExecStop deletes only this table (the distribution default flush ruleset would clear the iptables-nft tables of Docker / Cilium / kubelet too)
       copy:
         dest: /etc/systemd/system/nftables.service.d/superdl.conf
         mode: "0644"
@@ -137,7 +137,7 @@
       notify: daemon-reload
       when: firewall_enabled
 
-    - name: 渲染 /etc/nftables.conf(nft -c 预检通过才落盘)
+    - name: Render /etc/nftables.conf (written only after the nft -c pre-check passes)
       template:
         src: templates/nftables.conf.j2
         dest: /etc/nftables.conf
@@ -148,14 +148,14 @@
       notify: apply-nftables
       when: firewall_enabled
 
-    - name: nftables 开机加载
+    - name: nftables loaded at boot
       systemd:
         name: nftables
         enabled: true
         daemon_reload: true
       when: firewall_enabled
 
-    - name: 内核加固 sysctl
+    - name: Kernel hardening sysctl
       copy:
         dest: /etc/sysctl.d/60-superdl-harden.conf
         mode: "0644"

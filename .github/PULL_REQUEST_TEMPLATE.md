@@ -4,7 +4,7 @@
 
 ## Checklist
 
-Run the gates that match the change (see `CLAUDE.md` → 工作流与提交约定 / CI is the merge gate):
+Run the gates that match the change (see `CLAUDE.md` → Workflow and commit conventions / CI is the merge gate):
 
 - [ ] Backend: `uv run ruff format . && uv run ruff check --fix .`, `uv run pyright`, `uv run lint-imports`, `uv run pytest -n 8`
 - [ ] Models / migrations: `uv run alembic check` (migrations are append-only; `downgrade` raises)

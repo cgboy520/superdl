@@ -20,10 +20,10 @@ src = open(sys.argv[1], encoding="utf-8").read()
 src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
 src = re.sub(r"(?m)^\s*//.*$", "", src)
 src = re.sub(r"(?m)\s//[^\"'`]*$", "", src)
-sys.exit(1 if re.search(r"[一-鿿]", src) else 0)
+sys.exit(1 if re.search(r"[一-鿿]", src) else 0)  # cjk-ok
 PY
     then :; else
-      echo "CJK 残留: $file"
+      echo "CJK leftover: $file"
       fail=1
     fi
   done < <(find apps/admin/src apps/web/src -name "*.tsx" -o -name "*.ts" \
@@ -46,10 +46,7 @@ REPO_CJK_EXEMPT=(
 
 # Still untranslated. Remove a prefix in the PR that translates it; never add one.
 REPO_CJK_ALLOW=(
-  ".github/"
   "CLAUDE.md"
-  "deploy/"
-  "scripts/"
 )
 
 CJK_EXEMPT="$(printf '%s\n' "${REPO_CJK_EXEMPT[@]}")" \
@@ -58,8 +55,8 @@ python3 - <<'PY'
 import fnmatch, os, re, subprocess, sys
 
 EXTS = (".md", ".py", ".ts", ".tsx", ".sh", ".bats", ".yml", ".yaml", ".j2", ".conf", ".toml", ".html", ".css")
-# Han ideographs, CJK symbols/punctuation (、。「」…) and fullwidth forms (,:();).
-CJK = re.compile(r"[一-鿿　-〿＀-￯]")
+# Han ideographs (U+4E00-U+9FFF), CJK symbols and punctuation (U+3000-U+303F) and fullwidth forms (U+FF00-U+FFEF).
+CJK = re.compile(r"[一-鿿　-〿＀-￯]")  # cjk-ok
 exempt = [p for p in os.environ["CJK_EXEMPT"].splitlines() if p]
 allow = [p for p in os.environ["CJK_ALLOW"].splitlines() if p]
 

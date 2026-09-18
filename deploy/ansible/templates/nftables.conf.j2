@@ -1,5 +1,5 @@
 #!/usr/sbin/nft -f
-# deploy/ansible/harden.yml 渲染;只管理 table inet superdl,不 flush ruleset(Docker / Cilium / kubelet 的 iptables-nft 表各归其主)。
+# Rendered by deploy/ansible/harden.yml; manages only table inet superdl and never flushes the ruleset (the iptables-nft tables of Docker / Cilium / kubelet belong to their owners).
 {% set ssh_v4 = ssh_allow_cidrs | reject('search', ':') | list %}
 {% set ssh_v6 = ssh_allow_cidrs | select('search', ':') | list %}
 table inet superdl

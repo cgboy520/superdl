@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""检查 Markdown 相对链接、代码围栏外的反引号仓库路径及告警 runbook_url。
+"""Check Markdown relative links, backticked repository paths outside code fences and alert runbook_url values.
 
-用法:python3 scripts/check-docs-links.py [a.md b.md ...]。
-无参数时扫描全仓文档与告警规则;有参数时只检查指定文档。
-退出码:0 通过;1 有断链,逐条打印文件、行号与说明。
+Usage: python3 scripts/check-docs-links.py [a.md b.md ...].
+Without arguments it scans every document in the repository plus the alert rules; with arguments only the given documents.
+Exit code: 0 = pass; 1 = broken references, each printed with file, line and explanation.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ def _exists_glob(pattern: str) -> bool:
 
 
 def check_link(target: str, base_dir: str) -> str | None:
-    """相对链接:按文件所在目录解析。返回错误说明或 None。"""
+    """Relative link: resolved against the file's directory. Returns the error text or None."""
     if target.startswith(("http://", "https://", "mailto:", "#")):
         return None
     path = target.split("#", 1)[0]
@@ -55,12 +55,12 @@ def check_link(target: str, base_dir: str) -> str | None:
         return None
     resolved = os.path.normpath(os.path.join(base_dir, path))
     if not _exists_glob(resolved):
-        return f"链接目标不存在:{target}"
+        return f"link target missing: {target}"
     return None
 
 
 def check_code_path(token: str, base_dir: str) -> str | None:
-    """反引号路径:按「文档目录 → 仓库根 → apps/api」依次解析。返回错误说明或 None。"""
+    """Backticked path: resolved against the document directory, then the repository root, then apps/api. Returns the error text or None."""
     token = token.strip()
     if "/" not in token or not PATH_LIKE_RE.match(token):
         return None
@@ -72,7 +72,7 @@ def check_code_path(token: str, base_dir: str) -> str | None:
     bases = [base_dir, ROOT, os.path.join(ROOT, "apps", "api")]
     if any(_exists_glob(os.path.join(b, token)) for b in bases):
         return None
-    return f"仓库路径不存在:`{token}`"
+    return f"repository path missing: `{token}`"
 
 
 def check_file(path: str) -> list[str]:
@@ -99,7 +99,7 @@ def check_file(path: str) -> list[str]:
 
 
 def github_slug(heading: str) -> str:
-    """GitHub 标题锚点:小写,去标点(保留字母数字含 CJK、空格、连字符、下划线),空格转连字符。"""
+    """GitHub heading anchor: lowercase, punctuation removed (letters, digits including CJK, spaces, hyphens and underscores kept), spaces to hyphens."""
     text = re.sub(r"[^\w\s-]", "", heading.strip().lower())
     return re.sub(r"\s+", "-", text)
 
@@ -115,7 +115,7 @@ def heading_slugs(md_path: str) -> set[str]:
 
 
 def check_runbook_urls(deploy_dir: str = os.path.join(ROOT, "deploy")) -> list[str]:
-    """告警规则里的 runbook_url:目标文件必须存在,锚点必须对得上标题。返回错误列表。"""
+    """runbook_url in alert rules: the target file must exist and the anchor must match a heading. Returns the error list."""
     findings: list[str] = []
     for dirpath, _dirnames, filenames in os.walk(deploy_dir):
         for name in sorted(filenames):
@@ -129,13 +129,13 @@ def check_runbook_urls(deploy_dir: str = os.path.join(ROOT, "deploy")) -> list[s
                         repo_path, anchor = m.group(1), m.group(2)
                         target = os.path.join(ROOT, repo_path)
                         if not os.path.isfile(target):
-                            findings.append(f"{rel}:{lineno}: runbook_url 目标不存在:{repo_path}")
+                            findings.append(f"{rel}:{lineno}: runbook_url target missing: {repo_path}")
                             continue
                         if anchor:
                             anchor = urllib.parse.unquote(anchor)
                             if anchor not in heading_slugs(target):
                                 findings.append(
-                                    f"{rel}:{lineno}: runbook_url 锚点不存在:#{anchor}(目标 {repo_path})"
+                                    f"{rel}:{lineno}: runbook_url anchor missing: #{anchor} (target {repo_path})"
                                 )
     return findings
 
@@ -148,11 +148,11 @@ def main(argv: list[str]) -> int:
     if len(argv) == 1:
         findings.extend(check_runbook_urls())
     if not findings:
-        print(f"文档引用检查通过({len(files)} 个文件)")
+        print(f"docs reference check passed ({len(files)} files)")
         return 0
     for line in findings:
         print(f"::error::{line}")
-    print(f"共 {len(findings)} 处断链:修正引用,或引用已删除的文件时同步改文档")
+    print(f"{len(findings)} broken reference(s): fix the reference, or update the document when it points at a deleted file")
     return 1
 
 

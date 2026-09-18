@@ -1,7 +1,7 @@
 #!/bin/bash
-# 每 5 分钟:wal_archive/ 的段 gpg 到 wal_enc/<段>.gpg,wal_enc/ rsync 到镜像机 wal/(镜像机只有密文);每周日一份 pg_basebackup(gpg)到 base/ 与镜像机 base/。
-# 指标(node-exporter textfile,两条 gauge 同一文件):superdl_pg_wal_sync_last_success_timestamp_seconds、superdl_pg_basebackup_last_success_timestamp_seconds;失败保留上次值。
-# basebackup 成功 = 密文 > 1 MiB 且已同步到镜像机,成功才建 base/.done-<日期>;失败退出非零但 WAL 同步照常执行,同日已有本地归档则只补同步。
+# Every 5 minutes: segments in wal_archive/ are gpg-encrypted to wal_enc/<segment>.gpg and wal_enc/ is rsynced to the mirror host wal/ (the mirror holds only ciphertext); every Sunday one pg_basebackup (gpg) into base/ and the mirror host base/.
+# Metrics (node-exporter textfile, two gauges in one file): superdl_pg_wal_sync_last_success_timestamp_seconds, superdl_pg_basebackup_last_success_timestamp_seconds; the previous value is kept on failure.
+# basebackup success = ciphertext > 1 MiB and synced to the mirror; only then is base/.done-<date> created; on failure the exit is non-zero but the WAL sync still runs, and with a local archive already present that day only the sync is retried.
 set -euo pipefail
 DATA=/var/lib/superdl/pg/data
 WAL="$DATA/wal_archive"
@@ -38,10 +38,10 @@ write_prom() {
   [[ -d "$TEXTFILE_DIR" ]] || return 0
   chmod 0755 "$TEXTFILE_DIR"
   {
-    printf '# HELP superdl_pg_wal_sync_last_success_timestamp_seconds 自建 PG WAL 归档加密并同步到镜像机最近一次成功的 Unix 时间\n'
+    printf '# HELP superdl_pg_wal_sync_last_success_timestamp_seconds Unix time of the last successful encrypted WAL archive sync to the mirror host (self-hosted PG)\n'
     printf '# TYPE superdl_pg_wal_sync_last_success_timestamp_seconds gauge\n'
     if [[ -n "$1" ]]; then printf 'superdl_pg_wal_sync_last_success_timestamp_seconds %s\n' "$1"; fi
-    printf '# HELP superdl_pg_basebackup_last_success_timestamp_seconds 自建 PG 每周 pg_basebackup(gpg 且已同步到镜像机)最近一次成功的 Unix 时间\n'
+    printf '# HELP superdl_pg_basebackup_last_success_timestamp_seconds Unix time of the last successful weekly pg_basebackup (gpg, synced to the mirror host; self-hosted PG)\n'
     printf '# TYPE superdl_pg_basebackup_last_success_timestamp_seconds gauge\n'
     if [[ -n "$2" ]]; then printf 'superdl_pg_basebackup_last_success_timestamp_seconds %s\n' "$2"; fi
   } > "$PROM.tmp"

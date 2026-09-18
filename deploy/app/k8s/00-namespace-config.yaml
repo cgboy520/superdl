@@ -48,7 +48,7 @@ data:
   SUPERDL_ADMIN_MFA_ENABLED: "true"
   SUPERDL_CAPTCHA_SCENE_ID: "CHANGE_ME"
   SUPERDL_CAPTCHA_PREFIX: "CHANGE_ME"
-  # 生产必须列全:Envoy 数据面 Pod 网段 + 每一层公网前置(CDN 回源地址段、前置反代出口)。
-  # 少写任何一跳,应用层看到的客户端 IP 就是那一跳的地址:所有按 IP 的限流桶合并成一个,audit_log.ip 也全是它。
-  # 与 04-gateway.yaml ClientTrafficPolicy 的 clientIPDetection.xForwardedFor.numTrustedHops 同步改。
+  # Production must list everything: the Envoy data plane Pod range + every public upstream layer (CDN origin ranges, front proxy egress).
+  # Miss any hop and the client IP the application sees is that hop's address: every per-IP rate limit bucket merges into one and audit_log.ip is all the same.
+  # Change together with clientIPDetection.xForwardedFor.numTrustedHops in the 04-gateway.yaml ClientTrafficPolicy.
   FORWARDED_ALLOW_IPS: "10.42.0.0/16"

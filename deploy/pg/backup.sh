@@ -1,6 +1,6 @@
 #!/bin/bash
-# 每日:pg_dump -Fc → gpg → 本机留 14 天 → rsync 镜像机 dump/ → 恢复冒烟(临时库数三张资金表)→ 写 .last-success 与 textfile 指标。
-# 顺带比对 pg_hba:容器内 /etc/pg/pg_hba.conf 对 /etc/superdl/pg/pg_hba.conf,后者再对 SUPERDL_PG_HBA_REF(backup.env 可选,仓库副本路径);不一致只告警并写 superdl_pg_hba_drift 1。
+# Daily: pg_dump -Fc → gpg → 14 days kept locally → rsync to the mirror host dump/ → restore smoke (count three fund tables in a temporary database) → write .last-success and the textfile metrics.
+# Also compares pg_hba: /etc/pg/pg_hba.conf inside the container against /etc/superdl/pg/pg_hba.conf, and that against SUPERDL_PG_HBA_REF (optional in backup.env, path of the repository copy); a mismatch only warns and writes superdl_pg_hba_drift 1.
 set -euo pipefail
 B=/var/lib/superdl/pg/backup
 COMPOSE=/etc/superdl/pg/compose.yaml
@@ -46,10 +46,10 @@ date -u +%s > "$B/.last-success"
 if [[ -d "$TEXTFILE_DIR" ]]; then
   chmod 0755 "$TEXTFILE_DIR"
   {
-    printf '# HELP superdl_pg_backup_last_success_timestamp_seconds 自建 PG 每日备份(含异地同步与恢复冒烟)最近一次成功的 Unix 时间\n'
+    printf '# HELP superdl_pg_backup_last_success_timestamp_seconds Unix time of the last successful self-hosted PG daily backup (off-site sync and restore smoke included)\n'
     printf '# TYPE superdl_pg_backup_last_success_timestamp_seconds gauge\n'
     printf 'superdl_pg_backup_last_success_timestamp_seconds %s\n' "$(cat "$B/.last-success")"
-    printf '# HELP superdl_pg_hba_drift 自建 PG 的 pg_hba.conf 容器内 / 宿主机 / 仓库副本不一致(1 = 不一致)\n'
+    printf '# HELP superdl_pg_hba_drift Self-hosted PG pg_hba.conf differs between container / host / repository copy (1 = mismatch)\n'
     printf '# TYPE superdl_pg_hba_drift gauge\n'
     printf 'superdl_pg_hba_drift %s\n' "$hba_drift"
   } > "$TEXTFILE_DIR/superdl_pg_backup.prom.tmp"

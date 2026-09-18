@@ -71,7 +71,7 @@ cephFileSystems:
       name: superdl-cephfs
       isDefault: false
       pool: data0
-      # 数据盘删除即由 CSI 删子卷;存量 PV 的 persistentVolumeReclaimPolicy 不随 SC 改,迁移见 runbooks/cluster-validation.md「D. 存储」
+      # Deleting a data disk lets the CSI delete the subvolume; the persistentVolumeReclaimPolicy of existing PVs does not follow the SC, migration in runbooks/cluster-validation.md section D. Storage
       reclaimPolicy: Delete
       allowVolumeExpansion: true
       mountOptions: []

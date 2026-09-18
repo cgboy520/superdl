@@ -1,76 +1,76 @@
-# 切换节点池(SOP)
+# Switching a node's pool (SOP)
 
-把一台节点在 `kata` / `hami` / `mig` 三个池之间换过去。场景:为整卡直通做实机验证、按库存需要调整档位配比、
-验证失败后切回原池。`cpu` 池是无卡机的物理属性,不参与切换。
+Move a node between the `kata` / `hami` / `mig` pools. Scenarios: real-hardware validation of whole-card passthrough, rebalancing tiers to stock needs,
+switching back after a failed validation. The `cpu` pool is the physical property of GPU-less machines and does not take part.
 
-**不需要登录节点,也不重启。** 池是一个纯标签:池间差异的节点侧软件全部由 DaemonSet 按标签投送
-(`kata-deploy` 认 `node-restriction.kubernetes.io/superdl-pool=kata`、HAMi device-plugin 认
-`node-restriction.kubernetes.io/superdl-pool=hami`、gpu-operator 的 vfio-manager 与 sandbox 插件认
-`nvidia.com/gpu.deploy.*`),整卡直通的绑定与解绑由 vfio-manager 在运行时做。IOMMU 是装机基线,不随池变。
-池标签键带 `node-restriction.kubernetes.io/` 前缀:NodeRestriction 准入插件禁止 kubelet 自打或改动,只有平台 SA
-(准入策略③ 放行这一个键)能写;`superdl-infra` 落点键同前缀但平台 SA 也不能动。
-端点与不变量见 [`docs/reference/nodes.md`](../../../docs/reference/nodes.md)。
+**No login to the node, no reboot.** A pool is a pure label: every node-side software difference between pools is delivered by DaemonSets keyed on labels
+(`kata-deploy` follows `node-restriction.kubernetes.io/superdl-pool=kata`, the HAMi device plugin follows
+`node-restriction.kubernetes.io/superdl-pool=hami`, gpu-operator's vfio-manager and sandbox plugin follow
+`nvidia.com/gpu.deploy.*`); binding and unbinding for whole-card passthrough is done at runtime by vfio-manager. IOMMU is part of the install baseline and does not change with the pool.
+The pool label key carries the `node-restriction.kubernetes.io/` prefix: the NodeRestriction admission plugin forbids kubelets to set or change it, only the platform SA
+(admission policy ③ allows exactly this key) may write it; the `superdl-infra` placement key shares the prefix but even the platform SA cannot touch it.
+Endpoints and invariants are in [`docs/reference/nodes.md`](../../../docs/reference/nodes.md).
 
-## 前置
+## Prerequisites
 
-- 节点上**没有未释放实例**,含已关机 / 冻结 / 失败的。清空节点的做法见 [gpu-fault-sop.md](./gpu-fault-sop.md) 第 2–3 步。
-- 目标池运行时已就绪:kata 看 `kubectl get runtimeclass kata-qemu`,hami 看 `hami-scheduler`,
-  mig 看 gpu-operator。管理端集群页组件体检同判据。
-- 切到 mig 池要求机型支持 MIG(A100 / A800 / A30 / H100 / H800 / H200 / H20 / B200 / GB200 系)。
-- 切到 kata 池要求机型能整卡直通(`core/gpu_models.PASSTHROUGH_CAPABLE_FAMILIES`:独立 PCIe / SXM 板卡)。
-  Grace 超级芯片的集成 GPU(GB10 / GB200)固件强制 1:1 IOMMU 映射,内核拒绝把它绑到 `vfio-pci`,平台直接 409(硬件事实汇总见 [hardware-notes.md](./hardware-notes.md))。
-- 切到 kata 池还要求**该节点宿主没有 NVIDIA 驱动**,先做下一节。两个机型闸门在管理端表现为目标池灰置。
-- 准入策略已是允许 GPU operand 键的版本,否则 worker 改标签会被 Deny:
+- The node has **no unreleased instances**, stopped / frozen / failed included. Emptying a node is steps 2–3 of [gpu-fault-sop.md](./gpu-fault-sop.md).
+- The target pool's runtime is ready: kata checks `kubectl get runtimeclass kata-qemu`, hami checks `hami-scheduler`,
+  mig checks gpu-operator. The admin cluster page's component health uses the same criteria.
+- Switching to the mig pool requires a MIG-capable model (A100 / A800 / A30 / H100 / H800 / H200 / H20 / B200 / GB200 families).
+- Switching to the kata pool requires a model that can be passed through whole (`core/gpu_models.PASSTHROUGH_CAPABLE_FAMILIES`: discrete PCIe / SXM boards).
+  The integrated GPU of Grace superchips (GB10 / GB200) has a firmware-enforced 1:1 IOMMU mapping, the kernel refuses to bind it to `vfio-pci`, and the platform answers 409 directly (hardware facts in [hardware-notes.md](./hardware-notes.md)).
+- Switching to the kata pool also requires **no NVIDIA driver on the node host**; do the next section first. Both model gates appear in the admin console as a greyed target pool.
+- The admission policy is the version that allows the GPU operand keys, otherwise the worker's label change is denied:
 
 ```bash
 kubectl apply -f deploy/cluster/admission/tenant-restrictions.yaml
 ```
 
-## 切到 kata 前:卸载宿主 NVIDIA 驱动
+## Before switching to kata: remove the host NVIDIA driver
 
-gpu-operator 的 vfio-manager 见到宿主预装驱动会直接 `fatal: driver is pre-installed on host`,
-GPU 留在 `nvidia` 驱动上绑不到 `vfio-pci`,节点 `nvidia.com/gpu` 可分配数归 0。
-装机时就定 kata 池的节点由 `node-join.sh` 跳过驱动与 container-toolkit,不必做本节;
-把在役的 hami / mig 节点切进 kata 才需要,顺序是**先卸驱动、再切池**。
+gpu-operator's vfio-manager fails at once with `fatal: driver is pre-installed on host` when it finds a host driver,
+the GPU stays on the `nvidia` driver and cannot bind to `vfio-pci`, and the node's allocatable `nvidia.com/gpu` drops to 0.
+Nodes assigned to the kata pool at install time skip the driver and container-toolkit in `node-join.sh`, so this section does not apply to them;
+it is needed only when moving an in-service hami / mig node into kata, and the order is **remove the driver first, switch the pool second**.
 
-**只写 modprobe 黑名单不够**:驱动包还在,`node-join.sh` 的 kata 闸(`dpkg -l 'nvidia-driver-*'`)与
-gpu-operator 的预装驱动判定都会命中,必须真的把包卸掉。
+**A modprobe blacklist alone is not enough**: the driver package is still installed, so both the kata gate in `node-join.sh` (`dpkg -l 'nvidia-driver-*'`) and
+gpu-operator's pre-installed driver check still trigger; the package really has to be purged.
 
 ```bash
-# 1. 节点已空(切池同一道闸)且已封锁
+# 1. The node is empty (the same gate as the pool switch) and cordoned
 kubectl cordon <node>
 
-# 2. 先演练,看清连带删除的包(尤其 CUDA 工具链与 container-toolkit 的依赖)
+# 2. Dry run first to see the packages removed along (especially the CUDA toolchain and container-toolkit dependencies)
 ssh <node> 'apt-get -s purge "nvidia-driver-*"'
 
-# 3. 确认无误后执行,再重启
+# 3. When it looks right, run it and reboot
 ssh <node> 'systemctl disable --now nvidia-persistenced || true
   DEBIAN_FRONTEND=noninteractive apt-get purge -y "nvidia-driver-*"
   update-initramfs -u && reboot'
 
-# 4. 重启后判据:三条都要成立
+# 4. After the reboot all three must hold
 ssh <node> '! test -e /proc/driver/nvidia \
   && ! lsmod | grep -q "^nvidia" \
   && ! dpkg -l "nvidia-driver-*" 2>/dev/null | grep -q "^ii" \
-  && echo "宿主无驱动"'
+  && echo "no host driver"'
 ```
 
-切回 hami / mig 时反向做:装回驱动包(`apt-get install -y nvidia-driver-<版本>-server`,版本取平台配置
-`node_driver_version`)→ 重启 → `nvidia-smi` 出卡后再切池,否则节点回到 hami 池也认不到卡。
+Switching back to hami / mig goes the other way: reinstall the driver package (`apt-get install -y nvidia-driver-<version>-server`, the version from the platform configuration
+`node_driver_version`) → reboot → switch the pool only once `nvidia-smi` shows the cards, otherwise the node returns to the hami pool without recognising them.
 
-## 步骤
+## Steps
 
-1. 管理端 节点与 GPU → 目标节点行「切换池」→ 选目标池 → 填原因 → 确认。
-2. 受理后节点立即封锁,池标签与 GPU operand 标签经 outbox 收敛(秒级,60s 巡检兜底)。
-3. 逐项核对(下节)。**平台不自动解封**,全绿后在管理端「解封」。
+1. Admin Nodes and GPUs → the target node's row "Switch pool" → pick the target pool → enter a reason → confirm.
+2. Once accepted the node is cordoned at once; the pool label and the GPU operand labels converge through the outbox (seconds, the 60 s patrol as fallback).
+3. Verify item by item (next section). **The platform never uncordons automatically**; uncordon in the admin console once everything is green.
 
-## 核对
+## Verification
 
-按下面命令依次核对,不满足判据时保持封锁:
+Check with the commands below in order and keep the node cordoned while any criterion fails:
 
-- kata 池:`nvidia.com/gpu.workload.config=vm-passthrough`,不保留 `nvidia.com/gpu.deploy.device-plugin`;有 kata-deploy、vfio-manager、sandbox-device-plugin,没有 hami-device-plugin。
-- kata 池的 GPU 绑定到 `vfio-pci`,且每张卡独立一个 IOMMU 组;同组多卡时禁止在该节点售卖整卡档。
-- 回到 hami 池:HAMi device plugin 在、官方 device plugin 不在,GPU 绑定回 `nvidia`,节点重新注册 `nvidia.com/gpu` 可分配资源。
+- kata pool: `nvidia.com/gpu.workload.config=vm-passthrough` and no leftover `nvidia.com/gpu.deploy.device-plugin`; kata-deploy, vfio-manager and sandbox-device-plugin present, hami-device-plugin absent.
+- The kata pool's GPUs are bound to `vfio-pci`, each card in its own IOMMU group; with several cards in one group, selling the whole-card tier on that node is forbidden.
+- Back in the hami pool: the HAMi device plugin present, the official device plugin absent, the GPUs bound back to `nvidia`, the node registers allocatable `nvidia.com/gpu` again.
 
 ```bash
 kubectl get node <node> -L node-restriction.kubernetes.io/superdl-pool -L nvidia.com/gpu.workload.config \
@@ -84,25 +84,25 @@ ssh <node> 'lspci -nnk -d 10de:; for g in /sys/kernel/iommu_groups/*/devices/*; 
 kubectl get node <node> -o jsonpath='{.status.allocatable}' | tr ',' '\n' | grep nvidia
 ```
 
-真开一台目标档位的实例跑通,再解封。
+Start one real instance of the target tier end to end, then uncordon.
 
-## 池标签键迁移(`superdl.io/pool` → `node-restriction.kubernetes.io/superdl-pool`,一次性)
+## Pool label key migration (`superdl.io/pool` → `node-restriction.kubernetes.io/superdl-pool`, one-off)
 
-存量集群的节点带旧键 `superdl.io/pool`,`hami` / `kata-deploy` 的 nodeSelector 只认新键。顺序固定,每步做完再下一步:
+Nodes of existing clusters carry the old key `superdl.io/pool`; the `hami` / `kata-deploy` nodeSelectors accept only the new key. The order is fixed, finish each step before the next:
 
-1. 下发新准入策略(旧策略③ 不放行新键,平台写标签会被 Deny):`kubectl apply -f deploy/cluster/admission/tenant-restrictions.yaml`。
-2. 发布带新键的 api / worker(`scripts/release.sh`):节点巡检按 `node_specs.desired_pool` 给每台节点打新键并摘掉旧键 `superdl.io/pool`,不需要手工 label。核对:`kubectl get nodes -L node-restriction.kubernetes.io/superdl-pool -L superdl.io/pool`,新列齐全、旧列全空。
-3. `./apply.sh <full|light> -l name=hami` 与 `./apply.sh <full|light> -l name=kata-deploy`:DaemonSet 按新键重新落位。`./preflight.sh` 会在任何节点仍带旧键时 ✗。
+1. Ship the new admission policy (the old policy ③ does not allow the new key, the platform's label write would be denied): `kubectl apply -f deploy/cluster/admission/tenant-restrictions.yaml`.
+2. Release the api / worker with the new key (`scripts/release.sh`): the node patrol applies the new key to every node from `node_specs.desired_pool` and removes the old key `superdl.io/pool`; no manual label. Check: `kubectl get nodes -L node-restriction.kubernetes.io/superdl-pool -L superdl.io/pool`, the new column complete, the old column empty.
+3. `./apply.sh <full|light> -l name=hami` and `./apply.sh <full|light> -l name=kata-deploy`: the DaemonSets re-place by the new key. `./preflight.sh` fails while any node still carries the old key.
 
-第 2 步摘旧键到第 3 步落位之间,hami-device-plugin / kata-deploy Pod 会离开节点:已运行实例不受影响(device plugin 只参与新分配),窗口内不要开新的共享档 / 整卡档实例。
+Between removing the old key in step 2 and the re-placement in step 3, the hami-device-plugin / kata-deploy Pods leave the nodes: running instances are unaffected (the device plugin only takes part in new allocations); do not start new shared-tier / whole-card instances inside that window.
 
-## 坑
+## Pitfalls
 
-- **手工 `kubectl label` 改池会被顶回去**:期望池(`node_specs.desired_pool`)是事实源,巡检 C2 按它纠偏,
-  而且「标签不符且节点仍可调度」会计 critical 指标 `NodePoolLabelMismatch` 并自动封锁该节点。要改池走管理端。
-- **期望池切完不清空**。Node 对象若被删除重建,kubelet 不带池标签回来,C2 按它补齐。
-- gpu-operator 派生 `nvidia.com/gpu.deploy.*` 时**不覆盖已存在的值**;切池必须把旧池残留键删掉。
-  平台下发的是整套完备集(`core/gpu_adapter.pool_node_labels`),手工操作时别只改一半。
-- `kata-deploy` 没有清理钩子(`command: kata-deploy install`,无 preStop),kata → 其他池会在节点上留下
-  未使用的 containerd runtime handler,无影响,无需清理。
-- MIG 模式开关需要 GPU reset,mig-manager 在运行时做;部分驱动/机型组合仍要整机重启,只影响 mig 池。
+- **A manual `kubectl label` pool change is reverted**: the desired pool (`node_specs.desired_pool`) is the source of truth, patrol C2 corrects drift,
+  and "label mismatch while the node is still schedulable" counts the critical metric `NodePoolLabelMismatch` and cordons the node automatically. Change pools through the admin console.
+- **The desired pool is not cleared after the switch.** If the Node object is deleted and recreated, the kubelet comes back without the pool label and C2 fills it in.
+- gpu-operator **does not overwrite existing values** when deriving `nvidia.com/gpu.deploy.*`; a pool switch must delete the leftover keys of the old pool.
+  The platform ships the complete set (`core/gpu_adapter.pool_node_labels`); when operating by hand, do not change only half.
+- `kata-deploy` has no cleanup hook (`command: kata-deploy install`, no preStop); kata → another pool leaves an unused
+  containerd runtime handler on the node, harmless, no cleanup needed.
+- Toggling MIG mode needs a GPU reset, done at runtime by mig-manager; some driver / model combinations still need a full reboot, mig pool only.

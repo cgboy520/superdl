@@ -1,7 +1,7 @@
 scheduler:
   defaultSchedulerPolicy:
     nodeSchedulerPolicy: binpack
-    # 同卡尽量不放多个实例
+    # Avoid placing several instances on the same card where possible
     gpuSchedulerPolicy: spread
 devicePlugin:
   runtimeClassName: ""
