@@ -23,8 +23,8 @@ export const Route = createFileRoute("/login")({
 function useFinishLogin() {
   const router = useRouter();
   const { returnTo } = Route.useSearch();
-  return (accessToken: string, admin: AdminOut) => {
-    authStore.getState().login(accessToken, admin);
+  return async (accessToken: string, admin: AdminOut) => {
+    await authStore.getState().login(accessToken, admin);
     router.history.push(returnTo ?? "/");
   };
 }
@@ -39,12 +39,12 @@ function MfaVerifyForm({ ticket }: { ticket: string }) {
   const [form] = Form.useForm<{ code: string }>();
   const verify = useMfaVerify({
     mutation: {
-      onSuccess: (data) => {
+      onSuccess: async (data) => {
         const left = data.recovery_codes_left;
         if (left != null && left <= 2) {
           message.warning(t("login.recoveryLowHint", { count: left }));
         }
-        finish(data.access_token, data.admin);
+        await finish(data.access_token, data.admin);
       },
       onError: (e) => message.error(errText(e, t("login.failed"))),
     },
@@ -89,6 +89,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
   const finish = useFinishLogin();
   const [codes, setCodes] = useState<string[] | null>(null);
   const [saved, setSaved] = useState(false);
+  const [finishing, setFinishing] = useState(false);
   const begin = useMfaSetupBegin();
   const confirm = useMfaSetupConfirm({
     mutation: {
@@ -100,6 +101,19 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
   useEffect(() => {
     beginSetup({ ticket });
   }, [ticket, beginSetup]);
+
+  const finishSetup = async () => {
+    const data = confirm.data;
+    if (!data || finishing) return;
+    setFinishing(true);
+    try {
+      await finish(data.access_token, data.admin);
+    } catch (e) {
+      message.error(errText(e, t("login.failed")));
+    } finally {
+      setFinishing(false);
+    }
+  };
 
   if (codes != null) {
     return (
@@ -120,15 +134,7 @@ function MfaSetupForm({ ticket }: { ticket: string }) {
         <Checkbox checked={saved} onChange={(e) => setSaved(e.target.checked)}>
           {t("login.recoveryConfirm")}
         </Checkbox>
-        <Button
-          type="primary"
-          block
-          disabled={!saved}
-          onClick={() => {
-            const data = confirm.data;
-            if (data) finish(data.access_token, data.admin);
-          }}
-        >
+        <Button type="primary" block disabled={!saved} loading={finishing} onClick={() => void finishSetup()}>
           {t("login.recoveryContinue")}
         </Button>
       </Space>
@@ -183,8 +189,8 @@ function LoginPage() {
   const [challenge, setChallenge] = useState<{ status: "mfa_setup" | "mfa_required"; ticket: string } | null>(null);
   const login = useAdminLogin({
     mutation: {
-      onSuccess: (data) => {
-        if (data.status === "ok") finishLogin(data.access_token, data.admin);
+      onSuccess: async (data) => {
+        if (data.status === "ok") await finishLogin(data.access_token, data.admin);
         else setChallenge({ status: data.status, ticket: data.ticket });
       },
       onError: (e) => {

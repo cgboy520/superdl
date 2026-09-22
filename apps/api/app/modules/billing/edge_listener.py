@@ -13,7 +13,12 @@ from app.core.logging import get_logger
 from app.core.pricing import MARKET_SUBSCRIPTION
 from app.core.timeutil import ensure_utc, hour_floor
 from app.modules.billing import subscriptions
-from app.modules.billing.settlement import occupied_since, settle_instance_window, truncated_at
+from app.modules.billing.settlement import (
+    correct_fault_bills,
+    occupied_since,
+    settle_instance_window,
+    truncated_at,
+)
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.transitions import register_transition_listener
 
@@ -31,13 +36,14 @@ async def on_instance_transition(
     since = occupied_since(event.from_status, event.to_status, event.event_metadata)
     if event.from_status != sm_def.RUNNING and since is None:
         return
+    edge_at = ensure_utc(event.created_at)
+    at = truncated_at(edge_at, event.from_status, event.event_metadata)
+    await _correct_trusted_fault(session, instance, event, at, edge_at)
     if instance.market == MARKET_SUBSCRIPTION:
         return
-    edge_at = ensure_utc(event.created_at)
     if since is not None:
         charged = await _settle_occupancy(session, instance, since, edge_at, reason=event.reason)
     else:
-        at = truncated_at(edge_at, event.from_status, event.event_metadata)
         extra = (
             {"truncated_at": at.isoformat(), "truncate_reason": event.reason}
             if at < edge_at
@@ -60,6 +66,40 @@ async def on_instance_transition(
             instance_id=instance.id,
             amount=str(charged),
             reason=event.reason,
+        )
+
+
+async def _correct_trusted_fault(
+    session: AsyncSession,
+    instance: "Instance",
+    event: "InstanceEvent",
+    cutoff: datetime,
+    edge_at: datetime,
+) -> None:
+    """Only the system's platform-loss edge authorizes refunds, never ordinary settlement."""
+    if (
+        event.actor != "system"
+        or event.reason not in ("node_lost", "pod_lost")
+        or event.from_status != sm_def.RUNNING
+        or event.to_status != sm_def.FAILED
+        or cutoff >= edge_at
+    ):
+        return
+    await session.flush()
+    refunded = await correct_fault_bills(
+        session,
+        instance_id=instance.id,
+        event_id=event.id,
+        cutoff=cutoff,
+        edge_at=edge_at,
+        reason=event.reason,
+    )
+    if refunded > 0:
+        logger.info(
+            "fault_bills_refunded",
+            instance_id=instance.id,
+            event_id=event.id,
+            amount=str(refunded),
         )
 
 

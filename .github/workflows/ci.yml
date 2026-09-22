@@ -124,6 +124,16 @@ jobs:
       - run: shellcheck apps/api/app/modules/nodes/assets/node-join.sh
       - run: bats deploy/node-join/tests
 
+  release-script:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - run: bash -n scripts/release.sh
+      - run: shellcheck scripts/release.sh
+      - name: Offline release and backup shell regressions (no cluster or network)
+        run: python3 -m unittest discover -s scripts/tests -p 'test_release*.py' -v
+
   docs:
     runs-on: ubuntu-latest
     timeout-minutes: 5

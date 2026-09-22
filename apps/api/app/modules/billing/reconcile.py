@@ -26,6 +26,7 @@ from app.modules.billing.models import (
     Subscription,
     Wallet,
 )
+from app.modules.billing.wallet import net_consumption_entries
 from app.modules.notify import service as notify_service
 
 logger = get_logger(__name__)
@@ -223,12 +224,11 @@ _BILL_SOURCES: tuple[_BillSource, ...] = (
 async def bills_vs_consume(
     session: AsyncSession, since: datetime, until: datetime
 ) -> tuple[Decimal, Decimal]:
-    """Return the billed total of [since, until) and the negated linked consume ledger total; the
-    two
-    must be equal.
+    """Return bills and linked net consumption for [since, until); the two must be equal.
 
     Hourly bills window by hour_start, disk fees by day, subscriptions by created_at; the ledger is
-    joined by ref_id.
+    joined by ref_id. Hourly refund credits offset consumption in the original bill's window,
+    regardless of posting date. Other refunds do not change the gross prepaid/disk basis.
     """
     billed = consumed = Decimal("0.00")
     for src in _BILL_SOURCES:
@@ -240,7 +240,7 @@ async def bills_vs_consume(
         consumed -= await sum_decimal(
             session,
             select(total(BalanceLedger.amount))
-            .where(BalanceLedger.type == "consume", BalanceLedger.ref_type == src.ref_type)
+            .where(net_consumption_entries(), BalanceLedger.ref_type == src.ref_type)
             .join(src.table, BalanceLedger.ref_id == cast(src.table.id, String))
             .where(*in_window),
         )
@@ -248,7 +248,7 @@ async def bills_vs_consume(
 
 
 async def dangling_consume_refs(session: AsyncSession) -> int:
-    """Count consume ledger rows across _BILL_SOURCES whose ref_id links to no bill."""
+    """Count consumption and hourly correction rows whose ref_id links to no bill."""
     total = 0
     for src in _BILL_SOURCES:
         total += int(
@@ -257,7 +257,7 @@ async def dangling_consume_refs(session: AsyncSession) -> int:
                     select(func.count())
                     .select_from(BalanceLedger)
                     .where(
-                        BalanceLedger.type == "consume",
+                        net_consumption_entries(),
                         BalanceLedger.ref_type == src.ref_type,
                         ~select(src.table.id)
                         .where(cast(src.table.id, String) == BalanceLedger.ref_id)

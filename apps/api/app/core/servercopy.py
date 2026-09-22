@@ -446,6 +446,10 @@ _COPY: dict[str, dict[str, str]] = {
         "en-US": "Instance GPU hourly fee ({source})",
         "zh-CN": "实例 GPU 时费({source})",  # cjk-ok
     },
+    "billing.remark.fault_refund": {
+        "en-US": "Hourly bill fault correction (instance event {event_id})",
+        "zh-CN": "小时账单故障冲正(实例事件 {event_id})",  # cjk-ok
+    },
     "billing.remark.reprice": {
         "en-US": "Instance GPU hourly fee (on-demand conversion top-up)",
         "zh-CN": "实例 GPU 时费(转按量补差价)",  # cjk-ok

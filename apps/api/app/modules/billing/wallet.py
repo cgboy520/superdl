@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import Select, case, func, select
+from sqlalchemy import ColumnElement, Select, case, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -400,13 +400,23 @@ async def balances_by_user(
     return dict(rows)
 
 
+def net_consumption_entries() -> ColumnElement[bool]:
+    """Consumption postings plus hourly bill corrections, not unrelated refund payouts.
+
+    Subscription prepayments retain their separate gross accounting basis.
+    """
+    return (BalanceLedger.type == "consume") | (
+        (BalanceLedger.type == "refund") & (BalanceLedger.ref_type == "bill_hourly")
+    )
+
+
 async def consumed_by_user(
     session: AsyncSession, user_ids: list[int] | None = None
 ) -> dict[int, Decimal]:
-    """Negated consume ledger total per user; user_ids limits to the given users."""
+    """Net consumption per user after hourly bill refunds; optionally limit to user_ids."""
     stmt = (
         select(BalanceLedger.user_id, func.coalesce(-func.sum(BalanceLedger.amount), 0))
-        .where(BalanceLedger.type == "consume")
+        .where(net_consumption_entries())
         .group_by(BalanceLedger.user_id)
     )
     if user_ids is not None:

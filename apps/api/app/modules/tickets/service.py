@@ -79,8 +79,8 @@ async def create_ticket(
     instance_uuid: str | None,
     idempotency_key: str | None,
 ) -> tuple[Ticket, bool]:
-    """Create a ticket (the first message lands with it). Returns (ticket, created); created=False =
-    idempotent replay."""
+    """Commit the ticket, first message and admin alert together. Returns (ticket, created);
+    created=False means idempotent replay."""
     if idempotency_key:
         existing = await find_replay(
             session, Ticket, owner_col=Ticket.user_id, owner_id=user_id, key=idempotency_key
@@ -129,12 +129,10 @@ async def create_ticket(
         session.add(
             TicketMessage(ticket_id=ticket.id, sender_kind="user", sender_id=user_id, body=body)
         )
-        await session.commit()
         break
     else:
         raise AppError(ErrorCode.INTERNAL, key="common.internal", http_status=500)
 
-    logger.info("ticket_created", ticket_no=ticket.ticket_no, user_id=user_id, category=category)
     await _admin_alert(
         session,
         title=server_copy("tickets.created.title"),
@@ -143,6 +141,7 @@ async def create_ticket(
         ticket_id=ticket.id,
     )
     await session.commit()
+    logger.info("ticket_created", ticket_no=ticket.ticket_no, user_id=user_id, category=category)
     return ticket, True
 
 
@@ -223,8 +222,7 @@ async def append_message(
     msg = TicketMessage(ticket_id=ticket.id, sender_kind="user", sender_id=user_id, body=body)
     session.add(msg)
     ticket.status = "pending_staff"
-    await session.commit()
-    logger.info("ticket_user_reply", ticket_no=ticket.ticket_no, message_id=msg.id)
+    await session.flush()
     await _admin_alert(
         session,
         title=server_copy("tickets.reply.title"),
@@ -233,6 +231,7 @@ async def append_message(
         ticket_id=ticket.id,
     )
     await session.commit()
+    logger.info("ticket_user_reply", ticket_no=ticket.ticket_no, message_id=msg.id)
     return msg
 
 

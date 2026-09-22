@@ -31,12 +31,12 @@ import { alertLink, useAckAlertWithFeedback } from "../lib/alertLink";
 import { useEnvironment } from "../lib/environment";
 import { MENU, MENU_GROUP_LABEL_KEY, MENU_GROUP_ORDER, ROLE_LABEL_KEY, canSeeMenu } from "../lib/menu";
 import { queryClient } from "../lib/queryClient";
-import { authStore, canWriteOps, useAdminRole, useAuth } from "../stores/auth";
+import { authStore, canWriteOps, readAuthSession, useAdminRole, useAuth } from "../stores/auth";
 
 export const Route = createFileRoute("/_app")({
   beforeLoad: async ({ location }) => {
-    const auth = authStore.getState();
-    if (!auth.accessToken) {
+    const session = readAuthSession();
+    if (!session.accessToken) {
       throw redirect({ to: "/login", search: { returnTo: location.href } });
     }
     try {
@@ -45,9 +45,12 @@ export const Route = createFileRoute("/_app")({
         queryFn: fetchAdminMe,
         staleTime: 15_000,
       });
-      auth.setAdmin({ id: me.id, username: me.username, role: me.role });
-    } catch {
-      authStore.getState().logout();
+      if (!authStore.getState().setAdmin({ id: me.id, username: me.username, role: me.role }, session.sessionId)) {
+        throw new DOMException("Authentication session changed", "AbortError");
+      }
+    } catch (error) {
+      const cleared = await authStore.getState().logout(session.sessionId);
+      if (!cleared && readAuthSession().accessToken) throw error;
       throw redirect({ to: "/login", search: { returnTo: location.href } });
     }
   },
@@ -366,13 +369,15 @@ function AppLayout() {
                     label: t("shell.logout"),
                     onClick: () => {
                       void (async () => {
+                        const { sessionId } = readAuthSession();
+                        // Keep the request outside the lock; its 401 handler may acquire it.
                         try {
                           await adminLogoutApiAdminV1AuthLogoutPost();
                         } catch {
                           /* ignored */
                         }
-                        authStore.getState().logout();
-                        void navigate({ to: "/login" });
+                        const cleared = await authStore.getState().logout(sessionId);
+                        if (cleared || !readAuthSession().accessToken) await navigate({ to: "/login" });
                       })();
                     },
                   },

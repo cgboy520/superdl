@@ -409,7 +409,7 @@ async def current_for_instance(
         .limit(1)
     )
     if for_update:
-        stmt = stmt.with_for_update()
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
@@ -593,8 +593,9 @@ async def _patrol_due(sm: async_sessionmaker[AsyncSession], counts: dict[str, in
 async def _handle_due(session: AsyncSession, subscription_id: int, counts: dict[str, int]) -> None:
     """Handle an expiring subscription; renewal on expiry locks instance → wallet → subscription.
 
-    When auto-renewal fails, commit first to release the wallet lock, then enter the stop
-    settlement transaction.
+    Re-read the latest coverage under those locks even when auto-renewal is disabled. After an
+    auto-renewal failure commits its notice, reacquire all locks and revalidate coverage before
+    entering the stop transaction; manual renewal may have completed in between.
     """
     row = (
         await session.execute(select(Subscription).where(Subscription.id == subscription_id))
@@ -608,18 +609,44 @@ async def _handle_due(session: AsyncSession, subscription_id: int, counts: dict[
             counts["warned"] += 1
         return
 
-    instance = await orchestrator_queries.instance_by_id(session, row.instance_id)
-    await orchestrator_queries.lock_instance_for_billing(session, instance.id)
-    await session.refresh(instance)
+    instance_id = row.instance_id
+    due = await _lock_due_subscription(session, instance_id, subscription_id)
+    if due is None:
+        return
+    instance, row = due
     if row.auto_renew:
         if await _try_auto_renew(session, row, instance, counts):
             return
         await session.commit()
-        await session.refresh(row)
-        if row.status != STATUS_ACTIVE:
+        due = await _lock_due_subscription(session, instance_id, subscription_id)
+        if due is None:
             return
+        instance, row = due
     row.status = STATUS_EXPIRED
     await _expire_instance(session, instance, counts)
+
+
+async def _lock_due_subscription(
+    session: AsyncSession, instance_id: int, subscription_id: int
+) -> tuple["Instance", Subscription] | None:
+    """Lock instance → wallet → latest subscription, returning only the still-due candidate.
+
+    The candidate row in the identity map is not authoritative: renewal expires it and inserts
+    a successor. Never expire that successor on behalf of an older patrol candidate.
+    """
+    instance = await orchestrator_queries.lock_instance(session, instance_id)
+    if instance is None or instance.market != MARKET_SUBSCRIPTION:
+        return None
+    await wallet.lock_wallet(session, instance.user_id)
+    current = await current_for_instance(session, instance_id, for_update=True)
+    if (
+        current is None
+        or current.id != subscription_id
+        or current.status != STATUS_ACTIVE
+        or ensure_utc(current.expires_at) > now_utc()
+    ):
+        return None
+    return instance, current
 
 
 async def _warn_expiring(

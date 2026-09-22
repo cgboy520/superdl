@@ -275,7 +275,7 @@ export function AdminsTab() {
       await changeOwn.mutateAsync({ data: v });
       message.success(t("admins.ownPasswordChanged"));
       setSelfOpen(false);
-      logout();
+      await logout();
       void navigate({ to: "/login" });
     } catch (e) {
       message.error(errText(e));

@@ -1,6 +1,8 @@
 """Subscriptions (prepaid) end to end: discount arithmetic, idempotent zero double charging,
 settlement skip, matching filters, stock reservation, expiry chain."""
 
+# pyright: reportPrivateUsage=false
+
 import asyncio
 from datetime import timedelta
 from decimal import Decimal
@@ -1259,6 +1261,220 @@ class TestUnstartedPrepay:
 
 def _gauge_value(gauge) -> float:
     return float(gauge.collect()[0].samples[0].value)
+
+
+class TestDueCoverageRaces:
+    async def _seed_due(self, sm, *, auto_renew: bool) -> tuple[int, int, str]:
+        from app.modules.billing import subscriptions
+        from tests.helpers import seed_instance
+
+        instance_id, uuid = await seed_instance(
+            sm, status="running", market="subscription", price="1.0000"
+        )
+        async with sm() as session:
+            row, _ = await subscriptions.charge_new(
+                session,
+                user_id=1,
+                instance_id=instance_id,
+                instance_name="t",
+                sku_id=1,
+                base_hourly=Decimal("1.0000"),
+                gpu_count=1,
+                period="day",
+                period_count=1,
+                idempotency_key=None,
+            )
+            row.started_at = now_utc() - timedelta(days=1, minutes=1)
+            row.expires_at = now_utc() - timedelta(minutes=1)
+            row.auto_renew = auto_renew
+            await session.commit()
+            return instance_id, row.id, uuid
+
+    @pytest.mark.parametrize("auto_renew", [False, True])
+    async def test_manual_renewal_wins_before_initial_lock(self, sm, monkeypatch, auto_renew):
+        """An identity-map snapshot of the old row cannot expire a newly purchased period."""
+        from unittest.mock import AsyncMock
+
+        from app.modules.billing import subscriptions
+        from app.modules.orchestrator import queries, service
+
+        instance_id, subscription_id, uuid = await self._seed_due(sm, auto_renew=auto_renew)
+        original_lock = queries.lock_instance
+        renewed = False
+
+        async def renew_before_lock(session, iid):
+            nonlocal renewed
+            if not renewed:
+                renewed = True
+                async with sm() as other:
+                    await service.renew_instance(
+                        other, 1, uuid, period="day", period_count=1, idempotency_key=None
+                    )
+            return await original_lock(session, iid)
+
+        monkeypatch.setattr(queries, "lock_instance", renew_before_lock)
+        monkeypatch.setattr(queries, "lock_instance_for_billing", renew_before_lock)
+        notice = AsyncMock()
+        monkeypatch.setattr(subscriptions.notify_service, "send_subscription_notice", notice)
+        counts = {"warned": 0, "renewed": 0, "renew_failed": 0, "stopped": 0, "frozen": 0}
+        async with sm() as session:
+            stale = await session.get(Subscription, subscription_id)
+            assert stale is not None and stale.status == "active"
+            await subscriptions._handle_due(session, subscription_id, counts)
+            await session.commit()
+        assert renewed and not any(counts.values())
+        notice.assert_not_awaited()
+        async with sm() as session:
+            instance = await session.get(Instance, instance_id)
+            assert instance is not None and instance.status == "running"
+            latest = await subscriptions.current_for_instance(session, instance_id)
+            assert latest is not None and latest.id != subscription_id
+            assert latest.status == "active" and latest.expires_at > now_utc()
+            assert latest.renewed_from_id == subscription_id
+            old = await session.get(Subscription, subscription_id)
+            assert old is not None and old.status == "expired"
+
+    async def test_locked_coverage_refreshes_same_identity(self, sm):
+        """FOR UPDATE must populate an existing ORM identity, not just take its database lock."""
+        from app.modules.billing import subscriptions
+        from app.modules.orchestrator import queries
+
+        instance_id, subscription_id, _ = await self._seed_due(sm, auto_renew=False)
+        async with sm() as session:
+            stale = await session.get(Subscription, subscription_id)
+            assert stale is not None and stale.expires_at < now_utc()
+            future = now_utc() + timedelta(days=1)
+            async with sm() as other:
+                await queries.lock_instance(other, instance_id)
+                await wallet.lock_wallet(other, 1)
+                row = await subscriptions.current_for_instance(other, instance_id, for_update=True)
+                assert row is not None
+                row.expires_at = future
+                await other.commit()
+            assert (
+                await subscriptions._lock_due_subscription(session, instance_id, subscription_id)
+                is None
+            )
+            assert stale.expires_at == future
+
+    @pytest.mark.parametrize("interleaving", ["renew", "stop"])
+    async def test_auto_renew_failure_relocks_after_notice_commit(
+        self, sm, monkeypatch, interleaving
+    ):
+        """The commit gap may contain manual renewal or a completed stop; use fresh locked state."""
+        from unittest.mock import AsyncMock
+
+        from sqlalchemy.exc import DBAPIError
+
+        from app.modules.billing import subscriptions
+        from app.modules.orchestrator import queries, service, transitions
+
+        instance_id, subscription_id, uuid = await self._seed_due(sm, auto_renew=True)
+        async with sm() as session:
+            balance = await wallet.get_balance(session, 1)
+            await wallet.debit(session, 1, balance, type_="adjust", allow_negative=False)
+            await session.commit()
+        notice = AsyncMock()
+        monkeypatch.setattr(subscriptions.notify_service, "send_subscription_notice", notice)
+        real_expire = subscriptions._expire_instance
+        expiry_calls = 0
+
+        async def expire_with_lock_check(session, instance, counts):
+            nonlocal expiry_calls
+            expiry_calls += 1
+            async with sm() as contender:
+                with pytest.raises(DBAPIError) as exc:
+                    await contender.execute(
+                        select(Instance.id)
+                        .where(Instance.id == instance_id)
+                        .with_for_update(nowait=True)
+                    )
+                assert getattr(exc.value.orig, "sqlstate", None) == "55P03"
+            await real_expire(session, instance, counts)
+
+        monkeypatch.setattr(subscriptions, "_expire_instance", expire_with_lock_check)
+        counts = {"warned": 0, "renewed": 0, "renew_failed": 0, "stopped": 0, "frozen": 0}
+        changed = False
+        async with sm() as session:
+            real_commit = session.commit
+
+            async def commit_then_change():
+                nonlocal changed
+                await real_commit()
+                if changed:
+                    return
+                changed = True
+                if interleaving == "renew":
+                    await fund_wallet(sm, 1, "100.00")
+                    async with sm() as other:
+                        await service.renew_instance(
+                            other, 1, uuid, period="day", period_count=1, idempotency_key=None
+                        )
+                else:
+                    async with sm() as other:
+                        fresh = await queries.lock_instance(other, instance_id)
+                        assert fresh is not None
+                        await transitions.system_stop(other, fresh, reason="user_stop")
+                        await transitions.transition(
+                            other, fresh, "stopped", reason="stopped", actor="system"
+                        )
+                        await other.commit()
+
+            monkeypatch.setattr(session, "commit", commit_then_change)
+            await subscriptions._handle_due(session, subscription_id, counts)
+            await session.commit()
+        assert changed and counts["renew_failed"] == 1 and counts["stopped"] == 0
+        async with sm() as session:
+            instance = await session.get(Instance, instance_id)
+            latest = await subscriptions.current_for_instance(session, instance_id)
+            assert instance is not None and latest is not None
+            if interleaving == "renew":
+                assert instance.status == "running" and latest.status == "active"
+                assert latest.id != subscription_id and expiry_calls == 0
+                assert counts["frozen"] == 0
+            else:
+                assert instance.status == "frozen" and latest.status == "expired"
+                assert latest.id == subscription_id and expiry_calls == 1
+                assert counts["frozen"] == 1
+
+
+class TestDueCoverageUnit:
+    @pytest.mark.parametrize("still_due", [False, True])
+    async def test_commit_requires_new_locked_coverage(self, monkeypatch, still_due):
+        """No Docker: execute _handle_due and require a second lock/coverage result after commit."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from app.modules.billing import subscriptions
+
+        row = Subscription(
+            id=1,
+            instance_id=1,
+            user_id=1,
+            status="active",
+            auto_renew=True,
+            expires_at=now_utc() - timedelta(minutes=1),
+        )
+        before = Instance(id=1, status="running", market="subscription")
+        after = Instance(id=1, status="stopped", market="subscription")
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = row
+        session = AsyncMock()
+        session.execute.return_value = result
+        lock = AsyncMock(side_effect=[(before, row), (after, row) if still_due else None])
+        monkeypatch.setattr(subscriptions, "_lock_due_subscription", lock)
+        monkeypatch.setattr(subscriptions, "_try_auto_renew", AsyncMock(return_value=False))
+        expire = AsyncMock()
+        monkeypatch.setattr(subscriptions, "_expire_instance", expire)
+        counts = {"warned": 0, "renewed": 0, "renew_failed": 0, "stopped": 0, "frozen": 0}
+        await subscriptions._handle_due(session, 1, counts)
+        assert lock.await_count == 2
+        session.commit.assert_awaited_once()
+        if still_due:
+            expire.assert_awaited_once_with(session, after, counts)
+            assert row.status == "expired"
+        else:
+            expire.assert_not_awaited()
+            assert row.status == "active"
 
 
 class TestExpiredSweep:

@@ -153,6 +153,23 @@ async def _patrol_running(sm: async_sessionmaker[AsyncSession], counts: dict[str
     )
 
 
+async def _lock_burn_candidates(
+    session: AsyncSession, user_id: int, instances: list["Instance"]
+) -> list["Instance"]:
+    """Re-read candidates under ascending instance locks before taking the wallet lock."""
+    eligible: list[Instance] = []
+    for inst in sorted(instances, key=lambda i: i.id):
+        fresh = await orchestrator_queries.lock_instance(session, inst.id)
+        if (
+            fresh is not None
+            and fresh.user_id == user_id
+            and fresh.status == sm_def.RUNNING
+            and fresh.market != MARKET_SUBSCRIPTION
+        ):
+            eligible.append(fresh)
+    return eligible
+
+
 async def _check_user_burn(
     session: AsyncSession,
     user_id: int,
@@ -163,7 +180,8 @@ async def _check_user_burn(
     counts: dict[str, int],
 ) -> None:
     """Check the user's unsettled consumption; in arrears lock the instances by id ascending, then
-    the wallet and re-check the balance.
+    the wallet. Revalidate market/status and rebuild unsettled consumption under those locks;
+    the initial snapshot may predate conversion, a stop, settlement or a top-up.
 
     Stop, tail bill and notification commit together; without a stop, warn by the remaining-hours
     threshold.
@@ -178,20 +196,24 @@ async def _check_user_burn(
         unsettled += await _unsettled_burn(session, inst, now, settled_through)
     effective = as_amount(available - unsettled)
     if effective <= 0:
-        locked_instances = [
-            fresh
-            for inst in sorted(instances, key=lambda i: i.id)
-            if (fresh := await orchestrator_queries.lock_instance(session, inst.id)) is not None
-        ]
+        locked_instances = await _lock_burn_candidates(session, user_id, instances)
+        if not locked_instances:
+            return
         locked = await wallet.lock_wallet(session, user_id)
-        effective = as_amount(wallet.available_of(locked) - unsettled)
+        available = wallet.available_of(locked)
+        now = now_utc()
+        settled_through = await get_watermark(session, "hourly")
+        unsettled = Decimal("0.00")
+        for fresh in locked_instances:
+            unsettled += await _unsettled_burn(session, fresh, now, settled_through)
+        burn_per_hour = sum(
+            (hourly_cost(i.price_hourly, i.gpu_count) for i in locked_instances), Decimal("0.00")
+        )
+        effective = as_amount(available - unsettled)
         if effective <= 0:
             for fresh in locked_instances:
-                if fresh.status == sm_def.RUNNING:
-                    await orchestrator_transitions.system_stop(
-                        session, fresh, reason="arrears_stop"
-                    )
-                    counts["stopped"] += 1
+                await orchestrator_transitions.system_stop(session, fresh, reason="arrears_stop")
+                counts["stopped"] += 1
             await notify_service.send_arrears_notice(
                 session,
                 user_id,

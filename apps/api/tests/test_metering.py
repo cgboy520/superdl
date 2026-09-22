@@ -191,6 +191,87 @@ class TestAggregationPartialFailure:
         assert len(rows) == 1
 
 
+class TestMissingSampleRegressions:
+    async def test_late_samples_fill_null_but_never_replace_valid_data(self, sm, monkeypatch):
+        from decimal import Decimal
+        from unittest.mock import AsyncMock
+
+        from app.modules.metering import service
+
+        hour = datetime(2026, 1, 1, tzinfo=UTC)
+        async with sm() as session:
+            session.add_all(
+                [
+                    UsageHourly(instance_id=1, hour_start=hour, gpu_util_avg=None),
+                    UsageHourly(instance_id=2, hour_start=hour, gpu_util_avg=0.0),
+                    UsageHourly(instance_id=3, hour_start=hour, gpu_util_avg=30.0),
+                ]
+            )
+            await session.commit()
+        monkeypatch.setattr(
+            service.orchestrator_queries,
+            "billing_candidates",
+            AsyncMock(return_value=[(i, 1, Decimal("1.0000"), 1) for i in range(1, 5)]),
+        )
+        monkeypatch.setattr(
+            service.orchestrator_queries,
+            "instance_locations",
+            AsyncMock(return_value={i: ("tenant-1", str(i), "kata") for i in range(1, 5)}),
+        )
+        samples = {"1": [(1.0, 0.0)], "2": [(1.0, 90.0)], "3": [], "4": []}
+
+        async def query(_metric, _ns, pod, **_kwargs):
+            return samples[pod]
+
+        monkeypatch.setattr(service.prom, "query_instance_metric", query)
+        at = hour + timedelta(hours=1)
+        assert await aggregate_previous_hour(sm, at=at) == 2
+        async with sm() as session:
+            rows = (await session.execute(select(UsageHourly))).scalars().all()
+            assert {r.instance_id: r.gpu_util_avg for r in rows} == {1: 0.0, 2: 0.0, 3: 30.0}
+        samples["4"] = [(1.0, 20.0)]
+        assert await aggregate_previous_hour(sm, at=at) == 3
+        async with sm() as session:
+            rows = (await session.execute(select(UsageHourly))).scalars().all()
+            assert {r.instance_id: r.gpu_util_avg for r in rows} == {
+                1: 0.0,
+                2: 0.0,
+                3: 30.0,
+                4: 20.0,
+            }
+
+    async def test_reconciliation_counts_zero_and_excludes_null(self, sm, monkeypatch):
+        from decimal import Decimal
+        from unittest.mock import AsyncMock
+
+        from app.modules.metering import service
+
+        day = datetime(2026, 1, 1, tzinfo=UTC)
+        async with sm() as session:
+            session.add_all(
+                [
+                    UsageHourly(instance_id=1, hour_start=day, gpu_util_avg=None),
+                    UsageHourly(
+                        instance_id=1, hour_start=day + timedelta(hours=1), gpu_util_avg=0.0
+                    ),
+                    UsageHourly(instance_id=2, hour_start=day, gpu_util_avg=None),
+                ]
+            )
+            await session.commit()
+        monkeypatch.setattr(
+            service.billing_service, "billed_by_instance", AsyncMock(return_value={})
+        )
+        monkeypatch.setattr(
+            service.orchestrator_queries,
+            "instance_hourly_prices",
+            AsyncMock(return_value={1: Decimal("2.0000"), 2: Decimal("9.0000")}),
+        )
+        async with sm() as session:
+            report = await service.reconciliation_report(session, day)
+        assert report.estimated_total == "2.00"
+        assert [(row.instance_id, row.estimated) for row in report.outliers] == [(1, "2.00")]
+
+
 class TestNodeNameValidation:
     async def test_injection_rejected_with_400(self):
         """An invalid node_name → 400, never reaching the PromQL template."""

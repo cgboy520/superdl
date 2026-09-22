@@ -772,6 +772,201 @@ class TestRevenueAttribution:
         assert summary["month_revenue"] == ("1.68" if yesterday_23h >= month_start else "0")
 
 
+class TestPatrolLockedRecheck:
+    @pytest.mark.parametrize("interleaving", ["subscribe", "stop", "settle"])
+    async def test_committed_change_after_snapshot_prevents_false_stop(
+        self, sm, monkeypatch, interleaving
+    ):
+        """Real PG transactions change the candidate after estimation but before its row lock."""
+        from unittest.mock import AsyncMock
+
+        from app.modules.billing import subscriptions
+        from app.modules.orchestrator import queries, service, transitions
+        from app.modules.orchestrator.models import Instance, InstanceEvent
+        from tests.helpers import create_test_sku
+
+        at = H + timedelta(minutes=30)
+        for module in (patrol, subscriptions, service, transitions):
+            monkeypatch.setattr(module, "now_utc", lambda: at)
+        sku_id = await create_test_sku(sm, price_hourly=Decimal("2.0000"))
+        inst_id, uuid = await seed_instance(
+            sm,
+            status="running",
+            price="2.0000",
+            sku_id=sku_id,
+            wallet_credit=False,
+            events=[(H, "creating", "running")],
+        )
+        await fund_wallet(sm, 1, "0.50")
+        async with sm() as session:
+            snapshot = await session.get(Instance, inst_id)
+            assert snapshot is not None
+
+        original_lock = queries.lock_instance
+        changed = False
+
+        async def interleave_then_lock(session, instance_id):
+            nonlocal changed
+            if not changed:
+                changed = True
+                if interleaving == "subscribe":
+                    await fund_wallet(sm, 1, "100.00")
+                    async with sm() as other:
+                        await service.subscribe_instance(
+                            other, 1, uuid, period="day", period_count=1, idempotency_key=None
+                        )
+                        balance = await wallet.get_balance(other, 1)
+                        await wallet.debit(other, 1, balance, type_="adjust", allow_negative=False)
+                        await other.commit()
+                elif interleaving == "stop":
+                    async with sm() as other:
+                        fresh = await original_lock(other, instance_id)
+                        assert fresh is not None
+                        await transitions.system_stop(other, fresh, reason="user_stop")
+                        await other.commit()
+                else:
+                    await fund_wallet(sm, 1, "1.00")
+                    async with sm() as other:
+                        await settlement.settle_instance_window(
+                            other,
+                            instance_id=instance_id,
+                            user_id=1,
+                            unit_price=Decimal("2.0000"),
+                            gpu_count=1,
+                            window_start=H,
+                            window_end=at,
+                            source="hourly",
+                        )
+                        await other.commit()
+            return await original_lock(session, instance_id)
+
+        monkeypatch.setattr(queries, "lock_instance", interleave_then_lock)
+        notice = AsyncMock()
+        warning = AsyncMock()
+        monkeypatch.setattr(patrol.notify_service, "send_arrears_notice", notice)
+        monkeypatch.setattr(patrol.notify_service, "send_low_balance_warning", warning)
+        counts = {"stopped": 0, "warned": 0}
+        async with sm() as session:
+            await patrol._check_user_burn(
+                session, 1, [snapshot], settled_through=None, warn_hours=1, counts=counts
+            )
+            await session.commit()
+        assert changed and counts["stopped"] == 0
+        notice.assert_not_awaited()
+        async with sm() as session:
+            fresh = await session.get(Instance, inst_id)
+            assert fresh is not None
+            assert fresh.status == ("stopping" if interleaving == "stop" else "running")
+            arrears = (
+                (
+                    await session.execute(
+                        select(InstanceEvent).where(InstanceEvent.reason == "arrears_stop")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert arrears == []
+            if interleaving == "subscribe":
+                assert fresh.market == "subscription"
+                assert await wallet.get_balance(session, 1) == Decimal("0.00")
+            elif interleaving == "settle":
+                assert await wallet.get_balance(session, 1) == Decimal("0.50")
+                bill = (await session.execute(select(BillHourly))).scalar_one()
+                assert bill.seconds_used == 1800 and bill.amount == Decimal("1.00")
+        if interleaving == "settle":
+            assert counts["warned"] == 1
+            assert warning.await_args is not None
+            assert warning.await_args.kwargs["balance"] == money_label("0.50")
+            assert warning.await_args.kwargs["est_hours"] == 0.25
+        else:
+            warning.assert_not_awaited()
+
+
+class TestPatrolRecheckUnit:
+    @pytest.mark.parametrize(
+        ("market", "status"),
+        [("subscription", "running"), ("on_demand", "stopping"), ("on_demand", "stopped")],
+    )
+    async def test_ineligible_locked_candidate_is_not_stopped(self, monkeypatch, market, status):
+        """No Docker: the actual patrol drops stale market/status candidates before wallet work."""
+        from unittest.mock import AsyncMock
+
+        from app.modules.orchestrator.models import Instance
+
+        snapshot = Instance(
+            id=1,
+            user_id=1,
+            status="running",
+            market="on_demand",
+            price_hourly=Decimal("2.0000"),
+            gpu_count=1,
+        )
+        fresh = Instance(id=1, user_id=1, status=status, market=market)
+        monkeypatch.setattr(wallet, "get_available_balance", AsyncMock(return_value=Decimal("0")))
+        monkeypatch.setattr(patrol, "_unsettled_burn", AsyncMock(return_value=Decimal("1")))
+        monkeypatch.setattr(
+            patrol.orchestrator_queries, "lock_instance", AsyncMock(return_value=fresh)
+        )
+        wallet_lock = AsyncMock()
+        stop = AsyncMock()
+        notice = AsyncMock()
+        monkeypatch.setattr(wallet, "lock_wallet", wallet_lock)
+        monkeypatch.setattr(patrol.orchestrator_transitions, "system_stop", stop)
+        monkeypatch.setattr(patrol.notify_service, "send_arrears_notice", notice)
+        counts = {"stopped": 0, "warned": 0}
+        await patrol._check_user_burn(
+            AsyncMock(), 1, [snapshot], settled_through=None, warn_hours=None, counts=counts
+        )
+        assert counts == {"stopped": 0, "warned": 0}
+        wallet_lock.assert_not_awaited()
+        stop.assert_not_awaited()
+        notice.assert_not_awaited()
+
+    async def test_unsettled_is_rebuilt_under_locks(self, monkeypatch):
+        """No Docker: a post-settlement balance must not subtract a pre-settlement estimate."""
+        from unittest.mock import AsyncMock
+
+        from app.modules.orchestrator.models import Instance
+
+        inst = Instance(
+            id=1,
+            user_id=1,
+            status="running",
+            market="on_demand",
+            price_hourly=Decimal("2.0000"),
+            gpu_count=1,
+        )
+        session = AsyncMock()
+        monkeypatch.setattr(
+            wallet, "get_available_balance", AsyncMock(return_value=Decimal("0.50"))
+        )
+        monkeypatch.setattr(
+            wallet,
+            "lock_wallet",
+            AsyncMock(return_value=Wallet(balance=Decimal("0.50"), frozen=Decimal("0.00"))),
+        )
+        monkeypatch.setattr(
+            patrol.orchestrator_queries, "lock_instance", AsyncMock(return_value=inst)
+        )
+        watermark = AsyncMock(return_value=H - timedelta(hours=1))
+        estimate = AsyncMock(side_effect=[Decimal("1.00"), Decimal("0.00")])
+        monkeypatch.setattr(patrol, "get_watermark", watermark)
+        monkeypatch.setattr(patrol, "_unsettled_burn", estimate)
+        stop = AsyncMock()
+        monkeypatch.setattr(patrol.orchestrator_transitions, "system_stop", stop)
+        counts = {"stopped": 0, "warned": 0}
+        await patrol._check_user_burn(
+            session, 1, [inst], settled_through=None, warn_hours=None, counts=counts
+        )
+        assert estimate.await_count == 2
+        watermark.assert_awaited_once_with(session, "hourly")
+        assert estimate.await_args is not None
+        assert estimate.await_args.args[3] == H - timedelta(hours=1)
+        assert counts["stopped"] == 0
+        stop.assert_not_awaited()
+
+
 class TestSmsOutbox:
     """SMS goes out asynchronously through the outbox."""
 

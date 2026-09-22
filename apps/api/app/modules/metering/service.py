@@ -86,8 +86,11 @@ async def instances_gpu_summary(targets: list[tuple[str, str]]) -> InstanceMetri
 async def aggregate_previous_hour(
     sm: async_sessionmaker[AsyncSession], *, at: datetime | None = None
 ) -> int:
-    """Aggregate the previous hour's usage under the advisory lock, committing per instance without
-    overwriting existing rows; a down source skips the instance."""
+    """Aggregate the previous hour under the advisory lock, committing per instance.
+
+    Empty or unavailable samples skip the instance. Valid samples may fill an existing NULL, but
+    never overwrite a valid aggregate (including zero).
+    """
     window_start, window_end = prev_hour_range(at or now_utc())
     written = 0
     async with advisory_lock(sm, LockKey.USAGE_AGGREGATION) as got:
@@ -113,16 +116,25 @@ async def aggregate_previous_hour(
                 failed += 1
                 logger.warning("usage_aggregation_prom_down", instance_id=inst_id)
                 continue
+            if not values:
+                failed += 1
+                logger.warning("usage_aggregation_no_samples", instance_id=inst_id)
+                continue
             utils = [v for _, v in values]
+            average = sum(utils) / len(utils)
             async with sm() as session:
                 await session.execute(
                     pg_insert(UsageHourly)
                     .values(
                         instance_id=inst_id,
                         hour_start=window_start,
-                        gpu_util_avg=(sum(utils) / len(utils)) if utils else None,
+                        gpu_util_avg=average,
                     )
-                    .on_conflict_do_nothing(index_elements=["instance_id", "hour_start"])
+                    .on_conflict_do_update(
+                        index_elements=["instance_id", "hour_start"],
+                        set_={"gpu_util_avg": average},
+                        where=UsageHourly.gpu_util_avg.is_(None),
+                    )
                 )
                 await session.commit()
                 written += 1
@@ -148,7 +160,11 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> Reconci
         (
             await session.execute(
                 select(UsageHourly.instance_id, func.count())
-                .where(UsageHourly.hour_start >= day_start, UsageHourly.hour_start < day_end)
+                .where(
+                    UsageHourly.hour_start >= day_start,
+                    UsageHourly.hour_start < day_end,
+                    UsageHourly.gpu_util_avg.is_not(None),
+                )
                 .group_by(UsageHourly.instance_id)
             )
         )

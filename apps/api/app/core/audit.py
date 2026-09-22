@@ -1,15 +1,15 @@
-"""Audit every write request and explicitly marked read requests; excluded paths and synchronously
+"""Audit every write request and explicitly marked read requests except excluded paths.
 
 The middleware commits independently; once consecutive failures reach the threshold, audited write
-requests must pass a DB probe or get 503. Synchronous audits commit in the caller's business
-transaction; admin actions carry the admin. prefix.
+requests must pass a committed audit insert probe or get 503. Synchronous audits commit in the
+caller's business transaction; admin actions carry the admin. prefix.
 """
 
 from datetime import datetime
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import Index, String, func, text
+from sqlalchemy import Index, String, func
 from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
@@ -49,10 +49,15 @@ def audit_gate_open() -> bool:
 
 
 async def audit_probe_ok() -> bool:
-    """Run SELECT 1 on an independent session and return success; leaves the gate state alone."""
+    """Commit an audit row on an independent session; leaves the gate state alone.
+
+    Read connectivity cannot prove that audit inserts or commits are permitted. Keep the probe
+    row as evidence of recovery rather than relying on rollback or append-only-table deletes.
+    """
     try:
         async with get_sessionmaker()() as session:
-            await session.execute(text("SELECT 1"))
+            session.add(AuditLog(actor_type="system", action="audit.recovery_probe", result=200))
+            await session.commit()
         return True
     except Exception:
         return False
