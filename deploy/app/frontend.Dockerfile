@@ -1,4 +1,4 @@
-FROM node:26-slim@sha256:d82e1d091233ff0f771fc6c22837fa64c1019806ae2ac76cf5345cbc1e01668a AS build
+FROM node:26-slim@sha256:ec7758ee051e457b468b32bde57b0879010b325bb9862718e9615225ce4aaae1 AS build
 ARG APP=web
 WORKDIR /repo
 RUN npm install -g corepack@latest && corepack enable
