@@ -2,11 +2,12 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy import select, update
 
-from app.modules.billing import wallet
+from app.modules.billing import edge_listener, reconcile, settlement, wallet
 from app.modules.billing.models import BalanceLedger, BillHourly, Wallet
 from app.modules.billing.settlement import (
     _lag_windows,
@@ -17,6 +18,7 @@ from app.modules.billing.settlement import (
     settle_instance_window,
     upsert_hour_bill,
 )
+from app.modules.orchestrator import transitions
 from app.modules.orchestrator.models import Instance, InstanceEvent
 from tests.helpers import H_END, H, admin_headers, seed_instance
 
@@ -689,6 +691,487 @@ class TestNodeLostBillingTruncation:
         assert bill.detail is not None and "truncated_at" not in bill.detail
 
 
+class TestLateFaultCorrection:
+    async def _billed_instance(self, sm, *, anchor=H, price="1.6800", gpu_count=1):
+        instance_id, _ = await seed_instance(
+            sm,
+            price=price,
+            gpu_count=gpu_count,
+            status="running",
+            events=[(anchor, "creating", "running")],
+        )
+        async with sm() as session:
+            for offset in range(3):
+                start = anchor + timedelta(hours=offset)
+                await settle_instance_window(
+                    session,
+                    instance_id=instance_id,
+                    user_id=1,
+                    unit_price=Decimal(price),
+                    gpu_count=gpu_count,
+                    window_start=start,
+                    window_end=start + timedelta(hours=1),
+                    source="hourly",
+                )
+            await session.commit()
+        return instance_id
+
+    async def _fault(self, session, instance_id, monkeypatch, *, cutoff, at):
+        monkeypatch.setattr(transitions, "now_utc", lambda: at)
+        monkeypatch.setattr(
+            transitions, "_transition_listeners", [edge_listener.on_instance_transition]
+        )
+        instance = await session.get(Instance, instance_id)
+        assert instance is not None
+        return await transitions.transition(
+            session,
+            instance,
+            "failed",
+            reason="node_lost",
+            actor="system",
+            metadata={"unready_since": cutoff.isoformat()},
+        )
+
+    @pytest.mark.parametrize(
+        ("anchor", "gpu_count", "market"),
+        [
+            (H, 0, "on_demand"),
+            (datetime(2026, 8, 31, 23, tzinfo=UTC), 4, "spot"),
+            (H, 1, "subscription"),
+        ],
+        ids=["cpu", "multi-gpu-cross-month", "historical-on-demand-after-conversion"],
+    )
+    async def test_multi_hour_refund_uses_bill_snapshot_and_reconciles(
+        self, sm, monkeypatch, anchor, gpu_count, market
+    ):
+        instance_id = await self._billed_instance(sm, anchor=anchor, gpu_count=gpu_count)
+        cutoff = anchor + timedelta(minutes=30)
+        async with sm() as session:
+            instance = await session.get(Instance, instance_id)
+            assert instance is not None
+            instance.price_hourly = Decimal("99.0000")
+            instance.gpu_count = 8
+            instance.market = market
+            locked = await wallet.lock_wallet(session, 1)
+            locked.frozen = Decimal("200.00")
+            event = await self._fault(
+                session, instance_id, monkeypatch, cutoff=cutoff, at=anchor + timedelta(hours=3)
+            )
+            await session.commit()
+            event_id = event.id
+        async with sm() as session:
+            bills = (
+                (await session.execute(select(BillHourly).order_by(BillHourly.hour_start)))
+                .scalars()
+                .all()
+            )
+            assert [b.seconds_used for b in bills] == [1800, 0, 0]
+            expected = bill_amount(Decimal("1.6800"), gpu_count, 1800)
+            assert [b.amount for b in bills] == [expected, Decimal("0.00"), Decimal("0.00")]
+            for bill in bills:
+                assert bill.unit_price == Decimal("1.6800") and bill.gpu_count == gpu_count
+                assert bill.detail is not None
+                correction = bill.detail["fault_corrections"][str(event_id)]
+                assert correction["before_seconds"] == 3600
+                assert Decimal(correction["before_amount"]) == expected * 2
+                assert correction["after_seconds"] == bill.seconds_used
+            entries = (
+                (await session.execute(select(BalanceLedger).order_by(BalanceLedger.id)))
+                .scalars()
+                .all()
+            )
+            assert len([e for e in entries if e.type == "consume" and e.amount < 0]) == 3
+            refunds = [e for e in entries if e.type == "refund"]
+            assert len(refunds) == 3
+            assert {e.ref_id for e in refunds} == {str(b.id) for b in bills}
+            assert all(
+                e.amount > 0 and e.remark is not None and str(event_id) in e.remark for e in refunds
+            )
+            assert await wallet.get_balance(session, 1) == Decimal("100.00") - expected
+            locked = await wallet.lock_wallet(session, 1)
+            assert locked.frozen == Decimal("200.00")
+            assert await wallet.consumed_by_user(session, [1]) == {1: expected}
+            assert await reconcile.bills_vs_consume(
+                session, anchor, anchor + timedelta(hours=3)
+            ) == (expected, expected)
+            summary = await wallet.consumption_summary(
+                session, 1, anchor, anchor + timedelta(hours=3)
+            )
+            assert summary.gpu_total == expected
+            assert await reconcile.bills_vs_consume(
+                session, anchor, anchor + timedelta(hours=1)
+            ) == (expected, expected)
+            assert await reconcile.bills_vs_consume(
+                session, anchor + timedelta(hours=1), anchor + timedelta(hours=3)
+            ) == (0, 0)
+        assert await reconcile.wallet_ledger_chain_check(sm) == []
+
+    async def test_concurrent_event_replay_and_hourly_settlement_do_not_recharge(
+        self, sm, monkeypatch
+    ):
+        instance_id = await self._billed_instance(sm)
+        async with sm() as session:
+            event = await self._fault(
+                session, instance_id, monkeypatch, cutoff=H, at=H + timedelta(hours=3)
+            )
+            await session.commit()
+            event_id = event.id
+        gate = asyncio.Barrier(3)
+
+        async def replay():
+            async with sm() as session:
+                instance = await session.get(Instance, instance_id)
+                event = await session.get(InstanceEvent, event_id)
+                assert instance is not None and event is not None
+                await gate.wait()
+                await edge_listener.on_instance_transition(session, instance, event)
+                for offset in range(3):
+                    start = H + timedelta(hours=offset)
+                    assert (
+                        await settle_instance_window(
+                            session,
+                            instance_id=instance_id,
+                            user_id=1,
+                            unit_price=Decimal("1.6800"),
+                            gpu_count=1,
+                            window_start=start,
+                            window_end=start + timedelta(hours=1),
+                            source="gap_replay",
+                        )
+                        == 0
+                    )
+                await session.commit()
+
+        await asyncio.wait_for(asyncio.gather(replay(), replay(), replay()), timeout=20)
+        async with sm() as session:
+            assert await wallet.get_balance(session, 1) == Decimal("100.00")
+            refunds = (
+                (await session.execute(select(BalanceLedger).where(BalanceLedger.type == "refund")))
+                .scalars()
+                .all()
+            )
+            assert len(refunds) == 3
+            assert await reconcile.bills_vs_consume(session, H, H + timedelta(hours=3)) == (0, 0)
+
+    async def test_posting_failure_rolls_back_event_all_bills_and_wallet(self, sm, monkeypatch):
+        instance_id = await self._billed_instance(sm)
+        original_credit = wallet.credit
+        calls = 0
+
+        async def failing_credit(*args, **kwargs):
+            nonlocal calls
+            result = await original_credit(*args, **kwargs)
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("injected refund failure")
+            return result
+
+        monkeypatch.setattr(wallet, "credit", failing_credit)
+        async with sm() as session:
+            with pytest.raises(RuntimeError, match="injected refund failure"):
+                await self._fault(
+                    session, instance_id, monkeypatch, cutoff=H, at=H + timedelta(hours=3)
+                )
+            await session.rollback()
+        async with sm() as session:
+            instance = await session.get(Instance, instance_id)
+            assert instance is not None and instance.status == "running"
+            bills = (await session.execute(select(BillHourly))).scalars().all()
+            assert all(
+                b.seconds_used == 3600 and "fault_corrections" not in (b.detail or {})
+                for b in bills
+            )
+            assert await wallet.get_balance(session, 1) == Decimal("94.96")
+            events = (await session.execute(select(InstanceEvent))).scalars().all()
+            assert len(events) == 1
+        monkeypatch.setattr(wallet, "credit", original_credit)
+        async with sm() as session:
+            await self._fault(
+                session, instance_id, monkeypatch, cutoff=H, at=H + timedelta(hours=3)
+            )
+            await session.commit()
+            assert await wallet.get_balance(session, 1) == Decimal("100.00")
+
+    async def test_unrelated_refunds_do_not_offset_consumption(self, sm, monkeypatch):
+        instance_id = await self._billed_instance(sm)
+        async with sm() as session:
+            await self._fault(
+                session, instance_id, monkeypatch, cutoff=H_END, at=H + timedelta(hours=3)
+            )
+            await wallet.debit(
+                session,
+                1,
+                Decimal("5.00"),
+                type_="refund",
+                ref_type="refund_request",
+                ref_id="123",
+                allow_negative=False,
+            )
+            await wallet.credit(
+                session, 1, Decimal("2.00"), type_="refund", ref_type="order", ref_id="456"
+            )
+            await session.commit()
+            assert await wallet.consumed_by_user(session, [1]) == {1: Decimal("1.68")}
+            assert await reconcile.bills_vs_consume(session, H, H + timedelta(hours=3)) == (
+                Decimal("1.68"),
+                Decimal("1.68"),
+            )
+            assert await reconcile.dangling_consume_refs(session) == 0
+            await wallet.credit(
+                session,
+                1,
+                Decimal("0.01"),
+                type_="refund",
+                ref_type="bill_hourly",
+                ref_id="999999999",
+            )
+            await session.flush()
+            assert await reconcile.dangling_consume_refs(session) == 1
+
+    async def test_second_fault_keeps_prior_run_and_each_event_is_idempotent(self, sm, monkeypatch):
+        instance_id, _ = await seed_instance(
+            sm, status="running", events=[ev(0, "creating", "running")]
+        )
+        async with sm() as session:
+            faults: list[InstanceEvent] = []
+            for minute, cutoff_minute in [(20, 10), (50, 40)]:
+                await settle_instance_window(
+                    session,
+                    instance_id=instance_id,
+                    user_id=1,
+                    unit_price=Decimal("1.6800"),
+                    gpu_count=1,
+                    window_start=H,
+                    window_end=H + timedelta(minutes=minute),
+                    source="hourly",
+                )
+                event = await self._fault(
+                    session,
+                    instance_id,
+                    monkeypatch,
+                    cutoff=H + timedelta(minutes=cutoff_minute),
+                    at=H + timedelta(minutes=minute + 5),
+                )
+                faults.append(event)
+                if len(faults) == 1:
+                    instance = await session.get(Instance, instance_id)
+                    assert instance is not None
+                    monkeypatch.setattr(transitions, "now_utc", lambda: H + timedelta(minutes=30))
+                    for status in ("stopped", "starting", "running"):
+                        await transitions.transition(
+                            session, instance, status, reason="test_restart", actor="system"
+                        )
+            await session.commit()
+            instance = await session.get(Instance, instance_id)
+            assert instance is not None
+            for event in faults:
+                await edge_listener.on_instance_transition(session, instance, event)
+            await session.commit()
+            bill = (await session.execute(select(BillHourly))).scalar_one()
+            assert bill.seconds_used == 1200 and bill.amount == Decimal("0.56")
+            assert bill.detail is not None
+            assert len(bill.detail["fault_corrections"]) == 2
+            refunds = (
+                (await session.execute(select(BalanceLedger).where(BalanceLedger.type == "refund")))
+                .scalars()
+                .all()
+            )
+            assert [entry.amount for entry in refunds] == [Decimal("0.28"), Decimal("0.28")]
+            assert await wallet.get_balance(session, 1) == Decimal("99.44")
+            assert await reconcile.bills_vs_consume(session, H, H_END) == (
+                Decimal("0.56"),
+                Decimal("0.56"),
+            )
+
+
+class TestLateFaultCorrectionUnit:
+    async def test_real_correction_and_wallet_credit_rebuild_every_window(self, monkeypatch):
+        """No Docker: mock only I/O; execute reconstruction, correction and wallet posting."""
+        cutoff = H + timedelta(minutes=30)
+        bills = [
+            BillHourly(
+                id=index + 1,
+                instance_id=7,
+                user_id=1,
+                hour_start=H + timedelta(hours=index),
+                seconds_used=3600,
+                unit_price=Decimal("1.6800"),
+                gpu_count=1,
+                amount=Decimal("1.68"),
+                detail={"source": "hourly"},
+            )
+            for index in range(3)
+        ]
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = bills
+        session = MagicMock(execute=AsyncMock(return_value=result))
+        lock = AsyncMock()
+        monkeypatch.setattr(settlement.orchestrator_queries, "lock_instance_for_billing", lock)
+        monkeypatch.setattr(
+            settlement.orchestrator_queries,
+            "billing_events",
+            AsyncMock(
+                return_value=[
+                    (H, "creating", "running", None),
+                    (
+                        H + timedelta(hours=3),
+                        "running",
+                        "failed",
+                        {"unready_since": cutoff.isoformat()},
+                    ),
+                ]
+            ),
+        )
+        balance = Wallet(user_id=1, balance=Decimal("94.96"), frozen=Decimal("100.00"))
+        monkeypatch.setattr(wallet, "lock_wallet", AsyncMock(return_value=balance))
+        for expected in (Decimal("4.20"), Decimal("0.00")):
+            assert (
+                await settlement.correct_fault_bills(
+                    session,
+                    instance_id=7,
+                    event_id=42,
+                    cutoff=cutoff,
+                    edge_at=H + timedelta(hours=3),
+                    reason="node_lost",
+                )
+                == expected
+            )
+        lock.assert_awaited_with(session, 7)
+        assert [b.seconds_used for b in bills] == [1800, 0, 0]
+        assert [b.amount for b in bills] == [Decimal("0.84"), Decimal("0.00"), Decimal("0.00")]
+        assert balance.balance == Decimal("99.16") and balance.frozen == Decimal("100.00")
+        entries = [call.args[0] for call in session.add.call_args_list]
+        assert [e.amount for e in entries] == [Decimal("0.84"), Decimal("1.68"), Decimal("1.68")]
+        assert all(e.type == "refund" and e.ref_type == "bill_hourly" for e in entries)
+        assert [e.balance_after for e in entries] == [
+            Decimal("95.80"),
+            Decimal("97.48"),
+            Decimal("99.16"),
+        ]
+        query = session.execute.call_args.args[0]
+        assert "FOR UPDATE" in str(query)
+        assert query.get_execution_options()["populate_existing"] is True
+
+    @pytest.mark.parametrize(("seconds", "price", "gpu_count"), [(2, "1.68", 0), (3, "0.01", 4)])
+    async def test_zero_money_correction_keeps_seconds_and_event_marker(
+        self, monkeypatch, seconds, price, gpu_count
+    ):
+        row = BillHourly(
+            id=1,
+            user_id=1,
+            seconds_used=seconds,
+            unit_price=Decimal(price),
+            gpu_count=gpu_count,
+            amount=Decimal("0.00"),
+            detail={"source": "tail"},
+        )
+        credit = AsyncMock()
+        monkeypatch.setattr(wallet, "credit", credit)
+        session = MagicMock()
+        assert (
+            await settlement._correct_fault_bill(
+                session, row, seconds=0, event_id=42, cutoff=H, reason="pod_lost"
+            )
+            == 0
+        )
+        assert row.seconds_used == 0 and row.amount == 0
+        assert row.detail is not None
+        assert row.detail["fault_corrections"]["42"]["before_seconds"] == seconds
+        credit.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        ("before_seconds", "after_seconds", "before_amount", "after_amount", "refund"),
+        [(900, 899, "0.12", "0.12", "0.00"), (1800, 900, "0.25", "0.12", "0.13")],
+    )
+    async def test_refund_is_difference_of_rounded_totals(
+        self, monkeypatch, before_seconds, after_seconds, before_amount, after_amount, refund
+    ):
+        row = BillHourly(
+            id=1,
+            user_id=1,
+            seconds_used=before_seconds,
+            unit_price=Decimal("0.5000"),
+            gpu_count=1,
+            amount=Decimal(before_amount),
+            detail={"source": "tail"},
+        )
+        credit = AsyncMock()
+        monkeypatch.setattr(wallet, "credit", credit)
+        session = MagicMock()
+        assert await settlement._correct_fault_bill(
+            session, row, seconds=after_seconds, event_id=42, cutoff=H, reason="pod_lost"
+        ) == Decimal(refund)
+        assert row.seconds_used == after_seconds and row.amount == Decimal(after_amount)
+        if Decimal(refund):
+            assert credit.await_args is not None
+            assert credit.await_args.args[2] == Decimal(refund)
+        else:
+            credit.assert_not_awaited()
+        assert row.detail is not None and "42" in row.detail["fault_corrections"]
+
+    @pytest.mark.parametrize(
+        ("actor", "reason", "to_status", "market", "has_cutoff", "expected"),
+        [
+            ("system", "node_lost", "failed", "on_demand", True, True),
+            ("system", "pod_lost", "failed", "spot", True, True),
+            ("user", "node_lost", "failed", "on_demand", True, False),
+            ("admin", "pod_lost", "failed", "on_demand", True, False),
+            ("system", "pod_unready", "failed", "on_demand", True, False),
+            ("system", "node_lost", "stopping", "on_demand", True, False),
+            ("system", "node_lost", "failed", "subscription", True, True),
+            ("system", "pod_lost", "failed", "on_demand", False, False),
+        ],
+    )
+    async def test_only_trusted_fault_listener_authorizes_refund(
+        self, monkeypatch, actor, reason, to_status, market, has_cutoff, expected
+    ):
+        instance = Instance(
+            id=7, user_id=1, market=market, price_hourly=Decimal("1.68"), gpu_count=1
+        )
+        event = InstanceEvent(
+            id=42,
+            instance_id=7,
+            from_status="running",
+            to_status=to_status,
+            actor=actor,
+            reason=reason,
+            created_at=H_END,
+            event_metadata={"unready_since": H.isoformat()} if has_cutoff else None,
+        )
+        correction = AsyncMock(return_value=Decimal("0.00"))
+        monkeypatch.setattr(edge_listener, "correct_fault_bills", correction)
+        monkeypatch.setattr(
+            edge_listener, "settle_instance_window", AsyncMock(return_value=Decimal("0.00"))
+        )
+        await edge_listener.on_instance_transition(AsyncMock(), instance, event)
+        assert correction.await_count == int(expected)
+
+    async def test_ordinary_upsert_never_refunds_a_smaller_rebuild(self, monkeypatch):
+        row = BillHourly(seconds_used=3600, amount=Decimal("1.68"))
+        insert_result = MagicMock()
+        insert_result.scalar_one_or_none.return_value = None
+        locked_result = MagicMock()
+        locked_result.scalar_one.return_value = row
+        session = MagicMock(execute=AsyncMock(side_effect=[insert_result, locked_result]))
+        credit = AsyncMock()
+        monkeypatch.setattr(wallet, "credit", credit)
+        assert (
+            await upsert_hour_bill(
+                session,
+                instance_id=7,
+                user_id=1,
+                unit_price=Decimal("1.68"),
+                gpu_count=1,
+                hour_start=H,
+                seconds=1800,
+                source="hourly",
+            )
+            == 0
+        )
+        assert row.seconds_used == 3600 and row.amount == Decimal("1.68")
+        credit.assert_not_awaited()
+
+
 class TestGapClosure:
     """Settlement gap loop: recorded → visible to admins → replay settles / manual write-off →
     resolved_at written."""
@@ -778,6 +1261,132 @@ class TestGapClosure:
             gap = await resolve_gap(session, gap_id, note="written off", operator_id=1)
             assert gap.resolved_at is not None
         assert SETTLEMENT_GAP_UNRESOLVED.labels(kind="hourly")._value.get() == 0
+
+
+class TestWholeWindowReplayFailures:
+    @pytest.mark.parametrize("kind", ["hourly", "daily_disk"])
+    @pytest.mark.parametrize("resolved_child", [False, True])
+    async def test_failure_retains_parent_until_success(
+        self, sm, monkeypatch, kind, resolved_child
+    ):
+        """First failures survive retries/restarts; successful objects are not charged again."""
+        from app.core.errors import AppError
+        from app.core.timeutil import billing_day_floor
+        from app.modules.billing import settlement
+        from app.modules.billing.models import BillDailyDisk, SettlementGap
+        from tests.helpers import fund_wallet, seed_disk
+
+        window = H if kind == "hourly" else billing_day_floor(H)
+        if kind == "hourly":
+            await seed_instance(sm, user_id=1, status="running", events=[ev(0, None, "running")])
+            bad_id, _ = await seed_instance(
+                sm, user_id=2, status="running", events=[ev(0, None, "running")]
+            )
+            bill_model = BillHourly
+        else:
+            await seed_disk(sm, 1, created_at=window)
+            bad_id, _ = await seed_disk(sm, 2, created_at=window)
+            await fund_wallet(sm, 1)
+            await fund_wallet(sm, 2)
+            bill_model = BillDailyDisk
+        async with sm() as session:
+            gap = SettlementGap(
+                kind=kind, window_start=window, object_id=0, reason="catchup_truncated"
+            )
+            session.add(gap)
+            if resolved_child:
+                session.add(
+                    SettlementGap(
+                        kind=kind,
+                        window_start=window,
+                        object_id=bad_id,
+                        reason="dead_letter",
+                        resolved_at=H_END,
+                    )
+                )
+            await session.commit()
+            gap_id = gap.id
+
+        original = settlement._charge_bill
+        failing = True
+
+        async def fail_one(session, user_id, amount, **kwargs):
+            if failing and user_id == 2:
+                raise RuntimeError("injected posting failure")
+            await original(session, user_id, amount, **kwargs)
+
+        monkeypatch.setattr(settlement, "_charge_bill", fail_one)
+        monkeypatch.setattr(settlement, "_failure_streaks", {})
+        for _ in range(settlement.DEAD_LETTER_AFTER + 1):
+            with pytest.raises(AppError) as exc:
+                await settlement.replay_gap(sm, gap_id, operator_id=1)
+            assert exc.value.message_key == "common.retryableConflict"
+            async with sm() as session:
+                parent = await session.get(SettlementGap, gap_id)
+                assert parent is not None and parent.resolved_at is None
+                bills = (await session.execute(select(bill_model))).scalars().all()
+                assert len(bills) == 1 and bills[0].user_id == 1
+                assert await wallet.get_balance(session, 2) == Decimal("100.00")
+            settlement._failure_streaks.clear()
+
+        failing = False
+        results = await asyncio.wait_for(
+            asyncio.gather(*(settlement.replay_gap(sm, gap_id, operator_id=1) for _ in range(3))),
+            timeout=20,
+        )
+        assert all(result.resolved_at is not None for result in results)
+        async with sm() as session:
+            bills = (await session.execute(select(bill_model))).scalars().all()
+            entries = (
+                (
+                    await session.execute(
+                        select(BalanceLedger).where(BalanceLedger.type == "consume")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(bills) == len(entries) == 2
+            for user_id in (1, 2):
+                amount = next(b.amount for b in bills if b.user_id == user_id)
+                assert await wallet.get_balance(session, user_id) == Decimal("100.00") - amount
+
+
+class TestReplayFailureUnit:
+    @pytest.mark.parametrize("kind", ["hourly", "daily_disk"])
+    async def test_replay_returns_every_failure_without_dead_lettering(self, monkeypatch, kind):
+        """No Docker: execute the real replay/attempt loop, including a pre-existing streak."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from app.core.errors import AppError
+        from app.modules.billing import settlement
+
+        session = AsyncMock()
+        sm = MagicMock()
+        sm.return_value.__aenter__.return_value = session
+        good = AsyncMock(return_value=Decimal("1.00"))
+        bad = AsyncMock(side_effect=RuntimeError("injected posting failure"))
+        attempts = [(1, good), (2, bad)]
+        monkeypatch.setattr(settlement, "_hourly_window_attempts", AsyncMock(return_value=attempts))
+        monkeypatch.setattr(settlement, "_billable_disk_rows", AsyncMock(return_value=[]))
+        monkeypatch.setattr(
+            settlement, "_daily_disk_window_attempts", AsyncMock(return_value=attempts)
+        )
+        record = AsyncMock()
+        monkeypatch.setattr(settlement, "_record_gaps", record)
+        monkeypatch.setattr(
+            settlement, "_failure_streaks", {(kind, H, 2): settlement.DEAD_LETTER_AFTER}
+        )
+        with pytest.raises(AppError) as exc:
+            if kind == "hourly":
+                await settlement._replay_hourly_gap(sm, H, 0, detail_extra={})
+            else:
+                await settlement._replay_daily_disk_gap(sm, H, 0)
+        assert exc.value.message_key == "common.retryableConflict"
+        good.assert_awaited_once_with(session)
+        bad.assert_awaited_once_with(session)
+        session.commit.assert_awaited_once()
+        record.assert_not_awaited()
 
 
 class TestGapEndpoints:

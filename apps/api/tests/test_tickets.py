@@ -1,6 +1,8 @@
 """Tickets: creation (idempotency / number format / cap / rate limit) / conversation state machine /
 linked notifications / IDOR."""
 
+# pyright: reportPrivateUsage=false
+
 import re
 from datetime import timedelta
 
@@ -335,6 +337,86 @@ class TestAdmin:
             )
         ).json()["items"]
         assert [r["id"] for r in rows] == [t2["id"]]
+
+
+class TestAtomicAlerts:
+    async def test_failed_create_alert_rolls_back_and_retry_is_complete(
+        self, client, sm, monkeypatch
+    ):
+        """A failed alert cannot leave a ticket that makes the retry skip the missing alert."""
+        from app.modules.tickets import service
+        from app.modules.tickets.models import TicketMessage
+
+        _, user_id = await user_headers_with_id(client, "review-ticket-atomic@test.local")
+        original_alert = service._admin_alert
+
+        async def fail_after_alert(*args, **kwargs):
+            await original_alert(*args, **kwargs)
+            raise RuntimeError("alert transaction failed")
+
+        kwargs: dict = {
+            "category": "other",
+            "subject": "atomic creation",
+            "body": "first message",
+            "instance_uuid": None,
+            "idempotency_key": "atomic-ticket",
+        }
+        with monkeypatch.context() as patch:
+            patch.setattr(service, "_admin_alert", fail_after_alert)
+            with pytest.raises(RuntimeError, match="alert transaction failed"):
+                async with sm() as session:
+                    await service.create_ticket(session, user_id, **kwargs)
+        async with sm() as session:
+            assert (
+                await session.execute(select(func.count()).select_from(Ticket))
+            ).scalar_one() == 0
+            assert (
+                await session.execute(select(func.count()).select_from(TicketMessage))
+            ).scalar_one() == 0
+        assert await admin_alerts(sm) == []
+
+        async with sm() as session:
+            ticket, created = await service.create_ticket(session, user_id, **kwargs)
+            assert created
+            ticket_id = ticket.id
+        async with sm() as session:
+            replay, created = await service.create_ticket(session, user_id, **kwargs)
+            assert not created and replay.id == ticket_id
+            assert (
+                await session.execute(select(func.count()).select_from(TicketMessage))
+            ).scalar_one() == 1
+        alerts = await admin_alerts(sm)
+        assert [a.dedup_key for a in alerts] == [f"ticket:created:{ticket_id}"]
+
+    async def test_failed_reply_alert_rolls_back_message_and_status(self, client, sm, monkeypatch):
+        from app.modules.tickets import service
+        from app.modules.tickets.models import TicketMessage
+
+        headers, user_id = await user_headers_with_id(client, "review-reply-atomic@test.local")
+        ticket_id = (await create_ticket(client, headers)).json()["id"]
+        original_alert = service._admin_alert
+
+        async def fail_after_alert(*args, **kwargs):
+            await original_alert(*args, **kwargs)
+            raise RuntimeError("alert transaction failed")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(service, "_admin_alert", fail_after_alert)
+            with pytest.raises(RuntimeError, match="alert transaction failed"):
+                async with sm() as session:
+                    await service.append_message(session, user_id, ticket_id, body="retry me")
+        async with sm() as session:
+            ticket = await session.get(Ticket, ticket_id)
+            assert ticket is not None and ticket.status == "open"
+            assert (
+                await session.execute(select(func.count()).select_from(TicketMessage))
+            ).scalar_one() == 1
+        assert len(await admin_alerts(sm)) == 1
+
+        async with sm() as session:
+            message = await service.append_message(session, user_id, ticket_id, body="retry me")
+            message_id = message.id
+        assert any(a.dedup_key == f"ticket:user-reply:{message_id}" for a in await admin_alerts(sm))
 
 
 class TestStaleTicketPatrol:

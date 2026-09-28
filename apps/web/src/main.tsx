@@ -6,7 +6,7 @@ import ReactDOM from "react-dom/client";
 
 import { routeTree } from "./routeTree.gen";
 import { setupAuthCacheGuard } from "./lib/authCacheGuard";
-import { authStore, readAccessToken } from "./stores/auth";
+import { authStore, readAuthSession } from "./stores/auth";
 import i18n from "./i18n";
 import "@superdl/ui/base.css";
 import "./styles.css";
@@ -28,18 +28,17 @@ declare module "@tanstack/react-router" {
 configureApiClient({
   baseUrl: "",
   getLocale: () => i18n.language,
-  getToken: () => readAccessToken(),
-  refreshToken: async () => {
+  getSession: readAuthSession,
+  refreshToken: async (sessionId) => {
     const pair = await requestTokenRefresh();
-    if (!pair) return false;
-    authStore.getState().login(pair.access_token);
-    return true;
+    // refreshOnce already holds the shared auth lock.
+    return pair !== null && authStore.getState().renewTokenUnderLock(pair.access_token, sessionId);
   },
-  onUnauthorized: () => {
-    authStore.getState().logout();
+  onUnauthorized: async (sessionId) => {
+    if (!(await authStore.getState().logout(sessionId))) return;
     const { pathname, href } = router.state.location;
     if (!pathname.startsWith("/login")) {
-      void router.navigate({ to: "/login", search: { redirect: href } });
+      await router.navigate({ to: "/login", search: { redirect: href } });
     }
   },
 });

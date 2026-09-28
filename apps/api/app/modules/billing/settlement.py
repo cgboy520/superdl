@@ -281,6 +281,102 @@ async def settle_instance_window(
     )
 
 
+async def correct_fault_bills(
+    session: AsyncSession,
+    *,
+    instance_id: int,
+    event_id: int,
+    cutoff: datetime,
+    edge_at: datetime,
+    reason: str,
+) -> Decimal:
+    """Refund overbilled hours for a trusted fault supplied by the transition listener.
+
+    Lock order: instance → bills in hour order → wallet. Rebuild complete hour windows from
+    the current event view, not just the failed stretch; earlier runs in that hour still count.
+    No commit: the event, bill snapshots and refund postings must succeed or roll back together.
+    """
+    await orchestrator_queries.lock_instance_for_billing(session, instance_id)
+    view = billing_view(await orchestrator_queries.billing_events(session, instance_id))
+    bills = (
+        (
+            await session.execute(
+                select(BillHourly)
+                .where(
+                    BillHourly.instance_id == instance_id,
+                    BillHourly.hour_start >= hour_floor(cutoff),
+                    BillHourly.hour_start <= hour_floor(edge_at),
+                )
+                .order_by(BillHourly.hour_start)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    refunded = Decimal("0.00")
+    for row in bills:
+        seconds = running_seconds_in_window(
+            view, row.hour_start, row.hour_start + timedelta(hours=1)
+        )
+        refunded += await _correct_fault_bill(
+            session, row, seconds=seconds, event_id=event_id, cutoff=cutoff, reason=reason
+        )
+    return refunded
+
+
+async def _correct_fault_bill(
+    session: AsyncSession,
+    row: BillHourly,
+    *,
+    seconds: int,
+    event_id: int,
+    cutoff: datetime,
+    reason: str,
+) -> Decimal:
+    """Apply once per (bill, event) under the bill lock, retaining the pre-correction basis.
+
+    Mark even unchanged/zero-refund rows so replay after a later run cannot reuse this event.
+    Seconds can shrink without a money posting when both totals round to the same minor unit.
+    """
+    detail = row.detail or {}
+    corrections = detail.get("fault_corrections", {})
+    key = str(event_id)
+    if key in corrections:
+        return Decimal("0.00")
+    corrected_seconds = min(row.seconds_used, seconds)
+    amount = row.amount
+    if corrected_seconds < row.seconds_used:
+        amount = min(row.amount, bill_amount(row.unit_price, row.gpu_count, corrected_seconds))
+    refund = as_amount(row.amount - amount)
+    correction = {
+        "reason": reason,
+        "truncated_at": cutoff.isoformat(),
+        "unit_price": str(row.unit_price),
+        "gpu_count": row.gpu_count,
+        "before_seconds": row.seconds_used,
+        "before_amount": str(row.amount),
+        "after_seconds": corrected_seconds,
+        "after_amount": str(amount),
+        "refund_amount": str(refund),
+    }
+    if refund > 0:
+        await wallet.credit(
+            session,
+            row.user_id,
+            refund,
+            type_="refund",
+            ref_type="bill_hourly",
+            ref_id=str(row.id),
+            remark=server_copy("billing.remark.fault_refund", event_id=event_id),
+        )
+    row.seconds_used = corrected_seconds
+    row.amount = amount
+    row.detail = {**detail, "fault_corrections": {**corrections, key: correction}}
+    return refund
+
+
 MAX_CONVERT_SETTLE_HOURS = 48
 
 
@@ -459,11 +555,13 @@ async def _settle_window_objects(
     kind: str,
     window_start: datetime,
     attempts: list[tuple[int, SettleAttempt]],
+    dead_letter: bool = True,
 ) -> tuple[int, list[int]]:
     """Settle one window object by object in independent transactions. Returns (posted count, ids
     still failing and not yet dead-lettered).
     One failure does not take the window down; DEAD_LETTER_AFTER consecutive failures record a
-    dead_letter gap and let it pass.
+    dead_letter gap and let it pass. With dead_letter=False, every failure is returned so replay
+    keeps its durable parent gap unresolved, independently of process-local failure streaks.
     """
     settled = 0
     failed: list[int] = []
@@ -482,6 +580,9 @@ async def _settle_window_objects(
                 object_id=object_id,
                 window_start=window_start.isoformat(),
             )
+            if not dead_letter:
+                failed.append(object_id)
+                continue
             key = (kind, window_start, object_id)
             streak = _failure_streaks.get(key, 0) + 1
             if streak >= DEAD_LETTER_AFTER:
@@ -909,9 +1010,10 @@ async def replay_gap(
     """Replay a single-object or whole-window gap in an independent transaction, then record
     resolved_at under the gap row lock.
 
-    grace_overlap → 409; whole disk windows use the currently billable disks. A single-object
-    failure inside a whole window is recorded by the settler
-    and does not stop this function from resolving the original gap. Returns the admin view.
+    grace_overlap → 409; whole disk windows use the currently billable disks. Any failed object
+    in a whole-window replay raises a retryable conflict and keeps the parent unresolved, even
+    on the first failure. Successful objects stay committed and retries are idempotent.
+    Returns the admin view only after every attempted object succeeds.
     """
     async with sm() as session:
         gap = await get_for_update_or_404(
@@ -956,9 +1058,11 @@ async def _replay_hourly_gap(
     window_end = window_start + timedelta(hours=1)
     if not object_id:
         attempts = await _hourly_window_attempts(sm, window_start, window_end)
-        await _settle_window_objects(
-            sm, kind="hourly", window_start=window_start, attempts=attempts
+        _, failed = await _settle_window_objects(
+            sm, kind="hourly", window_start=window_start, attempts=attempts, dead_letter=False
         )
+        if failed:
+            raise conflict(key="common.retryableConflict")
         return
     async with sm() as session:
         row = await orchestrator_queries.instance_billing_snapshot(session, object_id)
@@ -989,7 +1093,11 @@ async def _replay_daily_disk_gap(
         async with sm() as session:
             disk_rows = await _billable_disk_rows(session)
         attempts = await _daily_disk_window_attempts(sm, disk_rows, day, billing_day_shift(day, 1))
-        await _settle_window_objects(sm, kind="daily_disk", window_start=day, attempts=attempts)
+        _, failed = await _settle_window_objects(
+            sm, kind="daily_disk", window_start=day, attempts=attempts, dead_letter=False
+        )
+        if failed:
+            raise conflict(key="common.retryableConflict")
         return
     async with sm() as session:
         disk_row = await orchestrator_queries.disk_billing_snapshot(session, object_id)

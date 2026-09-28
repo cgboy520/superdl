@@ -81,11 +81,12 @@ import { App } from "antd";
 import { useCallback } from "react";
 
 import { useApiErrorText } from "@superdl/ui";
-import { authStore } from "../stores/auth";
+import { authStore, readAuthSession } from "../stores/auth";
 import { keys } from "./keys";
 
 interface MutationOpts<TData> {
-  onSuccess?: (data: TData) => void;
+  /** Awaited by TanStack Query, including asynchronous auth persistence. */
+  onSuccess?: (data: TData) => unknown;
   silentError?: boolean;
   /** Query keys invalidated by prefix on success; an empty array invalidates nothing. */
   invalidates: readonly (readonly unknown[])[];
@@ -102,9 +103,9 @@ export function useApiMutation<TVars = void, TData = unknown>(
   const errText = useApiErrorText();
   return useMutation<TData, ApiError, TVars>({
     mutationFn: fn,
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       for (const key of opts.invalidates) void queryClient.invalidateQueries({ queryKey: key });
-      opts.onSuccess?.(data);
+      await opts.onSuccess?.(data);
     },
     onError: (err) => {
       if (!opts.silentError) message.error(errText(err));
@@ -140,9 +141,11 @@ export const useResetPassword = (o?: CallerOpts) =>
     invalidates: [],
   });
 
-/** Logout: current = revoke this device's refresh token; all = revoke every session of the account. Local state is cleared and the page reloaded afterwards; a failed request does not block. */
+/** Revoke this device or all account sessions. Clear only the initiating session, even on failure. */
 export function useLogout() {
   return useCallback(async (scope: "current" | "all" = "current") => {
+    const { sessionId } = readAuthSession();
+    // Do not hold the persistence lock across a mutator call: a 401 may itself need logout.
     try {
       if (scope === "all") {
         await logoutAllApiV1AuthLogoutAllPost();
@@ -152,8 +155,8 @@ export function useLogout() {
     } catch {
       /* ignored */
     }
-    authStore.getState().logout();
-    window.location.assign("/login");
+    const cleared = await authStore.getState().logout(sessionId);
+    if (cleared || !readAuthSession().accessToken) window.location.assign("/login");
   }, []);
 }
 

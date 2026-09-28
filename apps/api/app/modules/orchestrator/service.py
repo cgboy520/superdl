@@ -1029,8 +1029,8 @@ async def restart_instance(session: AsyncSession, user_id: int, uuid: str) -> In
         instance.gpu_count,
         with_data_disk=instance.data_disk_id is not None,
     )
-    await transition(session, instance, sm_def.STOPPING, reason="restart", actor="user")
-    enqueue(session, "instance.restart", {"instance_id": instance.id})
+    event = await transition(session, instance, sm_def.STOPPING, reason="restart", actor="user")
+    enqueue(session, "instance.restart", {"instance_id": instance.id, "restart_event_id": event.id})
     await session.commit()
     return instance
 
@@ -1404,8 +1404,10 @@ async def reset_jupyter_token(session: AsyncSession, user_id: int, uuid: str) ->
     _reject_service_instance(instance)
     instance.jupyter_token = _encode_token(secrets.token_urlsafe(24), instance_uuid=instance.uuid)
     if instance.status == sm_def.RUNNING:
-        await transition(session, instance, sm_def.STOPPING, reason="restart", actor="user")
-        enqueue(session, "instance.restart", {"instance_id": instance.id})
+        event = await transition(session, instance, sm_def.STOPPING, reason="restart", actor="user")
+        enqueue(
+            session, "instance.restart", {"instance_id": instance.id, "restart_event_id": event.id}
+        )
     await session.commit()
     return instance
 

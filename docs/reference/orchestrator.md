@@ -54,6 +54,7 @@ All online-service endpoints are in [services.md](./services.md). Instance-level
 - The valid `gpu_count` range at creation follows the SKU form: `max_gpus_per_instance == 0` accepts only 0 (else `orchestrator.cpuSkuNoGpu`), otherwise `1..max` (else `orchestrator.gpuCountRange`). The contract layer says `ge=0, le=8`; the pairing gate is in the service.
 - The model nodeSelector comes from the `gpu_model_selector` key of the spec snapshot (None for unrecognised models).
 - The create / start / restart entry points read the cluster capability cache as a gate; not ready → `CLUSTER_NOT_READY`; the criteria share their source with `build_gpu_request`, see [nodes.md](./nodes.md).
+- A restart outbox task carries `restart_event_id`, the immutable user command event. Under the instance row lock, the handler accepts only that event's unfinished stopping → stopped → starting prefix; the reconciler may supply the stopped edge. Every internal commit is followed by re-locking and checking the prefix before the next side effect. Any later lifecycle event makes the old task a no-op. Tasks without this operation identifier are also no-ops; an interrupted legacy restart may require an explicit user start after reconciliation. No database schema migration is required.
 
 ### Reconciler and retention
 

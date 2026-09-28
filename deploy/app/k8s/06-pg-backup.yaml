@@ -45,17 +45,30 @@ spec:
                 - sh
                 - -ec
                 - |
-                  set -e
-                  [ -n "$BACKUP_ENCRYPT_KEY" ] || { echo "BACKUP_ENCRYPT_KEY is not configured" >&2; exit 1; }
+                  set +x
+                  umask 077
+                  [ -n "${BACKUP_ENCRYPT_KEY:-}" ] || { echo "BACKUP_ENCRYPT_KEY is not configured" >&2; exit 1; }
+                  # The pinned image must pass the runbook's toolchain gate; do not
+                  # install packages at runtime or assume build-time gpg survives.
+                  for tool in pg_dump gpg gpg-agent; do
+                    command -v "$tool" >/dev/null || { echo "Required backup tool missing: $tool" >&2; exit 1; }
+                  done
+                  GNUPGHOME=$(mktemp -d /tmp/gnupg.XXXXXXXX)
+                  export GNUPGHOME
                   ts=$(date -u +%Y%m%dT%H%M%SZ)
-                  pg_dump "$PGURL" -Fc -f /backup/superdl-$ts.dump
-                  gpg --batch --yes --symmetric --cipher-algo AES256 \
-                    --passphrase-env BACKUP_ENCRYPT_KEY \
-                    -o /backup/superdl-$ts.dump.gpg /backup/superdl-$ts.dump
-                  rm /backup/superdl-$ts.dump
+                  dump="/backup/superdl-$ts.dump"
+                  trap 'rm -f -- "$dump"' EXIT
+                  # libpq accepts a connection string in PGDATABASE; never put
+                  # the credential-bearing PGURL in pg_dump's process arguments.
+                  PGDATABASE="$PGURL" pg_dump -Fc -f "$dump"
+                  printf '%s\n' "$BACKUP_ENCRYPT_KEY" | gpg --batch --yes \
+                    --pinentry-mode loopback --passphrase-fd 0 \
+                    --symmetric --cipher-algo AES256 -o "$dump.gpg" "$dump"
+                  rm -- "$dump"
                   echo "dump+encrypt done: superdl-$ts.dump.gpg"
               volumeMounts:
                 - {name: backup, mountPath: /backup}
+                - {name: tmp, mountPath: /tmp}
               resources:
                 requests: {cpu: 100m, memory: 256Mi}
                 limits: {cpu: "1", memory: 1Gi}
@@ -107,15 +120,23 @@ spec:
                 - sh
                 - -ec
                 - |
+                  set +x
+                  umask 077
+                  [ -n "${BACKUP_ENCRYPT_KEY:-}" ] || { echo "BACKUP_ENCRYPT_KEY is not configured" >&2; exit 1; }
+                  for tool in gpg gpg-agent initdb pg_ctl createdb pg_restore psql; do
+                    command -v "$tool" >/dev/null || { echo "Required restore tool missing: $tool" >&2; exit 1; }
+                  done
+                  GNUPGHOME=$(mktemp -d /tmp/gnupg.XXXXXXXX)
+                  export GNUPGHOME
                   dump=/backup/verify/roundtrip.dump.gpg
                   echo "smoke restore (from object storage roundtrip): $dump"
-                  printf '%s' "$BACKUP_ENCRYPT_KEY" | gpg --batch --yes --decrypt \
-                    --passphrase-fd 0 -o /tmp/smoke.dump "$dump"
+                  printf '%s\n' "$BACKUP_ENCRYPT_KEY" | gpg --batch --yes --decrypt \
+                    --pinentry-mode loopback --passphrase-fd 0 -o /tmp/smoke.dump "$dump"
                   initdb -D /backup/smoke-data -U postgres --auth=trust >/dev/null
                   pg_ctl -D /backup/smoke-data -o "-k /tmp -p 55432 -c listen_addresses=''" -w start >/dev/null
                   trap 'pg_ctl -D /backup/smoke-data stop -m immediate >/dev/null 2>&1 || true' EXIT
                   createdb -h /tmp -p 55432 -U postgres smoke
-                  pg_restore -h /tmp -p 55432 -U postgres -d smoke --no-owner \
+                  pg_restore -h /tmp -p 55432 -U postgres -d smoke --no-owner --exit-on-error \
                     -t wallets -t balance_ledger -t settlement_watermarks /tmp/smoke.dump
                   for t in wallets balance_ledger settlement_watermarks; do
                     n=$(psql -h /tmp -p 55432 -U postgres -d smoke -v ON_ERROR_STOP=1 -tAc "SELECT count(*) FROM $t")

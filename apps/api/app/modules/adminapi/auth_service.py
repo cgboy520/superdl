@@ -185,14 +185,26 @@ def _mfa_ticket(admin: AdminUser, *, setup: bool) -> str:
 async def _admin_from_ticket(
     session: AsyncSession, ticket: str, *, expected: Literal["mfa_setup", "mfa_ticket"]
 ) -> AdminUser:
-    """Verify the short ticket and load the account. Invalid ticket / changed account status or
-    version → MFA_TICKET_INVALID."""
+    """Verify the short ticket against a freshly loaded, row-locked account.
+
+    Status, version and enrolment phase must still match after acquiring the lock, before any
+    secret is returned or second factor is consumed. The caller keeps the lock until commit.
+    """
     try:
         payload = decode_token(ticket, "admin", expected_type=expected)
     except AppError as exc:
         raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid") from exc
-    admin = await session.get(AdminUser, int(payload["sub"]))
-    if admin is None or admin.status != "active" or payload.get("ver") != admin.token_version:
+    admin = await session.get(
+        AdminUser, int(payload["sub"]), with_for_update=True, populate_existing=True
+    )
+    if (
+        admin is None
+        or admin.status != "active"
+        or payload.get("ver") != admin.token_version
+        or admin.totp_enabled != (expected == "mfa_ticket")
+        or (expected == "mfa_ticket" and admin.totp_secret is None)
+    ):
+        await session.rollback()
         raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
     return admin
 
@@ -265,13 +277,8 @@ async def begin_totp_setup(session: AsyncSession, ticket: str) -> tuple[str, str
 
     Already enrolled rolls back and raises MFA_TICKET_INVALID.
     """
-    admin = await _admin_from_ticket(session, ticket, expected="mfa_setup")
-    await _check_mfa_rate(admin.id)
-    locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
-    assert locked is not None
-    if locked.totp_enabled:
-        await session.rollback()
-        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
+    locked = await _admin_from_ticket(session, ticket, expected="mfa_setup")
+    await _check_mfa_rate(locked.id)
     if locked.totp_secret is None:
         secret = pyotp.random_base32()
         locked.totp_secret = encrypt_str(secret, aad=f"totp:{locked.id}")
@@ -291,20 +298,16 @@ async def confirm_totp_setup(
     On success token_version is bumped to revoke old sessions; returns the new access token, the
     account and the recovery codes visible this once.
     """
-    admin = await _admin_from_ticket(session, ticket, expected="mfa_setup")
-    await _check_mfa_rate(admin.id)
-    if admin.totp_secret is None:
+    locked = await _admin_from_ticket(session, ticket, expected="mfa_setup")
+    await _check_mfa_rate(locked.id)
+    if locked.totp_secret is None:
         raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
-    locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
-    assert locked is not None
     matched = _match_totp_timestep(_decrypt_totp_secret(locked), code)
     if matched is None or not _accept_totp_step(locked, matched):
-        await _count_mfa_attempt(admin.id)
-        logger.warning("mfa_bind_failed", admin_id=admin.id)
+        await _count_mfa_attempt(locked.id)
+        logger.warning("mfa_bind_failed", admin_id=locked.id)
         raise AppError(ErrorCode.MFA_CODE_INVALID, key="adminapi.mfaCodeInvalid")
-    await _count_mfa_attempt(admin.id)
-    if locked.totp_enabled:
-        raise AppError(ErrorCode.MFA_TICKET_INVALID, key="adminapi.mfaTicketInvalid")
+    await _count_mfa_attempt(locked.id)
     plain = _gen_plain_recovery_codes()
     locked.totp_recovery = await _hash_recovery_codes(plain)
     locked.totp_enabled = True
@@ -318,7 +321,7 @@ async def confirm_totp_setup(
         severity="warning",
     )
     await session.commit()
-    logger.info("mfa_bound", admin_id=admin.id)
+    logger.info("mfa_bound", admin_id=locked.id)
     token = create_token(
         str(locked.id), "admin", token_type="access", extra={"ver": locked.token_version}
     )
@@ -332,10 +335,8 @@ async def verify_mfa_login(
 
     Returns (access token, admin, recovery codes left); None left when TOTP was used.
     """
-    admin = await _admin_from_ticket(session, ticket, expected="mfa_ticket")
-    await _check_mfa_rate(admin.id)
-    locked = await session.get(AdminUser, admin.id, with_for_update=True, populate_existing=True)
-    assert locked is not None
+    locked = await _admin_from_ticket(session, ticket, expected="mfa_ticket")
+    await _check_mfa_rate(locked.id)
     ok = False
     used_recovery = False
     if code.isdigit() and len(code) == 6:
@@ -344,13 +345,13 @@ async def verify_mfa_login(
     else:
         used_recovery = ok = await _consume_recovery_code(locked, code.strip().lower())
     if not ok:
-        await _count_mfa_attempt(admin.id)
-        logger.warning("mfa_verify_failed", admin_id=admin.id)
+        await _count_mfa_attempt(locked.id)
+        logger.warning("mfa_verify_failed", admin_id=locked.id)
         raise AppError(ErrorCode.MFA_CODE_INVALID, key="adminapi.mfaCodeInvalid")
-    await _count_mfa_attempt(admin.id)
+    await _count_mfa_attempt(locked.id)
     await session.commit()
     if used_recovery:
-        logger.info("mfa_recovery_used", admin_id=admin.id)
+        logger.info("mfa_recovery_used", admin_id=locked.id)
     token = create_token(
         str(locked.id), "admin", token_type="access", extra={"ver": locked.token_version}
     )
@@ -380,7 +381,7 @@ async def reset_totp(session: AsyncSession, actor: AdminUser, target_id: int) ->
             key="adminapi.mfaResetSelfForbidden",
             http_status=status.HTTP_409_CONFLICT,
         )
-    target = await session.get(AdminUser, target_id)
+    target = await session.get(AdminUser, target_id, with_for_update=True, populate_existing=True)
     if target is None:
         raise not_found("administrator not found")
     target.totp_secret = None
@@ -431,7 +432,7 @@ async def list_admins(session: AsyncSession) -> list[AdminUser]:
 
 
 async def _get_admin(session: AsyncSession, admin_id: int) -> AdminUser:
-    admin = await session.get(AdminUser, admin_id, with_for_update=True)
+    admin = await session.get(AdminUser, admin_id, with_for_update=True, populate_existing=True)
     if admin is None:
         raise not_found()
     return admin

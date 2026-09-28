@@ -298,6 +298,43 @@ class TestRecoveryRegenAndReset:
         assert me.status_code == 401
         assert (await admin_login(client, "rescue-admin")).json()["status"] == "mfa_setup"
 
+    @pytest.mark.parametrize("operation", ["reset_mfa", "logout"])
+    async def test_revocation_refreshes_preloaded_version(self, client: AsyncClient, sm, operation):
+        """A stale identity-map row must not overwrite an intervening revocation's version."""
+        from sqlalchemy import select
+
+        from app.modules.adminapi import auth_service
+        from app.modules.adminapi.models import AdminUser
+
+        await _create(client, sm, "revocation-actor", "admin")
+        await _create(client, sm, "revocation-target", "ops")
+        async with sm() as stale, sm() as intervening:
+            actor = (
+                await stale.execute(
+                    select(AdminUser).where(AdminUser.username == "revocation-actor")
+                )
+            ).scalar_one()
+            target = (
+                await stale.execute(
+                    select(AdminUser).where(AdminUser.username == "revocation-target")
+                )
+            ).scalar_one()
+            original_version = target.token_version
+            await auth_service.logout(intervening, target.id)
+            assert target.token_version == original_version
+            ticket = (await admin_login(client, "revocation-target")).json()["ticket"]
+
+            if operation == "reset_mfa":
+                await auth_service.reset_totp(stale, actor, target.id)
+            else:
+                await auth_service.logout(stale, target.id)
+            await stale.refresh(target)
+            assert target.token_version == original_version + 2
+
+        response = await client.post("/api/admin/v1/auth/mfa/setup/begin", json={"ticket": ticket})
+        assert response.status_code == 400
+        assert response.json()["code"] == "MFA_TICKET_INVALID"
+
     async def test_reset_self_forbidden(self, client: AsyncClient, sm):
         from sqlalchemy import select
 

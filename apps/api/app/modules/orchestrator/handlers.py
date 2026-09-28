@@ -1,6 +1,7 @@
 """outbox task handlers: the actual K8s side effects happen here. All idempotent
 (at-least-once)."""
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -20,7 +21,7 @@ from app.core.servercopy import copy as server_copy
 from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
-from app.modules.orchestrator.models import DataDisk, Instance
+from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 from app.modules.orchestrator.ports import block_port, ensure_port
 from app.modules.orchestrator.queries import lock_instance
 from app.modules.orchestrator.service import build_pod_spec_with_cluster
@@ -96,13 +97,84 @@ async def handle_stop(session: AsyncSession, task: OutboxTask) -> None:
     await _delete_pod(session, task, sm_def.STOPPING)
 
 
+def _is_restart_prefix(events: list[InstanceEvent], origin_id: int, status: str) -> bool:
+    """Only the originating command and its unfinished internal edges may precede a retry."""
+    stages = {sm_def.STOPPING: 1, sm_def.STOPPED: 2, sm_def.STARTING: 3}
+    if len(events) != stages.get(status) or not events or events[0].id != origin_id:
+        return False
+    expected = (
+        (sm_def.RUNNING, sm_def.STOPPING, {"restart"}, "user"),
+        (sm_def.STOPPING, sm_def.STOPPED, {"restart", "pod_deleted"}, "system"),
+        (sm_def.STOPPED, sm_def.STARTING, {"restart"}, "system"),
+    )
+    return all(
+        (event.from_status, event.to_status, event.actor) == (before, after, actor)
+        and event.reason in reasons
+        for event, (before, after, reasons, actor) in zip(events, expected, strict=False)
+    )
+
+
+async def _load_restart(session: AsyncSession, task: OutboxTask) -> Instance | None:
+    """Fence the operation by its append-only command event, under the instance row lock."""
+    origin_id = task.payload.get("restart_event_id")
+    if type(origin_id) is not int or origin_id <= 0:
+        logger.warning("restart_missing_operation", task_id=task.id)
+        return None
+    instance = await lock_instance(session, task.payload["instance_id"])
+    if instance is None:
+        return None
+    events = list(
+        (
+            await session.execute(
+                select(InstanceEvent)
+                .where(InstanceEvent.instance_id == instance.id, InstanceEvent.id >= origin_id)
+                .order_by(InstanceEvent.id)
+                .limit(4)
+            )
+        ).scalars()
+    )
+    if not _is_restart_prefix(events, origin_id, instance.status):
+        logger.info("restart_operation_superseded", task_id=task.id, instance_id=instance.id)
+        return None
+    return instance
+
+
+async def _restart_affordable(session: AsyncSession, instance: Instance) -> bool:
+    try:
+        if instance.market == MARKET_SUBSCRIPTION:
+            await billing_service.assert_subscription_active(session, instance.id)
+        else:
+            estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
+            await billing_service.assert_can_afford(
+                session, instance.user_id, additional_hourly=estimate
+            )
+    except AppError as exc:
+        notices = {
+            ErrorCode.INSUFFICIENT_BALANCE: "restart_no_balance",
+            ErrorCode.SUBSCRIPTION_EXPIRED: "restart_subscription_expired",
+        }
+        notice = notices.get(exc.code)
+        if notice is None:
+            raise
+        logger.warning(notice, instance_id=instance.id)
+        await notify_service.notify(
+            session,
+            instance.user_id,
+            type_="instance",
+            title=server_copy(f"orchestrator.{notice}.title"),
+            content=server_copy(f"orchestrator.{notice}.content", name=instance.name),
+            severity="warning",
+            dedup_key=f"{notice}:{instance.id}",
+            target_id=instance.uuid,
+        )
+        return False
+    return True
+
+
 @outbox_handler("instance.restart", retry=RetryPolicy(max_retries=8))
 async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
-    """Restart: stopping → delete Pod → wait for the object to vanish → stopped (tail bill) →
-    balance
-    check → starting → create Pod;
-    a crash retry resumes from the current status."""
-    instance = await _load(session, task)
+    """Resume only this command's stopping → stopped → starting prefix, never a later operation."""
+    instance = await _load_restart(session, task)
     if instance is None:
         return
     orch = get_orchestrator()
@@ -114,55 +186,16 @@ async def handle_restart(session: AsyncSession, task: OutboxTask) -> None:
         await transition(session, instance, sm_def.STOPPED, reason="restart", actor="system")
         await session.commit()
     if instance.status == sm_def.STOPPED:
-        fresh_stopped = await lock_instance(session, instance.id)
-        if fresh_stopped is None or fresh_stopped.status != sm_def.STOPPED:
+        instance = await _load_restart(session, task)
+        if instance is None or instance.status != sm_def.STOPPED:
             return
-        instance = fresh_stopped
-        try:
-            if instance.market == MARKET_SUBSCRIPTION:
-                await billing_service.assert_subscription_active(session, instance.id)
-            else:
-                estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
-                await billing_service.assert_can_afford(
-                    session, instance.user_id, additional_hourly=estimate
-                )
-        except AppError as exc:
-            if exc.code is ErrorCode.INSUFFICIENT_BALANCE:
-                logger.warning("restart_aborted_insufficient_balance", instance_id=instance.id)
-                await notify_service.notify(
-                    session,
-                    instance.user_id,
-                    type_="instance",
-                    title=server_copy("orchestrator.restart_no_balance.title"),
-                    content=server_copy(
-                        "orchestrator.restart_no_balance.content", name=instance.name
-                    ),
-                    severity="warning",
-                    dedup_key=f"restart_no_balance:{instance.id}",
-                    target_id=instance.uuid,
-                )
-                return
-            if exc.code is ErrorCode.SUBSCRIPTION_EXPIRED:
-                logger.warning("restart_aborted_subscription_expired", instance_id=instance.id)
-                await notify_service.notify(
-                    session,
-                    instance.user_id,
-                    type_="instance",
-                    title=server_copy("orchestrator.restart_subscription_expired.title"),
-                    content=server_copy(
-                        "orchestrator.restart_subscription_expired.content", name=instance.name
-                    ),
-                    severity="warning",
-                    dedup_key=f"restart_subscription_expired:{instance.id}",
-                    target_id=instance.uuid,
-                )
-                return
-            raise
+        if not await _restart_affordable(session, instance):
+            return
         await transition(session, instance, sm_def.STARTING, reason="restart", actor="system")
         instance.unready_since = None
         await session.commit()
-        await _create_with_port_recovery(session, instance)
-    elif instance.status == sm_def.STARTING:
+        instance = await _load_restart(session, task)
+    if instance is not None and instance.status == sm_def.STARTING:
         await _create_with_port_recovery(session, instance)
 
 

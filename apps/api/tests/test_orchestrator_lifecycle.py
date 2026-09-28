@@ -205,6 +205,52 @@ class TestStopStartRestart:
         assert ("stopping", "stopped") in chain
         assert ("stopped", "starting") in chain
 
+    async def test_old_restart_replay_does_not_undo_later_user_stop(self, client, sm, fake):
+        """A retry after provisioning must not restart a later user-stopped instance."""
+        from app.core.outbox import enqueue
+
+        headers, uuid, user_id = await provision_running(client, sm, fake)
+        ns = f"tenant-{user_id}"
+        await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
+        async with sm() as session:
+            task = (
+                await session.execute(
+                    select(OutboxTask).where(OutboxTask.type == "instance.restart")
+                )
+            ).scalar_one()
+            payload = dict(task.payload)
+        assert payload["restart_event_id"] > 0
+        await drain_strict(sm)
+        fake.mark_ready(ns, uuid)
+        await reconcile_once(sm)
+        await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
+        await drain_strict(sm)
+        await reconcile_once(sm)
+        events_before = (
+            await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)
+        ).json()
+        async with sm() as session:
+            enqueue(session, "instance.restart", payload)
+            await session.commit()
+        assert await drain_strict(sm) == (1, 0)
+        assert (await get_instance(client, headers, uuid))["status"] == "stopped"
+        assert (ns, uuid) not in fake.pods
+        assert (
+            await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)
+        ).json() == events_before
+
+    async def test_restart_resumes_after_reconciler_completes_delete(self, client, sm, fake):
+        """The reconciler's stopped edge belongs to the same restart command."""
+        headers, uuid, user_id = await provision_running(client, sm, fake)
+        ns = f"tenant-{user_id}"
+        await client.post(f"/api/v1/instances/{uuid}/restart", headers=headers)
+        await fake.delete_instance(ns, uuid)
+        await reconcile_once(sm)
+        assert (await get_instance(client, headers, uuid))["status"] == "stopped"
+        assert await drain_strict(sm) == (1, 0)
+        assert (await get_instance(client, headers, uuid))["status"] == "starting"
+        assert (ns, uuid) in fake.pods
+
     async def test_stop_requires_running(self, client, sm, fake):
         headers, uuid, _user_id = await provision_running(client, sm, fake)
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)

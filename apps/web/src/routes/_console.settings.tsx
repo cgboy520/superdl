@@ -391,9 +391,9 @@ function PasswordModal({ open, handle, onClose }: { open: boolean; handle: strin
   const [form] = Form.useForm<{ code: string; new_password: string }>();
   const codes = useVerificationCode("reset_password", t("settings.codeSent"));
   const reset = useResetPassword({
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       const pair = data as TokenPairOut;
-      authStore.getState().login(pair.access_token);
+      await authStore.getState().login(pair.access_token);
       message.success(t("settings.passwordChanged"));
       form.resetFields();
       onClose();

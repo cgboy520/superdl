@@ -185,13 +185,13 @@ function LoginPage() {
     });
   };
 
-  const onLoggedIn = (data: unknown) => {
+  const onLoggedIn = async (data: unknown) => {
     const pair = data as TokenPairOut;
-    authStore.getState().login(pair.access_token);
+    await authStore.getState().login(pair.access_token);
     if (redirectTo) {
       router.history.push(redirectTo);
     } else {
-      void navigate({ to: "/instances" });
+      await navigate({ to: "/instances" });
     }
   };
 
@@ -203,9 +203,9 @@ function LoginPage() {
   const login = useLogin({ onSuccess: onLoggedIn });
   const register = useRegister({ onSuccess: onLoggedIn });
   const resetPassword = useResetPassword({
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      await onLoggedIn(data);
       message.success(t("login.resetDone"));
-      onLoggedIn(data);
     },
   });
 

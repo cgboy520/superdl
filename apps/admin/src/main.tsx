@@ -12,22 +12,21 @@ import "./global.css";
 import i18n from "./i18n";
 import { queryClient } from "./lib/queryClient";
 import { routeTree } from "./routeTree.gen";
-import { authStore, readAdminToken } from "./stores/auth";
+import { authStore, readAuthSession } from "./stores/auth";
 
 configureApiClient({
   baseUrl: "",
   getLocale: () => i18n.language,
-  getToken: () => readAdminToken(),
-  refreshToken: async () => {
-    const token = readAdminToken();
-    if (!token) return false;
-    const renewed = await requestAdminTokenRefresh(token);
-    if (!renewed) return false;
-    authStore.getState().setToken(renewed.access_token);
-    return true;
+  getSession: readAuthSession,
+  refreshToken: async (sessionId) => {
+    const session = readAuthSession();
+    if (!session.accessToken || session.sessionId !== sessionId) return false;
+    const renewed = await requestAdminTokenRefresh(session.accessToken);
+    // refreshOnce already holds the shared auth lock.
+    return renewed !== null && authStore.getState().renewTokenUnderLock(renewed.access_token, sessionId);
   },
-  onUnauthorized: () => {
-    authStore.getState().logout();
+  onUnauthorized: async (sessionId) => {
+    if (!(await authStore.getState().logout(sessionId))) return;
     if (!window.location.pathname.startsWith("/login")) {
       const returnTo = window.location.pathname + window.location.search;
       window.location.href = `/login?returnTo=${encodeURIComponent(returnTo)}`;

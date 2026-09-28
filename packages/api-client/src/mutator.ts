@@ -13,12 +13,19 @@ export interface ApiError {
   params?: Record<string, unknown> | null;
 }
 
+interface AuthSession {
+  sessionId: string | null;
+  accessToken: string | null;
+}
+
 interface ClientConfig {
   baseUrl: string;
   getToken: () => string | null;
-  onUnauthorized: (() => void) | null;
-  /** Silent renewal attempt for a 401 outside /auth/ paths (returns success); onUnauthorized is called when unconfigured or still 401 after the retry. */
-  refreshToken: (() => Promise<boolean>) | null;
+  /** Atomic snapshot; login/logout changes the generation, renewal alone preserves it. */
+  getSession: (() => AuthSession) | null;
+  onUnauthorized: ((expectedSessionId: string | null) => void | Promise<void>) | null;
+  /** Runs under withAuthSessionLock: commit conditionally, without acquiring the lock again. */
+  refreshToken: ((expectedSessionId: string | null) => Promise<boolean>) | null;
   /** Current UI language sent as Accept-Language (server-rendered texts such as verification codes). */
   getLocale: () => string | null;
 }
@@ -26,20 +33,34 @@ interface ClientConfig {
 const config: ClientConfig = {
   baseUrl: "",
   getToken: () => null,
+  getSession: null,
   onUnauthorized: null,
   refreshToken: null,
   getLocale: () => null,
 };
 
-/** Cross-tab renewal mutex name. */
+/** All auth persistence writers share this cross-tab mutex, including explicit login/logout. */
 const REFRESH_LOCK = "superdl:token-refresh";
 
-/** Renew serially inside Web Locks; returns success at once when the current token differs from the request's token. */
-async function refreshOnce(staleToken: string | null): Promise<boolean> {
-  return navigator.locks.request(REFRESH_LOCK, async () => {
-    if (config.getToken() !== staleToken) return true;
-    return (await config.refreshToken?.()) ?? false;
+/** Not reentrant. Refresh callbacks already hold this lock; only their synchronous commit runs there. */
+export function withAuthSessionLock<T>(action: () => T | Promise<T>): Promise<T> {
+  return navigator.locks.request(REFRESH_LOCK, action);
+}
+
+/** Re-check the request's session inside the lock, including after waiting for another tab. */
+async function refreshOnce(staleToken: string | null, currentSession: () => AuthSession): Promise<boolean> {
+  return withAuthSessionLock(async () => {
+    const current = currentSession();
+    if (!current.accessToken) return false;
+    if (current.accessToken !== staleToken) return true;
+    const refreshed = (await config.refreshToken?.(current.sessionId)) ?? false;
+    currentSession();
+    return refreshed;
   });
+}
+
+function readSession(): AuthSession {
+  return config.getSession?.() ?? { sessionId: null, accessToken: config.getToken() };
 }
 
 export function configureApiClient(opts: Partial<ClientConfig>): void {
@@ -105,10 +126,24 @@ function networkError(): ApiError {
 }
 
 export const customFetch = async <T>(url: string, options: ApiRequestOptions): Promise<T> => {
+  const session = readSession();
+  const explicitAuth = toHeaders(options.headers).has("Authorization");
+  const currentSession = (): AuthSession => {
+    options.signal?.throwIfAborted();
+    const current = readSession();
+    if (
+      current.sessionId !== session.sessionId ||
+      (current.accessToken === null) !== (session.accessToken === null) ||
+      (!config.getSession && current.accessToken !== session.accessToken)
+    ) {
+      throw new DOMException("Authentication session changed", "AbortError");
+    }
+    return current;
+  };
   let usedToken: string | null = null;
   const doFetch = (): Promise<Response> => {
     const headers = toHeaders(options.headers);
-    const token = config.getToken();
+    const token = currentSession().accessToken;
     usedToken = token;
     if (token && !headers.has("Authorization")) {
       headers.set("Authorization", `Bearer ${token}`);
@@ -127,24 +162,28 @@ export const customFetch = async <T>(url: string, options: ApiRequestOptions): P
     try {
       return await doFetch();
     } catch (e) {
+      currentSession();
       if (e instanceof TypeError) throw networkError();
       throw e;
     }
   };
 
   let response = await guardedFetch();
+  currentSession();
 
-  if (response.status === 401 && config.refreshToken && !url.includes("/auth/")) {
-    if (await refreshOnce(usedToken)) {
+  if (response.status === 401 && config.refreshToken && !explicitAuth && !url.includes("/auth/")) {
+    if (await refreshOnce(usedToken, currentSession)) {
       response = await guardedFetch();
     }
-  }
-
-  if (response.status === 401) {
-    config.onUnauthorized?.();
+    currentSession();
   }
 
   const text = await response.text();
+  currentSession();
+  if (response.status === 401 && !explicitAuth) {
+    // refreshOnce has released the lock; unauthorized logout may safely acquire it.
+    await config.onUnauthorized?.(session.sessionId);
+  }
   let body: unknown = null;
   if (text) {
     try {
