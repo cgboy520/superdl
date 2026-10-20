@@ -91,7 +91,7 @@ max_connections ≥ processes × (db_pool_size + max_overflow) + migration/ops r
 ## Frontend availability and the HPA decision
 
 web/admin frontends: 2 replicas each + PDB `minAvailable: 1` + liveness/readiness both probing `/` (see `app/k8s/07-frontends.yaml`).
-**No HPA is configured**; both frontends run `requests == limits` (Guaranteed QoS); re-evaluate if SSR/BFF is introduced.
+**No HPA is configured**; both frontends request 50m CPU / 64Mi and are limited to 500m CPU / 4Gi (Burstable QoS); re-evaluate if SSR/BFF is introduced.
 
 ## Separate environment copies (staging / demo)
 
