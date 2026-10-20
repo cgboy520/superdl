@@ -61,11 +61,25 @@ export const getLoginApiV1AuthLoginPostUrl = () => {
  */
 export const loginApiV1AuthLoginPost = async (loginRequest: LoginRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPairOut> => {
 
-  return customFetch<TokenPairOut>(getLoginApiV1AuthLoginPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TokenPairOut>(getLoginApiV1AuthLoginPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(loginRequest)
   }
 );}
@@ -135,11 +149,25 @@ export const getResetPasswordApiV1AuthPasswordResetPostUrl = () => {
  */
 export const resetPasswordApiV1AuthPasswordResetPost = async (passwordResetRequest: PasswordResetRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPairOut> => {
 
-  return customFetch<TokenPairOut>(getResetPasswordApiV1AuthPasswordResetPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TokenPairOut>(getResetPasswordApiV1AuthPasswordResetPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(passwordResetRequest)
   }
 );}
@@ -183,11 +211,25 @@ export const getRegisterApiV1AuthRegisterPostUrl = () => {
  */
 export const registerApiV1AuthRegisterPost = async (registerRequest: RegisterRequest, options?: Parameters<typeof customFetch>[1]): Promise<TokenPairOut> => {
 
-  return customFetch<TokenPairOut>(getRegisterApiV1AuthRegisterPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TokenPairOut>(getRegisterApiV1AuthRegisterPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(registerRequest)
   }
 );}
@@ -207,11 +249,25 @@ export const getSendVerificationCodeApiV1AuthVerificationCodePostUrl = () => {
  */
 export const sendVerificationCodeApiV1AuthVerificationCodePost = async (verificationCodeRequest: VerificationCodeRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
 
-  return customFetch<void>(getSendVerificationCodeApiV1AuthVerificationCodePostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<void>(getSendVerificationCodeApiV1AuthVerificationCodePostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(verificationCodeRequest)
   }
 );}
@@ -279,11 +335,25 @@ export const getCreateDeletionRequestApiV1MeDeletionRequestPostUrl = () => {
  */
 export const createDeletionRequestApiV1MeDeletionRequestPost = async (deletionRequestCreate: DeletionRequestCreate, options?: Parameters<typeof customFetch>[1]): Promise<DeletionRequestOut> => {
 
-  return customFetch<DeletionRequestOut>(getCreateDeletionRequestApiV1MeDeletionRequestPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<DeletionRequestOut>(getCreateDeletionRequestApiV1MeDeletionRequestPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(deletionRequestCreate)
   }
 );}
@@ -327,11 +397,25 @@ export const getRequestHandleCodeApiV1MeHandlesCodePostUrl = () => {
  */
 export const requestHandleCodeApiV1MeHandlesCodePost = async (handleCodeRequest: HandleCodeRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
 
-  return customFetch<void>(getRequestHandleCodeApiV1MeHandlesCodePostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<void>(getRequestHandleCodeApiV1MeHandlesCodePostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(handleCodeRequest)
   }
 );}
@@ -352,11 +436,25 @@ export const getConfirmHandleApiV1MeHandlesConfirmPostUrl = () => {
  */
 export const confirmHandleApiV1MeHandlesConfirmPost = async (handleConfirmRequest: HandleConfirmRequest, options?: Parameters<typeof customFetch>[1]): Promise<UserOut> => {
 
-  return customFetch<UserOut>(getConfirmHandleApiV1MeHandlesConfirmPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<UserOut>(getConfirmHandleApiV1MeHandlesConfirmPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(handleConfirmRequest)
   }
 );}
@@ -401,11 +499,25 @@ export const getSubmitKycApiV1MeKycPostUrl = () => {
  */
 export const submitKycApiV1MeKycPost = async (kycSubmitRequest: KycSubmitRequest, options?: Parameters<typeof customFetch>[1]): Promise<UserOut> => {
 
-  return customFetch<UserOut>(getSubmitKycApiV1MeKycPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<UserOut>(getSubmitKycApiV1MeKycPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(kycSubmitRequest)
   }
 );}
@@ -424,11 +536,25 @@ export const getSetWarnThresholdApiV1MeWarnThresholdPatchUrl = () => {
  */
 export const setWarnThresholdApiV1MeWarnThresholdPatch = async (warnThresholdUpdate: WarnThresholdUpdate, options?: Parameters<typeof customFetch>[1]): Promise<UserOut> => {
 
-  return customFetch<UserOut>(getSetWarnThresholdApiV1MeWarnThresholdPatchUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<UserOut>(getSetWarnThresholdApiV1MeWarnThresholdPatchUrl(),
   {
     ...options,
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(warnThresholdUpdate)
   }
 );}
@@ -470,11 +596,25 @@ export const getAddSshKeyApiV1SshKeysPostUrl = () => {
  */
 export const addSshKeyApiV1SshKeysPost = async (sshKeyCreate: SshKeyCreate, options?: Parameters<typeof customFetch>[1]): Promise<SshKeyOut> => {
 
-  return customFetch<SshKeyOut>(getAddSshKeyApiV1SshKeysPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<SshKeyOut>(getAddSshKeyApiV1SshKeysPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(sshKeyCreate)
   }
 );}

@@ -215,11 +215,25 @@ export const getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl = () => {
 export const adminCreateAdjustmentApiAdminV1AdjustmentsPost = async (adjustmentCreate: AdjustmentCreate,
     headers?: AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<AdjustmentStatusOut> => {
 
-  return customFetch<AdjustmentStatusOut>(getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdjustmentStatusOut>(getAdminCreateAdjustmentApiAdminV1AdjustmentsPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(adjustmentCreate)
   }
 );}
@@ -274,11 +288,25 @@ export const getAdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost
 export const adminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPost = async (adjustmentId: number,
     adjustmentReview: AdjustmentReview, options?: Parameters<typeof customFetch>[1]): Promise<AdjustmentStatusOut> => {
 
-  return customFetch<AdjustmentStatusOut>(getAdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPostUrl(adjustmentId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdjustmentStatusOut>(getAdminReviewAdjustmentApiAdminV1AdjustmentsAdjustmentIdReviewPostUrl(adjustmentId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adjustmentReview)
   }
 );}
@@ -320,11 +348,25 @@ export const getAdminCreateAdminApiAdminV1AdminsPostUrl = () => {
  */
 export const adminCreateAdminApiAdminV1AdminsPost = async (adminCreateRequest: AdminCreateRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminAccountOut> => {
 
-  return customFetch<AdminAccountOut>(getAdminCreateAdminApiAdminV1AdminsPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminAccountOut>(getAdminCreateAdminApiAdminV1AdminsPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminCreateRequest)
   }
 );}
@@ -346,11 +388,25 @@ export const getAdminUpdateAdminApiAdminV1AdminsAdminIdPatchUrl = (adminId: numb
 export const adminUpdateAdminApiAdminV1AdminsAdminIdPatch = async (adminId: number,
     adminUpdateRequest: AdminUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminAccountOut> => {
 
-  return customFetch<AdminAccountOut>(getAdminUpdateAdminApiAdminV1AdminsAdminIdPatchUrl(adminId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminAccountOut>(getAdminUpdateAdminApiAdminV1AdminsAdminIdPatchUrl(adminId),
   {
     ...options,
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminUpdateRequest)
   }
 );}
@@ -372,11 +428,25 @@ export const getMfaResetApiAdminV1AdminsAdminIdMfaResetPostUrl = (adminId: numbe
 export const mfaResetApiAdminV1AdminsAdminIdMfaResetPost = async (adminId: number,
     mfaResetRequest: MfaResetRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminAccountOut> => {
 
-  return customFetch<AdminAccountOut>(getMfaResetApiAdminV1AdminsAdminIdMfaResetPostUrl(adminId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminAccountOut>(getMfaResetApiAdminV1AdminsAdminIdMfaResetPostUrl(adminId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(mfaResetRequest)
   }
 );}
@@ -396,11 +466,25 @@ export const getAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostUrl = 
 export const adminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPost = async (adminId: number,
     adminResetPasswordRequest: AdminResetPasswordRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminAccountOut> => {
 
-  return customFetch<AdminAccountOut>(getAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostUrl(adminId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminAccountOut>(getAdminResetPasswordApiAdminV1AdminsAdminIdResetPasswordPostUrl(adminId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminResetPasswordRequest)
   }
 );}
@@ -526,11 +610,25 @@ export const getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl = () => {
 export const adminPublishAnnouncementApiAdminV1AnnouncementsPost = async (announcementCreate: AnnouncementCreate,
     headers?: AdminPublishAnnouncementApiAdminV1AnnouncementsPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<AnnouncementResultOut> => {
 
-  return customFetch<AnnouncementResultOut>(getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AnnouncementResultOut>(getAdminPublishAnnouncementApiAdminV1AnnouncementsPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(announcementCreate)
   }
 );}
@@ -551,11 +649,25 @@ export const getAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevo
 export const adminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePost = async (announcementId: number,
     announcementRevoke: AnnouncementRevoke, options?: Parameters<typeof customFetch>[1]): Promise<AnnouncementOut> => {
 
-  return customFetch<AnnouncementOut>(getAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePostUrl(announcementId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AnnouncementOut>(getAdminRevokeAnnouncementApiAdminV1AnnouncementsAnnouncementIdRevokePostUrl(announcementId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(announcementRevoke)
   }
 );}
@@ -644,11 +756,25 @@ export const getAdminLoginApiAdminV1AuthLoginPostUrl = () => {
  */
 export const adminLoginApiAdminV1AuthLoginPost = async (adminLoginRequest: AdminLoginRequest, options?: Parameters<typeof customFetch>[1]): Promise<MfaChallengeOut | AdminLoginTokenOut> => {
 
-  return customFetch<MfaChallengeOut | AdminLoginTokenOut>(getAdminLoginApiAdminV1AuthLoginPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MfaChallengeOut | AdminLoginTokenOut>(getAdminLoginApiAdminV1AuthLoginPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminLoginRequest)
   }
 );}
@@ -669,11 +795,25 @@ export const getMfaLoginVerifyApiAdminV1AuthLoginMfaPostUrl = () => {
  */
 export const mfaLoginVerifyApiAdminV1AuthLoginMfaPost = async (mfaCodeRequest: MfaCodeRequest, options?: Parameters<typeof customFetch>[1]): Promise<MfaLoginOut> => {
 
-  return customFetch<MfaLoginOut>(getMfaLoginVerifyApiAdminV1AuthLoginMfaPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MfaLoginOut>(getMfaLoginVerifyApiAdminV1AuthLoginMfaPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(mfaCodeRequest)
   }
 );}
@@ -719,11 +859,25 @@ export const getMfaSetupBeginApiAdminV1AuthMfaSetupBeginPostUrl = () => {
  */
 export const mfaSetupBeginApiAdminV1AuthMfaSetupBeginPost = async (mfaTicketRequest: MfaTicketRequest, options?: Parameters<typeof customFetch>[1]): Promise<MfaSetupOut> => {
 
-  return customFetch<MfaSetupOut>(getMfaSetupBeginApiAdminV1AuthMfaSetupBeginPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MfaSetupOut>(getMfaSetupBeginApiAdminV1AuthMfaSetupBeginPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(mfaTicketRequest)
   }
 );}
@@ -743,11 +897,25 @@ export const getMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPostUrl = () => {
  */
 export const mfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPost = async (mfaCodeRequest: MfaCodeRequest, options?: Parameters<typeof customFetch>[1]): Promise<MfaSetupConfirmOut> => {
 
-  return customFetch<MfaSetupConfirmOut>(getMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MfaSetupConfirmOut>(getMfaSetupConfirmApiAdminV1AuthMfaSetupConfirmPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(mfaCodeRequest)
   }
 );}
@@ -769,11 +937,25 @@ export const getAdminRefreshApiAdminV1AuthRefreshPostUrl = () => {
  */
 export const adminRefreshApiAdminV1AuthRefreshPost = async (adminRefreshRequest: AdminRefreshRequest, options?: Parameters<typeof customFetch>[1]): Promise<AdminRefreshOut> => {
 
-  return customFetch<AdminRefreshOut>(getAdminRefreshApiAdminV1AuthRefreshPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminRefreshOut>(getAdminRefreshApiAdminV1AuthRefreshPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminRefreshRequest)
   }
 );}
@@ -929,11 +1111,25 @@ export const getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePo
 export const adminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePost = async (requestId: number,
     adminDeletionApprove: AdminDeletionApprove, options?: Parameters<typeof customFetch>[1]): Promise<AdminDeletionRequestOut> => {
 
-  return customFetch<AdminDeletionRequestOut>(getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePostUrl(requestId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminDeletionRequestOut>(getAdminApproveDeletionApiAdminV1DeletionRequestsRequestIdApprovePostUrl(requestId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminDeletionApprove)
   }
 );}
@@ -954,11 +1150,25 @@ export const getAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost
 export const adminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPost = async (requestId: number,
     adminDeletionReject: AdminDeletionReject, options?: Parameters<typeof customFetch>[1]): Promise<AdminDeletionRequestOut> => {
 
-  return customFetch<AdminDeletionRequestOut>(getAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPostUrl(requestId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminDeletionRequestOut>(getAdminRejectDeletionApiAdminV1DeletionRequestsRequestIdRejectPostUrl(requestId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminDeletionReject)
   }
 );}
@@ -1033,11 +1243,25 @@ export const adminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPost = asyn
     orderBackfillRequest: OrderBackfillRequest,
     headers?: AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<OrderBackfillOut> => {
 
-  return customFetch<OrderBackfillOut>(getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl(orderNo),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OrderBackfillOut>(getAdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostUrl(orderNo),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(orderBackfillRequest)
   }
 );}
@@ -1084,11 +1308,25 @@ export const getAdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost
 export const adminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost = async (orderNo: string,
     reversalResolve: ReversalResolve, options?: Parameters<typeof customFetch>[1]): Promise<AdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost200> => {
 
-  return customFetch<AdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost200>(getAdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePostUrl(orderNo),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePost200>(getAdminResolveReversalApiAdminV1FinanceReversalsOrderNoResolvePostUrl(orderNo),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(reversalResolve)
   }
 );}
@@ -1166,11 +1404,25 @@ export const getAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdRes
 export const adminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePost = async (gapId: number,
     settlementGapResolve: SettlementGapResolve, options?: Parameters<typeof customFetch>[1]): Promise<AdminSettlementGapOut> => {
 
-  return customFetch<AdminSettlementGapOut>(getAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePostUrl(gapId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminSettlementGapOut>(getAdminResolveSettlementGapApiAdminV1FinanceSettlementGapsGapIdResolvePostUrl(gapId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(settlementGapResolve)
   }
 );}
@@ -1213,11 +1465,25 @@ export const getAdminCreateImageApiAdminV1ImagesPostUrl = () => {
  */
 export const adminCreateImageApiAdminV1ImagesPost = async (imageCreate: ImageCreate, options?: Parameters<typeof customFetch>[1]): Promise<AdminImageOut> => {
 
-  return customFetch<AdminImageOut>(getAdminCreateImageApiAdminV1ImagesPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminImageOut>(getAdminCreateImageApiAdminV1ImagesPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(imageCreate)
   }
 );}
@@ -1239,11 +1505,25 @@ export const getAdminDeleteImageApiAdminV1ImagesImageIdDeleteUrl = (imageId: num
 export const adminDeleteImageApiAdminV1ImagesImageIdDelete = async (imageId: number,
     imageDeleteRequest: ImageDeleteRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
 
-  return customFetch<void>(getAdminDeleteImageApiAdminV1ImagesImageIdDeleteUrl(imageId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<void>(getAdminDeleteImageApiAdminV1ImagesImageIdDeleteUrl(imageId),
   {
     ...options,
     method: 'DELETE',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(imageDeleteRequest)
   }
 );}
@@ -1263,11 +1543,25 @@ export const getAdminUpdateImageApiAdminV1ImagesImageIdPatchUrl = (imageId: numb
 export const adminUpdateImageApiAdminV1ImagesImageIdPatch = async (imageId: number,
     imageUpdate: ImageUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AdminImageOut> => {
 
-  return customFetch<AdminImageOut>(getAdminUpdateImageApiAdminV1ImagesImageIdPatchUrl(imageId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminImageOut>(getAdminUpdateImageApiAdminV1ImagesImageIdPatchUrl(imageId),
   {
     ...options,
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(imageUpdate)
   }
 );}
@@ -1401,11 +1695,25 @@ export const getAdminForceStopApiAdminV1InstancesUuidForceStopPostUrl = (uuid: s
 export const adminForceStopApiAdminV1InstancesUuidForceStopPost = async (uuid: string,
     adminForceStopRequest: AdminForceStopRequest, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
 
-  return customFetch<InstanceOut>(getAdminForceStopApiAdminV1InstancesUuidForceStopPostUrl(uuid),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<InstanceOut>(getAdminForceStopApiAdminV1InstancesUuidForceStopPostUrl(uuid),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminForceStopRequest)
   }
 );}
@@ -1427,11 +1735,25 @@ export const getAdminPreemptApiAdminV1InstancesUuidPreemptPostUrl = (uuid: strin
 export const adminPreemptApiAdminV1InstancesUuidPreemptPost = async (uuid: string,
     adminForceStopRequest: AdminForceStopRequest, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
 
-  return customFetch<InstanceOut>(getAdminPreemptApiAdminV1InstancesUuidPreemptPostUrl(uuid),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<InstanceOut>(getAdminPreemptApiAdminV1InstancesUuidPreemptPostUrl(uuid),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminForceStopRequest)
   }
 );}
@@ -1520,11 +1842,25 @@ export const getAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostUrl = (invo
 export const adminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePost = async (invoiceId: number,
     invoiceIssue: InvoiceIssue, options?: Parameters<typeof customFetch>[1]): Promise<AdminInvoiceOut> => {
 
-  return customFetch<AdminInvoiceOut>(getAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostUrl(invoiceId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminInvoiceOut>(getAdminIssueInvoiceApiAdminV1InvoicesInvoiceIdIssuePostUrl(invoiceId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(invoiceIssue)
   }
 );}
@@ -1545,11 +1881,25 @@ export const getAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostUrl = (in
 export const adminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPost = async (invoiceId: number,
     invoiceReject: InvoiceReject, options?: Parameters<typeof customFetch>[1]): Promise<AdminInvoiceOut> => {
 
-  return customFetch<AdminInvoiceOut>(getAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostUrl(invoiceId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminInvoiceOut>(getAdminRejectInvoiceApiAdminV1InvoicesInvoiceIdRejectPostUrl(invoiceId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(invoiceReject)
   }
 );}
@@ -1594,11 +1944,25 @@ export const getAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPu
 export const adminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPut = async (versionId: number,
     legalDocVersionUpdate: LegalDocVersionUpdate, options?: Parameters<typeof customFetch>[1]): Promise<LegalDocVersionOut> => {
 
-  return customFetch<LegalDocVersionOut>(getAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPutUrl(versionId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<LegalDocVersionOut>(getAdminUpdateLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdPutUrl(versionId),
   {
     ...options,
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(legalDocVersionUpdate)
   }
 );}
@@ -1620,11 +1984,25 @@ export const getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdA
 export const adminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePost = async (versionId: number,
     legalDocVersionArchive: LegalDocVersionArchive, options?: Parameters<typeof customFetch>[1]): Promise<LegalDocVersionOut> => {
 
-  return customFetch<LegalDocVersionOut>(getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePostUrl(versionId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<LegalDocVersionOut>(getAdminArchiveLegalDocVersionApiAdminV1LegalDocsVersionsVersionIdArchivePostUrl(versionId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(legalDocVersionArchive)
   }
 );}
@@ -1704,11 +2082,25 @@ export const getAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPostU
 export const adminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPost = async (docKey: string,
     legalDocVersionCreate: LegalDocVersionCreate, options?: Parameters<typeof customFetch>[1]): Promise<LegalDocVersionOut> => {
 
-  return customFetch<LegalDocVersionOut>(getAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPostUrl(docKey),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<LegalDocVersionOut>(getAdminCreateLegalDocVersionApiAdminV1LegalDocsDocKeyVersionsPostUrl(docKey),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(legalDocVersionCreate)
   }
 );}
@@ -1776,11 +2168,25 @@ export const getAdminChangeOwnPasswordApiAdminV1MePasswordPostUrl = () => {
  */
 export const adminChangeOwnPasswordApiAdminV1MePasswordPost = async (adminSelfPasswordRequest: AdminSelfPasswordRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
 
-  return customFetch<void>(getAdminChangeOwnPasswordApiAdminV1MePasswordPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<void>(getAdminChangeOwnPasswordApiAdminV1MePasswordPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminSelfPasswordRequest)
   }
 );}
@@ -1834,11 +2240,25 @@ export const getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostUrl = () => {
 export const adminCreateEnrollmentApiAdminV1NodeEnrollmentsPost = async (enrollmentCreate: EnrollmentCreate,
     headers?: AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<EnrollmentCommandOut> => {
 
-  return customFetch<EnrollmentCommandOut>(getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<EnrollmentCommandOut>(getAdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(enrollmentCreate)
   }
 );}
@@ -1859,11 +2279,25 @@ export const getAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRe
 export const adminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePost = async (enrollmentId: number,
     enrollmentRegenerateRequest: EnrollmentRegenerateRequest, options?: Parameters<typeof customFetch>[1]): Promise<EnrollmentCommandOut> => {
 
-  return customFetch<EnrollmentCommandOut>(getAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePostUrl(enrollmentId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<EnrollmentCommandOut>(getAdminRegenerateEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRegeneratePostUrl(enrollmentId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(enrollmentRegenerateRequest)
   }
 );}
@@ -1883,11 +2317,25 @@ export const getAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevoke
 export const adminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePost = async (enrollmentId: number,
     enrollmentRevokeRequest: EnrollmentRevokeRequest, options?: Parameters<typeof customFetch>[1]): Promise<NodeEnrollmentOut> => {
 
-  return customFetch<NodeEnrollmentOut>(getAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePostUrl(enrollmentId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<NodeEnrollmentOut>(getAdminRevokeEnrollmentApiAdminV1NodeEnrollmentsEnrollmentIdRevokePostUrl(enrollmentId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(enrollmentRevokeRequest)
   }
 );}
@@ -1957,11 +2405,25 @@ export const getAdminCordonNodeApiAdminV1NodesNodeNameCordonPostUrl = (nodeName:
 export const adminCordonNodeApiAdminV1NodesNodeNameCordonPost = async (nodeName: string,
     nodeCordonRequest: NodeCordonRequest, options?: Parameters<typeof customFetch>[1]): Promise<NodeCordonOut> => {
 
-  return customFetch<NodeCordonOut>(getAdminCordonNodeApiAdminV1NodesNodeNameCordonPostUrl(nodeName),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<NodeCordonOut>(getAdminCordonNodeApiAdminV1NodesNodeNameCordonPostUrl(nodeName),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(nodeCordonRequest)
   }
 );}
@@ -1995,11 +2457,25 @@ export const adminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPost = asyn
     nodeDecommissionRequest: NodeDecommissionRequest,
     params?: AdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostParams, options?: Parameters<typeof customFetch>[1]): Promise<NodeDecommissionOut> => {
 
-  return customFetch<NodeDecommissionOut>(getAdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostUrl(nodeName,params),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<NodeDecommissionOut>(getAdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostUrl(nodeName,params),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(nodeDecommissionRequest)
   }
 );}
@@ -2059,11 +2535,25 @@ export const getAdminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostUrl = (n
 export const adminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPost = async (nodeName: string,
     nodeSwitchPoolRequest: NodeSwitchPoolRequest, options?: Parameters<typeof customFetch>[1]): Promise<NodeSwitchPoolOut> => {
 
-  return customFetch<NodeSwitchPoolOut>(getAdminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostUrl(nodeName),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<NodeSwitchPoolOut>(getAdminSwitchNodePoolApiAdminV1NodesNodeNameSwitchPoolPostUrl(nodeName),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(nodeSwitchPoolRequest)
   }
 );}
@@ -2084,11 +2574,25 @@ export const getAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPostUrl = (nodeN
 export const adminUncordonNodeApiAdminV1NodesNodeNameUncordonPost = async (nodeName: string,
     nodeCordonRequest: NodeCordonRequest, options?: Parameters<typeof customFetch>[1]): Promise<NodeCordonOut> => {
 
-  return customFetch<NodeCordonOut>(getAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPostUrl(nodeName),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<NodeCordonOut>(getAdminUncordonNodeApiAdminV1NodesNodeNameUncordonPostUrl(nodeName),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(nodeCordonRequest)
   }
 );}
@@ -2198,11 +2702,25 @@ export const getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostUrl = (task
 export const adminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPost = async (taskId: number,
     outboxDiscardRequest: OutboxDiscardRequest, options?: Parameters<typeof customFetch>[1]): Promise<OutboxTaskStatusOut> => {
 
-  return customFetch<OutboxTaskStatusOut>(getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostUrl(taskId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OutboxTaskStatusOut>(getAdminDiscardDeadTaskApiAdminV1OutboxTaskIdDiscardPostUrl(taskId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(outboxDiscardRequest)
   }
 );}
@@ -2224,11 +2742,25 @@ export const getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostUrl = (taskId: 
 export const adminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPost = async (taskId: number,
     outboxRetryRequest: OutboxRetryRequest, options?: Parameters<typeof customFetch>[1]): Promise<OutboxTaskStatusOut> => {
 
-  return customFetch<OutboxTaskStatusOut>(getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostUrl(taskId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OutboxTaskStatusOut>(getAdminRetryDeadTaskApiAdminV1OutboxTaskIdRetryPostUrl(taskId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(outboxRetryRequest)
   }
 );}
@@ -2301,11 +2833,25 @@ export const getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutUrl = () => 
  */
 export const adminUpdatePlatformConfigApiAdminV1PlatformConfigPut = async (platformConfigUpdateRequest: PlatformConfigUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdatedKeysOut> => {
 
-  return customFetch<UpdatedKeysOut>(getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<UpdatedKeysOut>(getAdminUpdatePlatformConfigApiAdminV1PlatformConfigPutUrl(),
   {
     ...options,
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(platformConfigUpdateRequest)
   }
 );}
@@ -2326,11 +2872,25 @@ export const getAdminTestEmailApiAdminV1PlatformConfigTestEmailPostUrl = () => {
  */
 export const adminTestEmailApiAdminV1PlatformConfigTestEmailPost = async (emailTestRequest: EmailTestRequest, options?: Parameters<typeof customFetch>[1]): Promise<EmailTestOut> => {
 
-  return customFetch<EmailTestOut>(getAdminTestEmailApiAdminV1PlatformConfigTestEmailPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<EmailTestOut>(getAdminTestEmailApiAdminV1PlatformConfigTestEmailPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(emailTestRequest)
   }
 );}
@@ -2377,11 +2937,25 @@ export const getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostUrl = () => {
  */
 export const adminTestSmsApiAdminV1PlatformConfigTestSmsPost = async (smsTestRequest: SmsTestRequest, options?: Parameters<typeof customFetch>[1]): Promise<SmsTestOut> => {
 
-  return customFetch<SmsTestOut>(getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<SmsTestOut>(getAdminTestSmsApiAdminV1PlatformConfigTestSmsPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(smsTestRequest)
   }
 );}
@@ -2429,11 +3003,25 @@ export const getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl = () => {
  */
 export const adminUpdatePoliciesApiAdminV1PoliciesPut = async (policyUpdateRequest: PolicyUpdateRequest, options?: Parameters<typeof customFetch>[1]): Promise<UpdatedKeysOut> => {
 
-  return customFetch<UpdatedKeysOut>(getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<UpdatedKeysOut>(getAdminUpdatePoliciesApiAdminV1PoliciesPutUrl(),
   {
     ...options,
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(policyUpdateRequest)
   }
 );}
@@ -2582,11 +3170,25 @@ export const getAdminCancelRefundApiAdminV1RefundsRefundIdCancelPostUrl = (refun
 export const adminCancelRefundApiAdminV1RefundsRefundIdCancelPost = async (refundId: number,
     refundCancel: RefundCancel, options?: Parameters<typeof customFetch>[1]): Promise<AdminRefundOut> => {
 
-  return customFetch<AdminRefundOut>(getAdminCancelRefundApiAdminV1RefundsRefundIdCancelPostUrl(refundId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminRefundOut>(getAdminCancelRefundApiAdminV1RefundsRefundIdCancelPostUrl(refundId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(refundCancel)
   }
 );}
@@ -2612,11 +3214,25 @@ export const adminPayoutRefundApiAdminV1RefundsRefundIdPayoutPost = async (refun
     refundPayout: RefundPayout,
     headers?: AdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<AdminRefundOut> => {
 
-  return customFetch<AdminRefundOut>(getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostUrl(refundId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminRefundOut>(getAdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostUrl(refundId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(refundPayout)
   }
 );}
@@ -2639,11 +3255,25 @@ export const getAdminReviewRefundApiAdminV1RefundsRefundIdReviewPostUrl = (refun
 export const adminReviewRefundApiAdminV1RefundsRefundIdReviewPost = async (refundId: number,
     refundReview: RefundReview, options?: Parameters<typeof customFetch>[1]): Promise<AdminRefundOut> => {
 
-  return customFetch<AdminRefundOut>(getAdminReviewRefundApiAdminV1RefundsRefundIdReviewPostUrl(refundId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminRefundOut>(getAdminReviewRefundApiAdminV1RefundsRefundIdReviewPostUrl(refundId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(refundReview)
   }
 );}
@@ -2777,11 +3407,25 @@ export const getAdminCreateSkuApiAdminV1SkusPostUrl = () => {
  */
 export const adminCreateSkuApiAdminV1SkusPost = async (skuCreate: SkuCreate, options?: Parameters<typeof customFetch>[1]): Promise<SkuAdminOut> => {
 
-  return customFetch<SkuAdminOut>(getAdminCreateSkuApiAdminV1SkusPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<SkuAdminOut>(getAdminCreateSkuApiAdminV1SkusPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(skuCreate)
   }
 );}
@@ -2843,11 +3487,25 @@ export const adminUpdateSkuApiAdminV1SkusSkuIdPatch = async (skuId: number,
     skuUpdate: SkuUpdate,
     params?: AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams, options?: Parameters<typeof customFetch>[1]): Promise<SkuAdminOut> => {
 
-  return customFetch<SkuAdminOut>(getAdminUpdateSkuApiAdminV1SkusSkuIdPatchUrl(skuId,params),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<SkuAdminOut>(getAdminUpdateSkuApiAdminV1SkusSkuIdPatchUrl(skuId,params),
   {
     ...options,
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(skuUpdate)
   }
 );}
@@ -2987,11 +3645,25 @@ export const getAdminFreezeTenantApiAdminV1TenantsUserIdFreezePostUrl = (userId:
 export const adminFreezeTenantApiAdminV1TenantsUserIdFreezePost = async (userId: number,
     tenantFreezeRequest: TenantFreezeRequest, options?: Parameters<typeof customFetch>[1]): Promise<TenantStatusOut> => {
 
-  return customFetch<TenantStatusOut>(getAdminFreezeTenantApiAdminV1TenantsUserIdFreezePostUrl(userId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TenantStatusOut>(getAdminFreezeTenantApiAdminV1TenantsUserIdFreezePostUrl(userId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(tenantFreezeRequest)
   }
 );}
@@ -3105,11 +3777,25 @@ export const getAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutUrl = (userId:
 export const adminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPut = async (userId: number,
     tenantQuotaUpdate: TenantQuotaUpdate, options?: Parameters<typeof customFetch>[1]): Promise<TenantQuotaOut> => {
 
-  return customFetch<TenantQuotaOut>(getAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutUrl(userId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TenantQuotaOut>(getAdminSetTenantQuotaApiAdminV1TenantsUserIdQuotaPutUrl(userId),
   {
     ...options,
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(tenantQuotaUpdate)
   }
 );}
@@ -3129,11 +3815,25 @@ export const getAdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePostUrl = (use
 export const adminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePost = async (userId: number,
     tenantFreezeRequest: TenantFreezeRequest, options?: Parameters<typeof customFetch>[1]): Promise<TenantStatusOut> => {
 
-  return customFetch<TenantStatusOut>(getAdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePostUrl(userId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TenantStatusOut>(getAdminUnfreezeTenantApiAdminV1TenantsUserIdUnfreezePostUrl(userId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(tenantFreezeRequest)
   }
 );}
@@ -3243,11 +3943,25 @@ export const getAdminReplyTicketApiAdminV1TicketsTicketIdReplyPostUrl = (ticketI
 export const adminReplyTicketApiAdminV1TicketsTicketIdReplyPost = async (ticketId: number,
     adminTicketReply: AdminTicketReply, options?: Parameters<typeof customFetch>[1]): Promise<AdminTicketDetailOut> => {
 
-  return customFetch<AdminTicketDetailOut>(getAdminReplyTicketApiAdminV1TicketsTicketIdReplyPostUrl(ticketId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminTicketDetailOut>(getAdminReplyTicketApiAdminV1TicketsTicketIdReplyPostUrl(ticketId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminTicketReply)
   }
 );}
@@ -3268,11 +3982,25 @@ export const getAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPostUrl = 
 export const adminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPost = async (ticketId: number,
     adminTicketStatusUpdate: AdminTicketStatusUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AdminTicketOut> => {
 
-  return customFetch<AdminTicketOut>(getAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPostUrl(ticketId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminTicketOut>(getAdminUpdateTicketStatusApiAdminV1TicketsTicketIdStatusPostUrl(ticketId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(adminTicketStatusUpdate)
   }
 );}

@@ -65,11 +65,25 @@ export const getCreateTicketApiV1TicketsPostUrl = () => {
 export const createTicketApiV1TicketsPost = async (ticketCreate: TicketCreate,
     headers?: CreateTicketApiV1TicketsPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<TicketOut> => {
 
-  return customFetch<TicketOut>(getCreateTicketApiV1TicketsPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TicketOut>(getCreateTicketApiV1TicketsPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(ticketCreate)
   }
 );}
@@ -138,11 +152,25 @@ export const getAppendMessageApiV1TicketsTicketIdMessagesPostUrl = (ticketId: nu
 export const appendMessageApiV1TicketsTicketIdMessagesPost = async (ticketId: number,
     ticketMessageCreate: TicketMessageCreate, options?: Parameters<typeof customFetch>[1]): Promise<TicketMessageOut> => {
 
-  return customFetch<TicketMessageOut>(getAppendMessageApiV1TicketsTicketIdMessagesPostUrl(ticketId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<TicketMessageOut>(getAppendMessageApiV1TicketsTicketIdMessagesPostUrl(ticketId),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(ticketMessageCreate)
   }
 );}

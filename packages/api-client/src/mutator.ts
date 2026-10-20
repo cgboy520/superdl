@@ -67,18 +67,25 @@ export function configureApiClient(opts: Partial<ClientConfig>): void {
   Object.assign(config, opts);
 }
 
-/** Request options whose header record allows null or undefined values. */
+/** Request options whose header record allows null, undefined and list values (typed header params, orval's getHeaders). */
 export interface ApiRequestOptions extends Omit<RequestInit, "headers"> {
-  headers?: HeadersInit | Record<string, string | null | undefined>;
+  headers?: HeadersInit | Record<string, string | readonly string[] | null | undefined>;
 }
 
-/** Drop null and undefined values from the record when building Headers. */
+/**
+ * Generated wrappers type `options` as `Parameters<typeof customFetch>[1]`, which resolves to the last member
+ * (RequestInit, accepted by orval's getHeaders); their nullable typed header params resolve to the first.
+ */
+type CustomFetch = (<T>(url: string, options: ApiRequestOptions) => Promise<T>) &
+  (<T>(url: string, options: RequestInit) => Promise<T>);
+
+/** Drop null and undefined values and join list values when building Headers. */
 function toHeaders(init: ApiRequestOptions["headers"]): Headers {
   if (!init) return new Headers();
   if (init instanceof Headers || Array.isArray(init)) return new Headers(init);
   const h = new Headers();
   for (const [k, v] of Object.entries(init)) {
-    if (v != null) h.set(k, v);
+    if (v != null) h.set(k, typeof v === "string" ? v : v.join(", "));
   }
   return h;
 }
@@ -125,7 +132,7 @@ function networkError(): ApiError {
   };
 }
 
-export const customFetch = async <T>(url: string, options: ApiRequestOptions): Promise<T> => {
+export const customFetch: CustomFetch = async <T>(url: string, options: ApiRequestOptions): Promise<T> => {
   const session = readSession();
   const explicitAuth = toHeaders(options.headers).has("Authorization");
   const currentSession = (): AuthSession => {
