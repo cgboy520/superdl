@@ -7,6 +7,8 @@ RUN pnpm install --frozen-lockfile && pnpm --filter ${APP} build
 
 FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:6a23acdfca2b9cfbcec61419e3f1426bcbedb91362f2f19306a8567423bb4612
 ARG APP=web
+# Fixed worker count: "auto" forks one per host core and exceeds the 128Mi limit on many-core hosts
+RUN sed -i 's/^worker_processes .*/worker_processes  16;/' /etc/nginx/nginx.conf && grep -q '^worker_processes  16;$' /etc/nginx/nginx.conf
 COPY deploy/app/nginx.${APP}.conf /etc/nginx/templates/default.conf.template
 COPY deploy/app/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY deploy/app/security-headers-web-csp.conf /etc/nginx/snippets/security-headers-web-csp.conf
