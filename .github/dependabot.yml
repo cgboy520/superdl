@@ -3,35 +3,52 @@ updates:
   - package-ecosystem: "uv"
     directory: "/apps/api"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    rebase-strategy: "disabled"
     groups:
-      python-minor-patch:
-        update-types: ["minor", "patch"]
+      python:
+        patterns: ["*"]
+      python-security:
+        applies-to: security-updates
+        patterns: ["*"]
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    rebase-strategy: "disabled"
     groups:
-      js-minor-patch:
-        update-types: ["minor", "patch"]
+      js:
+        patterns: ["*"]
+      js-security:
+        applies-to: security-updates
+        patterns: ["*"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    rebase-strategy: "disabled"
     groups:
-      actions-minor-patch:
-        update-types: ["minor", "patch"]
+      actions:
+        patterns: ["*"]
+      actions-security:
+        applies-to: security-updates
+        patterns: ["*"]
   - package-ecosystem: "docker"
-    directory: "/apps/api"
+    directories: ["/apps/api", "/deploy/app"]
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    rebase-strategy: "disabled"
     groups:
-      docker-minor-patch:
-        update-types: ["minor", "patch"]
-  - package-ecosystem: "docker"
-    directory: "/deploy/app"
-    schedule:
-      interval: "weekly"
-    groups:
-      docker-minor-patch:
-        update-types: ["minor", "patch"]
+      docker:
+        patterns: ["*"]
+      docker-security:
+        applies-to: security-updates
+        patterns: ["*"]

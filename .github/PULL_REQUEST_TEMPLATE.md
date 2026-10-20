@@ -4,12 +4,13 @@
 
 ## Checklist
 
-Run the gates that match the change (see `CLAUDE.md` → Workflow and commit conventions / CI is the merge gate):
+Run the gates that match the change (see `CLAUDE.md` → Workflow and commit conventions); CI runs only the critical ones, so keep the PR a draft until these pass:
 
 - [ ] Backend: `uv run ruff format . && uv run ruff check --fix .`, `uv run pyright`, `uv run lint-imports`, `uv run pytest -n 8`
 - [ ] Models / migrations: `uv run alembic check` (migrations are append-only; `downgrade` raises)
 - [ ] Routes / schemas: `uv run python -m app.export_openapi` + `pnpm api-client` with no diff in `packages/api-client`
-- [ ] Frontend: `pnpm format`, `pnpm lint`, `python3 scripts/check-page-skeleton.py`, `pnpm typecheck`, `pnpm test`, `pnpm csp-check`; copy changes also `pnpm i18n` (zh-CN and en-US together); build configuration changes also `pnpm build`
-- [ ] Scripts: `bash -n`, `shellcheck`, `bats deploy/node-join/tests`
+- [ ] Frontend: `pnpm format`, `pnpm lint`, `python3 scripts/check-page-skeleton.py`, `pnpm typecheck`, `pnpm test`, `pnpm csp-check`; copy changes also `pnpm i18n` (zh-CN and en-US together); build configuration or dependency changes also `pnpm build`
+- [ ] Scripts: `bash -n`, `shellcheck`, `bats deploy/node-join/tests`; `scripts/release.sh` also `python3 -m unittest discover -s scripts/tests -p 'test_release*.py'`
+- [ ] User-visible main paths or dependency updates: `pnpm --filter @superdl/e2e test:e2e` (local only)
 - [ ] Docs: `python3 scripts/check-docs-links.py`, `pnpm format:check`; docs / runbooks / README updated in this PR for every changed endpoint, table, role, default, schedule, command or flow
 - [ ] No secrets or credentials in the diff; deploy templates keep `CHANGE_ME` placeholders

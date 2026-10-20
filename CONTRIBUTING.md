@@ -24,7 +24,7 @@ There is one rulebook: [CLAUDE.md](./CLAUDE.md) (hard rules, gates, commit conve
 
 1. Branch from the latest `main`: `<type>/<short-description>` (type = commit prefix, e.g. `feat/spot-preempt`).
 2. Commit in small steps; messages use a `feat:` / `fix:` / `chore:` / `docs:` / `test:` / `ci:` / `refactor:` prefix plus one sentence. One PR does one thing.
-3. Run the local gates before pushing; open a PR and wait for a green CI plus at least one review.
+3. Run the local gates before pushing (CI runs only the critical ones). Open the PR as a draft, mark it ready once the local gates are green, then wait for a green CI plus at least one review; push follow-ups in batches.
 4. Squash-merge into `main`; delete the branch afterwards. `main` accepts neither direct pushes nor force-pushes.
 5. Releases are tag-triggered; see "生产发布流程" in [deploy/README.md](./deploy/README.md). <!-- cjk-ok -->
 
