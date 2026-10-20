@@ -85,11 +85,16 @@ bash scripts/check-cjk.sh --scope repo
 - `main` is protected: changes are committed on short-lived branches and merged through PRs; a PR needs CI fully green and at least one reviewer, squash merge; never force-push `main`.
 - Commit message prefixes `feat:` / `fix:` / `chore:` / `docs:` / `test:` / `ci:` / `refactor:`, one sentence saying what changed.
 - One PR does one thing and can be reverted alone. Purely mechanical changes get their own PR; contract regeneration (openapi.json / orval output / error copy / i18n types) goes into the same commit as the change that caused it.
-- Run the local gates matching the change; never push red. CI (`.github/workflows/ci.yml`) is the merge gate and the full gate list:
+- Run the local gates matching the change; never push red. The full gate list:
   - Backend: ruff format/check → pyright → import-linter → pytest; model / migration changes add `alembic check`, route / schema changes add "openapi.json has no diff"
     - ruff complexity caps (cyclomatic 12 / branches 14 / statements 60, `apps/api/pyproject.toml`): split the function, never add noqa; pyright uses only the root `pyrightconfig.json` (standard + errors on unnecessary ignores / unnecessary comparisons / private access); white-box tests that reach into module internals declare `# pyright: reportPrivateUsage=false` at the top of the file
-  - Frontend: prettier --check → eslint → tsc → vitest; copy / locale changes add `pnpm i18n`, build configuration changes add build
-  - Scripts: bash -n → shellcheck → bats
+  - Frontend: prettier --check → eslint → tsc → vitest; copy / locale changes add `pnpm i18n`, build configuration or dependency changes add `pnpm build`
+  - Scripts: bash -n → shellcheck → bats; `scripts/release.sh` changes add `python3 -m unittest discover -s scripts/tests -p 'test_release*.py'`
   - Docs: `python3 scripts/check-docs-links.py` and the repository-wide CJK gate `bash scripts/check-cjk.sh --scope repo` (rule 17); Markdown outside `deploy/` and `apps/api/` also passes `pnpm format:check`; changes touching only docs or comments run just these gates
-  - User-visible main paths: Playwright smoke
-  - CI only: pip-audit / pnpm audit, gitleaks, kubeconform (`deploy/app/k8s`), the RealOrchestrator smoke on kind
+  - User-visible main paths and dependency updates: Playwright smoke; also before every release tag
+- CI (`.github/workflows/ci.yml`) is the merge gate and runs only the critical gates, each job only when the diff touches its area: backend, frontend (no build), `repo` (docs links, CJK, gitleaks; pip-audit / pnpm audit when a lockfile changes), and the kind RealOrchestrator smoke, monitoring RBAC render and kubeconform for orchestrator / deploy changes. A release tag re-runs every CI job. Playwright, bats, release-script tests and builds run only locally.
+- Actions minutes are budgeted:
+  - Open PRs as drafts; CI runs only on ready-for-review PRs and each push to one is a full run. Mark ready once the local gates are green; push review fixes in batches, not commit by commit.
+  - Fold small follow-ups (review fixes, typos, comment tweaks) into the open PR on that area or into one periodic `chore:` / `docs:` PR; no standalone PR per nit.
+  - A red CI is reproduced and fixed locally before the next push; no re-runs to see whether it passes.
+  - Dependabot opens at most one grouped PR per ecosystem per month plus grouped security PRs, and never auto-rebases. They land together as one `chore(deps):` PR that carries the contract regeneration and any fixes; the Dependabot PRs it supersedes are closed.

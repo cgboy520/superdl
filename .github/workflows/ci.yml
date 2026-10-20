@@ -1,10 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_call:
+  workflow_dispatch:
 
 env:
   SUPERDL_ENVIRONMENT: dev
@@ -12,17 +12,20 @@ env:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  changes:
+  repo:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     outputs:
       api: ${{ steps.f.outputs.api }}
       frontend: ${{ steps.f.outputs.frontend }}
-      e2e: ${{ steps.f.outputs.e2e }}
       k8s: ${{ steps.f.outputs.k8s }}
       manifest: ${{ steps.f.outputs.manifest }}
-      nodejoin: ${{ steps.f.outputs.nodejoin }}
       cluster: ${{ steps.f.outputs.cluster }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -31,32 +34,52 @@ jobs:
       - id: f
         run: |
           set -euo pipefail
-          base="${{ github.event.before }}"
-          if [ "${{ github.event_name }}" != "push" ] || [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-            echo "api=true" >> "$GITHUB_OUTPUT"
-            echo "frontend=true" >> "$GITHUB_OUTPUT"
-            echo "e2e=true" >> "$GITHUB_OUTPUT"
-            echo "k8s=true" >> "$GITHUB_OUTPUT"
-            echo "manifest=true" >> "$GITHUB_OUTPUT"
-            echo "nodejoin=true" >> "$GITHUB_OUTPUT"
-            echo "cluster=true" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            for k in api frontend k8s manifest cluster pylock jslock; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
             exit 0
           fi
-          git diff --name-only "$base" HEAD > /tmp/changed
+          git diff --name-only HEAD^1 HEAD > /tmp/changed
           hit() { if grep -qE "$1" /tmp/changed; then echo true; else echo false; fi }
           {
             echo "api=$(hit '^(apps/api/|packages/api-client/openapi\.json$|pyrightconfig\.json$|\.python-version$|\.github/workflows/ci\.yml$)')"
             echo "frontend=$(hit '^(apps/web/|apps/admin/|packages/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|turbo\.json$|eslint\.config\.mjs$|\.prettierrc$|\.prettierignore$|scripts/check-cjk\.sh$|scripts/check-copy-banned\.sh$|scripts/check-csp-hash\.sh$|scripts/check-page-skeleton\.py$|deploy/app/security-headers-web-csp\.conf$|\.github/workflows/ci\.yml$)')"
-            echo "e2e=$(hit '^(apps/|packages/|e2e/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|turbo\.json$|\.python-version$|\.github/workflows/ci\.yml$)')"
-            echo "k8s=$(hit '^(apps/api/|deploy/|\.python-version$|\.github/workflows/ci\.yml$|\.github/kind-config\.yaml$)')"
+            echo "k8s=$(hit '^(apps/api/app/core/(k8s/|gpu_adapter\.py$|registry\.py$)|apps/api/scripts/render_admission_probes\.py$|apps/api/tests/(test_k8s_real_smoke|test_orchestrator_conformance|helpers)\.py$|apps/api/uv\.lock$|deploy/app/k8s/|deploy/cluster/(admission/|gateway-api-crds\.sh$)|\.python-version$|\.github/workflows/ci\.yml$|\.github/kind-config\.yaml$)')"
             echo "manifest=$(hit '^(deploy/app/k8s/|scripts/check-gateway-manifests\.py$|\.github/workflows/ci\.yml$)')"
-            echo "nodejoin=$(hit '^(deploy/node-join/|apps/api/app/modules/nodes/assets/node-join\.sh$|\.github/workflows/ci\.yml$)')"
             echo "cluster=$(hit '^(deploy/cluster/|\.github/workflows/ci\.yml$)')"
+            echo "pylock=$(hit '^apps/api/uv\.lock$')"
+            echo "jslock=$(hit '^pnpm-lock\.yaml$')"
           } >> "$GITHUB_OUTPUT"
+      - run: python3 scripts/check-docs-links.py
+      - run: bash scripts/check-cjk.sh --scope repo
+      - name: gitleaks (secret leak scan over the full commit history)
+        run: |
+          docker run --rm -v "$PWD:/repo" \
+            zricethezav/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a \
+            git /repo --config /repo/.github/gitleaks.toml --verbose \
+            --log-opts="--full-history --diff-filter=tuxdb HEAD"
+      - if: steps.f.outputs.pylock == 'true'
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          python-version: "3.13"
+      - name: pip-audit (API production dependency vulnerabilities)
+        if: steps.f.outputs.pylock == 'true'
+        working-directory: apps/api
+        run: |
+          uv export --frozen --no-dev --format requirements-txt -o /tmp/reqs.txt
+          uvx pip-audit -r /tmp/reqs.txt --progress-spinner off
+      - if: steps.f.outputs.jslock == 'true'
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+      - if: steps.f.outputs.jslock == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - name: pnpm audit (frontend production dependencies, HIGH+ blocks)
+        if: steps.f.outputs.jslock == 'true'
+        run: pnpm audit --prod --audit-level=high
 
   api:
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
+    needs: repo
+    if: ${{ !cancelled() && needs.repo.outputs.api == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -87,8 +110,8 @@ jobs:
           git diff --exit-code ../../packages/api-client/openapi.json
 
   frontend:
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    needs: repo
+    if: ${{ !cancelled() && needs.repo.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -109,70 +132,10 @@ jobs:
       - run: pnpm api-client
       - name: orval output has no diff
         run: git diff --exit-code packages/api-client
-      - run: pnpm build
-
-  node-join-script:
-    needs: changes
-    if: needs.changes.outputs.nodejoin == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - name: Install shellcheck + bats
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck bats
-      - run: bash -n apps/api/app/modules/nodes/assets/node-join.sh
-      - run: shellcheck apps/api/app/modules/nodes/assets/node-join.sh
-      - run: bats deploy/node-join/tests
-
-  release-script:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - run: bash -n scripts/release.sh
-      - run: shellcheck scripts/release.sh
-      - name: Offline release and backup shell regressions (no cluster or network)
-        run: python3 -m unittest discover -s scripts/tests -p 'test_release*.py' -v
-
-  docs:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - run: python3 scripts/check-docs-links.py
-      - run: bash scripts/check-cjk.sh --scope repo
-
-  security:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          fetch-depth: 0
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
-        with:
-          python-version: "3.13"
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: 24
-      - name: pip-audit (API production dependency vulnerabilities)
-        working-directory: apps/api
-        run: |
-          uv export --frozen --no-dev --format requirements-txt -o /tmp/reqs.txt
-          uvx pip-audit -r /tmp/reqs.txt --progress-spinner off
-      - name: pnpm audit (frontend production dependencies, HIGH+ blocks)
-        run: pnpm audit --prod --audit-level=high
-      - name: gitleaks (secret leak scan over the full commit history)
-        run: |
-          docker run --rm -v "$PWD:/repo" \
-            zricethezav/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a \
-            git /repo --config /repo/.github/gitleaks.toml --verbose \
-            --log-opts="--full-history --diff-filter=tuxdb HEAD"
 
   k8s-real-smoke:
-    needs: changes
-    if: needs.changes.outputs.k8s == 'true'
+    needs: repo
+    if: ${{ !cancelled() && needs.repo.outputs.k8s == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -535,53 +498,9 @@ jobs:
           uv run pytest tests/test_k8s_real_smoke.py -v
           uv run pytest -m real_k8s tests/test_orchestrator_conformance.py -v
 
-  e2e:
-    needs: changes
-    if: needs.changes.outputs.e2e == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
-        with:
-          python-version: "3.13"
-          prune-cache: false
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: 24
-          cache: pnpm
-      - name: Start PostgreSQL
-        run: |
-          docker run -d --name pg -e POSTGRES_PASSWORD=superdl -e POSTGRES_USER=superdl -e POSTGRES_DB=superdl -p 5432:5432 postgres:18
-          until docker exec pg pg_isready -U superdl; do sleep 1; done
-      - name: Migrate + seed + start API/worker
-        working-directory: apps/api
-        env:
-          SUPERDL_ENVIRONMENT: dev
-          SUPERDL_DATABASE_URL: postgresql+asyncpg://superdl:superdl@localhost:5432/superdl
-          SUPERDL_SEED_ADMIN_PASSWORD: admin123-dev
-        run: |
-          uv sync --frozen
-          uv run alembic upgrade head
-          uv run python scripts/seed_dev.py
-          nohup uv run uvicorn app.main:app --port 8000 > /tmp/api.log 2>&1 &
-          nohup uv run python -m app.workers.main > /tmp/worker.log 2>&1 &
-          for _ in $(seq 1 30); do curl -sf localhost:8000/healthz && break; sleep 1; done
-      - name: Playwright smoke
-        env:
-          SUPERDL_ADMIN_E2E: "1"
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm --filter @superdl/e2e exec playwright install --with-deps chromium
-          pnpm --filter @superdl/e2e test:e2e
-      - name: Dump logs on failure
-        if: failure()
-        run: tail -n 80 /tmp/api.log /tmp/worker.log
-
   monitoring-rbac:
-    needs: changes
-    if: needs.changes.outputs.cluster == 'true'
+    needs: repo
+    if: ${{ !cancelled() && needs.repo.outputs.cluster == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -675,8 +594,8 @@ jobs:
           EOF
 
   k8s-manifest-validate:
-    needs: changes
-    if: needs.changes.outputs.manifest == 'true'
+    needs: repo
+    if: ${{ !cancelled() && needs.repo.outputs.manifest == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
