@@ -62,14 +62,16 @@ export async function registerViaUi(page: Page, email: string): Promise<void> {
   await page.goto("/login");
   await page.getByRole("button", { name: "免费注册" }).click();
   await page.getByPlaceholder("邮箱", { exact: true }).fill(email);
+  const codeSent = page.waitForResponse((r) => r.url().includes("/api/v1/auth/verification-code"));
   await page.getByRole("button", { name: "获取验证码" }).click();
+  expect((await codeSent).status()).toBe(204);
   await page.getByPlaceholder("邮箱验证码").fill("123456");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "注册并登录" }).click();
   await expect(page).not.toHaveURL(/login/, { timeout: 15_000 });
 }
 
-/** 经 API 建号并注入登录态:access token 由 addInitScript 写入 localStorage,refresh cookie 由浏览器托管;返回 access token。 */
+/** 经 API 建号并注入登录态:{sessionId, accessToken} 会话记录由 addInitScript 写入 localStorage,refresh cookie 由浏览器托管;返回 access token。 */
 export async function loginViaApi(page: Page, email: string): Promise<string> {
   const code = await page.request.post("/api/v1/auth/verification-code", {
     data: { handle: email, purpose: "register" },
@@ -80,7 +82,8 @@ export async function loginViaApi(page: Page, email: string): Promise<string> {
   });
   expect(resp.status(), await resp.text()).toBe(201);
   const data = (await resp.json()) as { access_token: string };
-  await page.addInitScript((token) => window.localStorage.setItem("superdl.web.accessToken", token), data.access_token);
+  const session = JSON.stringify({ sessionId: crypto.randomUUID(), accessToken: data.access_token });
+  await page.addInitScript((record) => window.localStorage.setItem("superdl.web.accessToken", record), session);
   return data.access_token;
 }
 
