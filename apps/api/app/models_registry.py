@@ -9,6 +9,7 @@ from app.modules.billing import models as billing_models
 from app.modules.catalog import models as catalog_models
 from app.modules.legal import models as legal_models
 from app.modules.metering import models as metering_models
+from app.modules.netgw import models as netgw_models
 from app.modules.nodes import models as nodes_models
 from app.modules.notify import models as notify_models
 from app.modules.orchestrator import models as orchestrator_models
@@ -24,6 +25,7 @@ __all__ = [
     "catalog_models",
     "legal_models",
     "metering_models",
+    "netgw_models",
     "nodes_models",
     "notify_models",
     "orchestrator_models",

@@ -29,6 +29,7 @@ Deployment guides and runbooks for operators live under [`deploy/`](../deploy/RE
 | [orchestrator.md](./reference/orchestrator.md)       | Instance state machine, outbox orchestration, reconciler, SSH / JupyterLab access, K8s abstraction                                        |
 | [services.md](./reference/services.md)               | Online-service aggregate: data model and derived state, deploy / stop / delete contracts, domain rules, gateway API-key auth, rate limits |
 | [disks.md](./reference/disks.md)                     | Data-disk lifecycle, quotas, expansion and daily settlement                                                                               |
+| [netgw.md](./reference/netgw.md)                     | Private-network gateways: tenant VPN tunnels, forwards and SOCKS, gateway objects, network boundary, enabling                             |
 | [images.md](./reference/images.md)                   | Image catalog management, in-cluster P2P cache and per-node prewarming                                                                    |
 | [billing.md](./reference/billing.md)                 | Wallet, ledger, hourly settlement, subscription and spot pricing, arrears reclamation, policy parameters                                  |
 | [payment.md](./reference/payment.md)                 | Top-up orders, payment channels (registry, Stripe, WeChat Pay, Alipay), callbacks and lookups, refunds and invoices                       |

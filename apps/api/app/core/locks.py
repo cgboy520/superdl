@@ -23,6 +23,7 @@ class LockKey(IntEnum):
     TICKET_STALE_PATROL = 1012
     SUBSCRIPTION_PATROL = 1013
     PLATFORM_CONFIG_WRITE = 1014
+    NETGW_PATROL = 1015
 
 
 @asynccontextmanager

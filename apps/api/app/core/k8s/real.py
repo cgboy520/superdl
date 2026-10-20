@@ -19,6 +19,7 @@ from app.core.config import get_settings
 from app.core.k8s import health
 from app.core.k8s.base import (
     DATA_DISK_STORAGE_CLASS,
+    EGRESS_BLOCKED_TCP_PORTS,
     GATEWAY_API_GROUP,
     GATEWAY_API_VERSION,
     GATEWAY_APP_LISTENER,
@@ -31,8 +32,14 @@ from app.core.k8s.base import (
     INFRA_NODE_LABEL,
     INFRA_ROLE_LABELS,
     INSTANCE_DISK_STORAGE_CLASS,
+    INSTANCE_LABEL,
     MANAGED_LABEL,
+    NETGW_CONTAINER,
+    NETGW_LABEL,
+    NETGW_NAMESPACE,
+    NETGW_TENANT_LABEL,
     POOL_NODE_LABEL,
+    PRIVATE_CIDRS,
     STARTUP_PROBE_PERIOD_SECONDS,
     WORKSPACE_CONTAINER,
     ClusterProbe,
@@ -40,6 +47,8 @@ from app.core.k8s.base import (
     ComponentFact,
     ComponentObject,
     InstancePodSpec,
+    NetgwSpec,
+    NetgwStatus,
     NodeInfo,
     NodePortTaken,
     PodStatus,
@@ -48,6 +57,7 @@ from app.core.k8s.base import (
     instance_disk_pvc_name,
     instance_env_secret_name,
     jupyter_service_name,
+    netgw_object_name,
     service_endpoint_service_name,
 )
 from app.core.k8s.health import (
@@ -57,10 +67,17 @@ from app.core.k8s.health import (
     StorageClassRow,
     WorkloadRow,
 )
+from app.core.k8s.netgw import (
+    build_netgw_deployment,
+    build_netgw_netpol,
+    build_netgw_secret,
+    build_netgw_services,
+    build_tenant_services,
+    service_shape,
+)
 from app.core.logging import get_logger
 from app.core.registry import PULL_SECRET_FINGERPRINT_ANNOTATION, PULL_SECRET_NAME
 
-INSTANCE_LABEL = "superdl.io/instance"
 PREWARM_LABEL = "superdl.io/prewarm"
 GATEWAY_DATAPLANE_NAMESPACE = "envoy-gateway-system"
 
@@ -171,30 +188,6 @@ TENANT_LIMIT_DEFAULT = {"cpu": "8", "memory": "32Gi", "ephemeral-storage": "64Gi
 TENANT_MGR_ROLE_NAME = "superdl-tenant-mgr-secrets"
 TENANT_SECRETS_CLUSTER_ROLE = "superdl-tenant-secrets"
 TENANT_MGR_SA_NAME = "superdl-tenant-mgr"
-PRIVATE_CIDRS = [
-    "10.0.0.0/8",
-    "172.16.0.0/12",
-    "192.168.0.0/16",
-    "169.254.0.0/16",
-    "100.64.0.0/10",
-    "198.18.0.0/15",
-]
-EGRESS_BLOCKED_TCP_PORTS = (
-    23,
-    25,
-    135,
-    139,
-    445,
-    465,
-    587,
-    3306,
-    3389,
-    5432,
-    6379,
-    9200,
-    11211,
-    27017,
-)
 EGRESS_ALLOWED_UDP_PORTS = (53, 443)
 
 WIPE_IMAGE = "busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"
@@ -642,6 +635,7 @@ class RealOrchestrator:
             _TimeoutApi(client.RbacAuthorizationV1Api(), timeout),
         )
         self.custom = cast(client.CustomObjectsApi, _TimeoutApi(client.CustomObjectsApi(), timeout))
+        self.apps = cast(client.AppsV1Api, _TimeoutApi(client.AppsV1Api(), timeout))
         probe_client = client.ApiClient()
         self._version = cast(
             client.VersionApi, _TimeoutApi(client.VersionApi(probe_client), timeout)
@@ -747,8 +741,15 @@ class RealOrchestrator:
         port) and SSH 22 allowed
         (from excludes the Pod range, not private ranges); egress: the internet minus private /
         metadata ranges, TCP minus the blocklist,
-        UDP allow-list 53/443, + CoreDNS.
+        UDP allow-list 53/443, + CoreDNS. Both directions also admit this tenant's own private-
+        network gateways (label set by the platform only; matches nothing without a gateway).
         """
+        netgw = client.V1NetworkPolicyPeer(
+            namespace_selector=client.V1LabelSelector(
+                match_labels={"kubernetes.io/metadata.name": NETGW_NAMESPACE}
+            ),
+            pod_selector=client.V1LabelSelector(match_labels={NETGW_TENANT_LABEL: namespace}),
+        )
         return client.V1NetworkPolicy(
             metadata=client.V1ObjectMeta(name="tenant-default", namespace=namespace),
             spec=client.V1NetworkPolicySpec(
@@ -770,6 +771,7 @@ class RealOrchestrator:
                         _from=self._ssh_ingress_peers(),
                         ports=[client.V1NetworkPolicyPort(protocol="TCP", port=22)],
                     ),
+                    client.V1NetworkPolicyIngressRule(_from=[netgw]),
                 ],
                 egress=[
                     client.V1NetworkPolicyEgressRule(
@@ -807,6 +809,7 @@ class RealOrchestrator:
                             for p in EGRESS_ALLOWED_UDP_PORTS
                         ],
                     ),
+                    client.V1NetworkPolicyEgressRule(to=[netgw]),
                 ],
             ),
         )
@@ -1770,6 +1773,143 @@ class RealOrchestrator:
             404,
         )
         _ignore(lambda: self.core.delete_node(node_name), 404)
+
+    async def cluster_dns_ip(self) -> str:
+        return await self._run(self._cluster_dns_ip_sync)
+
+    def _cluster_dns_ip_sync(self) -> str:
+        svc: Any = self.core.read_namespaced_service("kube-dns", "kube-system")
+        return str(svc.spec.cluster_ip)
+
+    async def apply_netgw(self, spec: NetgwSpec) -> None:
+        await self._run(self._apply_netgw_sync, spec)
+
+    def _apply_netgw_sync(self, spec: NetgwSpec) -> None:
+        """Secret and policy first, Deployment last: a new Pod never starts on a stale spec or
+        without its egress rules."""
+        name = netgw_object_name(spec.uuid)
+        secret = build_netgw_secret(spec)
+        _create_or_patch(
+            lambda: self.core.create_namespaced_secret(NETGW_NAMESPACE, secret),
+            lambda: self.core.patch_namespaced_secret(
+                name, NETGW_NAMESPACE, {"stringData": secret.string_data}
+            ),
+        )
+        policy = build_netgw_netpol(spec, except_cidrs=PRIVATE_CIDRS)
+        _create_or_patch(
+            lambda: self.net.create_namespaced_network_policy(NETGW_NAMESPACE, policy),
+            lambda: self.net.patch_namespaced_network_policy(name, NETGW_NAMESPACE, policy),
+        )
+        self._sync_netgw_services_sync(NETGW_NAMESPACE, spec.uuid, build_netgw_services(spec))
+        self._sync_netgw_services_sync(
+            spec.tenant_namespace, spec.uuid, build_tenant_services(spec)
+        )
+        deployment = build_netgw_deployment(spec)
+        existing: Any = _ignore(
+            lambda: self.apps.read_namespaced_deployment(name, NETGW_NAMESPACE), 404
+        )
+        if existing is None:
+            self.apps.create_namespaced_deployment(NETGW_NAMESPACE, deployment)
+            return
+        meta = cast(client.V1ObjectMeta, deployment.metadata)
+        meta.resource_version = existing.metadata.resource_version
+        self.apps.replace_namespaced_deployment(name, NETGW_NAMESPACE, deployment)
+
+    def _sync_netgw_services_sync(
+        self, namespace: str, gateway_uuid: str, desired: list[Any]
+    ) -> None:
+        """Converge the gateway's Services in one namespace: same shape kept, different shape
+        recreated, no longer wanted deleted."""
+        current = {
+            s.metadata.name: s
+            for s in self._list_all(
+                self.core.list_namespaced_service,
+                namespace=namespace,
+                label_selector=f"{NETGW_LABEL}={gateway_uuid}",
+            )
+        }
+        wanted = {s.metadata.name: s for s in desired}
+        for svc_name, svc in wanted.items():
+            cur = current.get(svc_name)
+            if cur is not None and service_shape(cur) == service_shape(svc):
+                continue
+            if cur is not None:
+                _ignore(lambda n=svc_name: self.core.delete_namespaced_service(n, namespace), 404)
+            self.core.create_namespaced_service(namespace, svc)
+        for svc_name in current.keys() - wanted.keys():
+            _ignore(lambda n=svc_name: self.core.delete_namespaced_service(n, namespace), 404)
+
+    async def delete_netgw(self, gateway_uuid: str, tenant_namespace: str) -> None:
+        await self._run(self._delete_netgw_sync, gateway_uuid, tenant_namespace)
+
+    def _delete_netgw_sync(self, gateway_uuid: str, tenant_namespace: str) -> None:
+        name = netgw_object_name(gateway_uuid)
+        for deleter in (
+            lambda: self.apps.delete_namespaced_deployment(
+                name, NETGW_NAMESPACE, propagation_policy="Background"
+            ),
+            lambda: self.net.delete_namespaced_network_policy(name, NETGW_NAMESPACE),
+            lambda: self.core.delete_namespaced_secret(name, NETGW_NAMESPACE),
+        ):
+            _ignore(deleter, 404)
+        self._sync_netgw_services_sync(NETGW_NAMESPACE, gateway_uuid, [])
+        self._sync_netgw_services_sync(tenant_namespace, gateway_uuid, [])
+
+    async def list_netgw(self) -> list[NetgwStatus]:
+        return await self._run(self._list_netgw_sync)
+
+    def _list_netgw_sync(self) -> list[NetgwStatus]:
+        deployments = self._list_all(
+            self.apps.list_namespaced_deployment,
+            namespace=NETGW_NAMESPACE,
+            label_selector=NETGW_LABEL,
+        )
+        pods: dict[str, Any] = {}
+        for pod in self._list_all(
+            self.core.list_namespaced_pod, namespace=NETGW_NAMESPACE, label_selector=NETGW_LABEL
+        ):
+            if pod.metadata.deletion_timestamp is None:
+                pods[(pod.metadata.labels or {}).get(NETGW_LABEL, "")] = pod
+        out: list[NetgwStatus] = []
+        for d in deployments:
+            labels = d.metadata.labels or {}
+            gateway_uuid = labels.get(NETGW_LABEL, "")
+            containers = d.spec.template.spec.containers or []
+            pod = pods.get(gateway_uuid)
+            out.append(
+                NetgwStatus(
+                    uuid=gateway_uuid,
+                    tenant_namespace=labels.get(NETGW_TENANT_LABEL, ""),
+                    image=containers[0].image if containers else "",
+                    ready=pod is not None and _ready_condition(pod),
+                    phase=(pod.status.phase or "Unknown") if pod is not None else "Missing",
+                )
+            )
+        return out
+
+    async def read_netgw_logs(self, gateway_uuid: str, *, tail_lines: int) -> str:
+        return await self._run(self._read_netgw_logs_sync, gateway_uuid, tail_lines)
+
+    def _read_netgw_logs_sync(self, gateway_uuid: str, tail_lines: int) -> str:
+        pods: Any = self.core.list_namespaced_pod(
+            NETGW_NAMESPACE,
+            label_selector=f"{NETGW_LABEL}={gateway_uuid}",
+            _request_timeout=(5.0, 5.0),
+        )
+        items = sorted(pods.items or [], key=lambda p: p.metadata.creation_timestamp)
+        if not items:
+            return ""
+        return cast(
+            str,
+            self.core.read_namespaced_pod_log(
+                items[-1].metadata.name,
+                NETGW_NAMESPACE,
+                container=NETGW_CONTAINER,
+                tail_lines=tail_lines,
+                timestamps=True,
+                _request_timeout=(5.0, 5.0),
+            ),
+        )
 
     @staticmethod
     def _prewarm_job_name(node_name: str, image_ref: str) -> str:

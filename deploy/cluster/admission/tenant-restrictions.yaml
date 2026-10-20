@@ -44,9 +44,9 @@ spec:
     - expression: >-
         (request.resource.group == '' && request.resource.resource == 'namespaces') ||
         (has(request.namespace) &&
-         (request.namespace == 'superdl' || request.namespace.startsWith('tenant-'))) ||
+         (request.namespace in ['superdl', 'superdl-netgw'] || request.namespace.startsWith('tenant-'))) ||
         (!has(request.namespace) && request.resource.group == '' && request.resource.resource == 'nodes')
-      message: "platform SA writes are limited to the superdl/tenant-* namespaces and nodes"
+      message: "platform SA writes are limited to the superdl/superdl-netgw/tenant-* namespaces and nodes"
     - expression: >-
         !(request.resource.group == 'rbac.authorization.k8s.io' &&
           (request.resource.resource == 'roles' || request.resource.resource == 'rolebindings')) ||
@@ -229,6 +229,14 @@ spec:
         resources: ["pods", "pods/ephemeralcontainers"]
         operations: ["CREATE", "UPDATE"]
         scope: "Namespaced"
+  variables:
+    - name: netgw
+      expression: "request.namespace == 'superdl-netgw'"
+    - name: allContainers
+      expression: >-
+        object.spec.containers +
+        (has(object.spec.initContainers) ? object.spec.initContainers : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])
   validations:
     - expression: >-
         !object.spec.containers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged) &&
@@ -255,6 +263,24 @@ spec:
         !has(object.spec.runtimeClassName) ||
         object.spec.runtimeClassName in ['kata-qemu', 'nvidia']
       message: "runtimeClassName may only be kata-qemu / nvidia"
+    - expression: >-
+        !variables.netgw || variables.allContainers.all(c,
+          c.image.matches('^[^@]+/superdl-netgw@sha256:[0-9a-f]{64}$') &&
+          has(c.securityContext) && has(c.securityContext.allowPrivilegeEscalation) &&
+          c.securityContext.allowPrivilegeEscalation == false &&
+          has(c.securityContext.capabilities) && has(c.securityContext.capabilities.drop) &&
+          c.securityContext.capabilities.drop.exists(d, d == 'ALL') &&
+          (!has(c.securityContext.capabilities.add) ||
+           c.securityContext.capabilities.add.all(a, a in ['NET_ADMIN', 'NET_BIND_SERVICE', 'MKNOD'])))
+      message: "superdl-netgw Pods run only the digest-pinned superdl-netgw image, drop ALL capabilities, add at most NET_ADMIN / NET_BIND_SERVICE / MKNOD and never escalate"
+    - expression: >-
+        !variables.netgw ||
+        (has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false &&
+         (!has(object.spec.serviceAccountName) || object.spec.serviceAccountName == 'default') &&
+         (!has(object.spec.volumes) || object.spec.volumes.all(v,
+           (has(v.secret) && has(v.secret.secretName) && v.secret.secretName.startsWith('netgw-')) ||
+           has(v.emptyDir))))
+      message: "superdl-netgw Pods mount no service-account token and only their own netgw-* Secret and emptyDir volumes"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

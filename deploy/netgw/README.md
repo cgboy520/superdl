@@ -1,6 +1,6 @@
 # Private-network gateway image
 
-One gateway Pod per tenant connection: it dials the tenant's VPN endpoint (WireGuard, IPsec, OpenVPN or an openconnect-family SSL VPN), then relays TCP between the tenant's instances and the tenant network. This directory is the image and its agent.
+One gateway Pod per tenant connection: it dials the tenant's VPN endpoint (WireGuard, IPsec, OpenVPN or an openconnect-family SSL VPN), then relays TCP between the tenant's instances and the tenant network. This directory is the image and its agent; the platform side (tables, API, K8s objects, network policies) is in [docs/reference/netgw.md](../../docs/reference/netgw.md).
 
 ```
 Dockerfile                 Alpine + wireguard-tools / strongswan / openvpn / openconnect / dnsmasq / python3
@@ -22,7 +22,7 @@ tests/integration.sh       local end-to-end run against real peers in docker
 | Ports              | `1080` SOCKS5 (CONNECT only, no auth), `9101` health / metrics, one port per forward (`forwards[].port`) and per reverse relay (`reverse[].port`)               |
 | Readiness          | `GET :9101/healthz` → 200 while the tunnel is up, 503 otherwise                                                                                                |
 | Liveness           | `GET :9101/livez` → 200 while the event loop answers                                                                                                           |
-| Metrics            | `GET :9101/metrics`: `netgw_tunnel_up`, `netgw_connections_total{kind}`, `netgw_connections_active{kind}`, `netgw_rejected_total{kind}`, `netgw_relay_bytes_total{kind}`; kind ∈ forward / reverse / socks |
+| Metrics            | `GET :9101/metrics` (diagnostics inside the Pod, not scraped): `netgw_tunnel_up`, `netgw_connections_total{kind}`, `netgw_connections_active{kind}`, `netgw_rejected_total{kind}`, `netgw_relay_bytes_total{kind}`; kind ∈ forward / reverse / socks |
 | Logs               | stderr: agent lines prefixed `netgw:`, daemon lines prefixed `[charon]` / `[openvpn]` / `[openconnect]` / `[dnsmasq]`; spec values and secrets are never logged |
 
 The node kernel needs `wireguard`, `tun`, `xfrm_user` and `esp4`.

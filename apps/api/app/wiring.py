@@ -7,6 +7,7 @@ def wire_modules() -> None:
     from app.modules.billing.edge_listener import register_billing_edge_listener
     from app.modules.catalog import prewarm as _prewarm  # noqa: F401
     from app.modules.catalog.inventory import register_inventory_provider
+    from app.modules.netgw import handlers as _netgw_handlers  # noqa: F401
     from app.modules.nodes import handlers as _node_handlers  # noqa: F401
     from app.modules.notify import service as _notify_service  # noqa: F401
     from app.modules.orchestrator import handlers as _handlers  # noqa: F401

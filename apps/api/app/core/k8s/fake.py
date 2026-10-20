@@ -18,6 +18,8 @@ from app.core.k8s.base import (
     ComponentFact,
     ComponentObject,
     InstancePodSpec,
+    NetgwSpec,
+    NetgwStatus,
     NodeInfo,
     NodePortTaken,
     PodStatus,
@@ -116,6 +118,11 @@ class FakeOrchestrator:
     fail_probe: bool = False
     fail_next_logs: bool = False
     log_calls: list[tuple[str, str, int]] = field(default_factory=list)
+    netgw: dict[str, NetgwSpec] = field(default_factory=dict)
+    netgw_ready: dict[str, bool] = field(default_factory=dict)
+    netgw_deleted: list[tuple[str, str]] = field(default_factory=list)
+    netgw_logs: dict[str, str] = field(default_factory=dict)
+    fail_next_netgw: bool = False
 
     async def ensure_namespace(self, namespace: str) -> None:
         self.namespaces.add(namespace)
@@ -510,3 +517,37 @@ class FakeOrchestrator:
         node does not raise."""
         self.cordoned_nodes.add(node_name)
         self.deleted_nodes.add(node_name)
+
+    async def cluster_dns_ip(self) -> str:
+        return "10.43.0.10"
+
+    async def apply_netgw(self, spec: NetgwSpec) -> None:
+        if self.fail_next_netgw:
+            self.fail_next_netgw = False
+            raise RuntimeError("fake: apply_netgw failed")
+        self.namespaces.add(spec.tenant_namespace)
+        self.netgw[spec.uuid] = spec
+
+    async def delete_netgw(self, gateway_uuid: str, tenant_namespace: str) -> None:
+        self.netgw.pop(gateway_uuid, None)
+        self.netgw_ready.pop(gateway_uuid, None)
+        self.netgw_deleted.append((gateway_uuid, tenant_namespace))
+
+    async def list_netgw(self) -> list[NetgwStatus]:
+        return [
+            NetgwStatus(
+                uuid=uuid,
+                tenant_namespace=spec.tenant_namespace,
+                image=spec.image,
+                ready=self.netgw_ready.get(uuid, False),
+                phase="Running",
+            )
+            for uuid, spec in self.netgw.items()
+        ]
+
+    async def read_netgw_logs(self, gateway_uuid: str, *, tail_lines: int) -> str:
+        lines = self.netgw_logs.get(gateway_uuid, "").splitlines()
+        return "\n".join(lines[-tail_lines:])
+
+    def set_netgw_ready(self, gateway_uuid: str, ready: bool) -> None:
+        self.netgw_ready[gateway_uuid] = ready

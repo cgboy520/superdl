@@ -110,3 +110,32 @@ class TestTenantPodCidr:
         """An invalid Pod CIDR is refused at the Settings layer."""
         with pytest.raises(ValidationError, match="tenant_pod_cidr"):
             _settings(tenant_pod_cidr="10.42.0.0/33")
+
+
+class TestNetgwSettings:
+    def test_shape_gates(self):
+        """Fails when a malformed gateway image, Service range or egress address reaches the
+        runtime."""
+        with pytest.raises(ValidationError, match="tenant_service_cidr"):
+            _settings(tenant_service_cidr="10.43.0.0/33")
+        with pytest.raises(ValidationError, match="netgw_image"):
+            _settings(netgw_image="not an image")
+        with pytest.raises(ValidationError, match="netgw_egress_ips"):
+            _settings(netgw_egress_ips="203.0.113.7, 1.2.3")
+        ok = _settings(netgw_egress_ips="203.0.113.7, 198.51.100.1")
+        assert ok.parsed_netgw_egress_ips() == ("203.0.113.7", "198.51.100.1")
+
+    def test_prod_requires_the_digest_pinned_gateway_image(self):
+        """Fails when prod could start gateways from a movable tag or another repository (admission
+        policy 4 would refuse their Pods)."""
+        for bad in (
+            "harbor.example.cn/superdl/superdl-netgw:1.0",
+            "harbor.example.cn/superdl/other@sha256:" + "a" * 64,
+        ):
+            with pytest.raises(ValidationError, match="netgw_image"):
+                Settings(**{**_prod_kwargs(), "netgw_image": bad})
+        good = "harbor.example.cn/superdl/superdl-netgw@sha256:" + "a" * 64
+        try:
+            Settings(**{**_prod_kwargs(), "netgw_image": good})
+        except ValidationError as exc:
+            assert "netgw_image" not in str(exc)

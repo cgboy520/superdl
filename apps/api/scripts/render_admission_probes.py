@@ -1,4 +1,5 @@
-"""Export the instance Pod, the prewarm Job and its Pod template as admission probe manifests.
+"""Export the instance Pod, the prewarm Job and its Pod template, and the private-network gateway
+objects as admission probe manifests.
 
 Usage: uv run python scripts/render_admission_probes.py <output dir>
 Output: <name>.yaml (object) and <name>.as (the --as identity for dry-run; empty = current
@@ -15,7 +16,21 @@ import yaml
 from kubernetes import client
 
 from app.core.gpu_adapter import POOL_HAMI, POOL_KATA, POOL_MIG, build_gpu_request
-from app.core.k8s.base import InstancePodSpec
+from app.core.k8s.base import (
+    NETGW_NAMESPACE,
+    PRIVATE_CIDRS,
+    InstancePodSpec,
+    NetgwInstanceForward,
+    NetgwIntranetForward,
+    NetgwSpec,
+)
+from app.core.k8s.netgw import (
+    build_netgw_deployment,
+    build_netgw_netpol,
+    build_netgw_secret,
+    build_netgw_services,
+    build_tenant_services,
+)
 from app.core.k8s.real import (
     build_instance_pod,
     build_prewarm_job,
@@ -25,6 +40,19 @@ TENANT_NS = "tenant-probe"
 PLATFORM_NS = "superdl"
 SA = "system:serviceaccount:superdl:"
 JOB_CONTROLLER = "system:serviceaccount:kube-system:job-controller"
+REPLICASET_CONTROLLER = "system:serviceaccount:kube-system:replicaset-controller"
+NETGW_PROBE = NetgwSpec(
+    uuid="0" * 32,
+    tenant_namespace=TENANT_NS,
+    socks_name="probe",
+    image="registry.invalid/superdl/superdl-netgw@sha256:" + "0" * 64,
+    spec_json="{}",
+    egress_ports=(("udp", 51820),),
+    intranet=(NetgwIntranetForward(forward_id=1, name="nas", port=2049, listen_port=20000),),
+    instance=(NetgwInstanceForward(forward_id=2, instance_name="probe", port=22),),
+    bandwidth_mbps=100,
+    image_pull_secret="superdl-registry-pull",
+)
 
 
 def _instance_spec(name: str, gpu_req: object) -> InstancePodSpec:
@@ -58,6 +86,29 @@ def _pod_from_job(job: client.V1Job, name: str, namespace: str) -> client.V1Pod:
         metadata=client.V1ObjectMeta(name=name, namespace=namespace, labels=tpl.metadata.labels),
         spec=tpl.spec,
     )
+
+
+def _netgw_objects() -> list[tuple[str, object, str]]:
+    """Gateway objects as tenant-mgr writes them, plus the Pod the ReplicaSet controller creates
+    from the Deployment template (admission policy 4 judges that Pod)."""
+    mgr = SA + "superdl-tenant-mgr"
+    deployment = build_netgw_deployment(NETGW_PROBE)
+    tpl = deployment.spec.template  # type: ignore[union-attr]
+    pod = client.V1Pod(
+        metadata=client.V1ObjectMeta(
+            name="netgw-probe", namespace=NETGW_NAMESPACE, labels=tpl.metadata.labels
+        ),
+        spec=tpl.spec,
+    )
+    out: list[tuple[str, object, str]] = [
+        ("netgw-deployment", deployment, mgr),
+        ("netgw-pod", pod, REPLICASET_CONTROLLER),
+        ("netgw-secret", build_netgw_secret(NETGW_PROBE), mgr),
+        ("netgw-netpol", build_netgw_netpol(NETGW_PROBE, except_cidrs=PRIVATE_CIDRS), mgr),
+    ]
+    services = build_netgw_services(NETGW_PROBE) + build_tenant_services(NETGW_PROBE)
+    out.extend((f"netgw-service-{i}", svc, mgr) for i, svc in enumerate(services))
+    return out
 
 
 def main(out_dir: pathlib.Path) -> None:
@@ -120,11 +171,18 @@ def main(out_dir: pathlib.Path) -> None:
         ("prewarm-pod", _pod_from_job(prewarm_job, "prewarm-probe", PLATFORM_NS), JOB_CONTROLLER)
     )
 
+    objects.extend(_netgw_objects())
+
+    kinds = {
+        client.V1Pod: ("v1", "Pod"),
+        client.V1Job: ("batch/v1", "Job"),
+        client.V1Deployment: ("apps/v1", "Deployment"),
+        client.V1Secret: ("v1", "Secret"),
+        client.V1Service: ("v1", "Service"),
+        client.V1NetworkPolicy: ("networking.k8s.io/v1", "NetworkPolicy"),
+    }
     for name, obj, as_user in objects:
-        if isinstance(obj, client.V1Pod):
-            obj.api_version, obj.kind = "v1", "Pod"
-        elif isinstance(obj, client.V1Job):
-            obj.api_version, obj.kind = "batch/v1", "Job"
+        obj.api_version, obj.kind = kinds[type(obj)]  # type: ignore[attr-defined]
         data = api.sanitize_for_serialization(obj)
         (out_dir / f"{name}.yaml").write_text(yaml.safe_dump(data, sort_keys=False))
         (out_dir / f"{name}.as").write_text(as_user)

@@ -536,6 +536,193 @@
         "title": "AdminForceStopRequest",
         "type": "object"
       },
+      "AdminGatewayDelete": {
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "AdminGatewayDelete",
+        "type": "object"
+      },
+      "AdminGatewayOut": {
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dns": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DnsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "forwards": {
+            "items": {
+              "$ref": "#/components/schemas/ForwardOut"
+            },
+            "title": "Forwards",
+            "type": "array"
+          },
+          "local_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Address"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pod_phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pod Phase"
+          },
+          "protocol": {
+            "enum": [
+              "wireguard",
+              "ipsec",
+              "openvpn",
+              "openconnect"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "remote_cidrs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Remote Cidrs",
+            "type": "array"
+          },
+          "socks_url": {
+            "description": "SOCKS5 endpoint for the tenant's instances",
+            "title": "Socks Url",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "applying",
+              "connected",
+              "disconnected",
+              "deleting"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "tunnel": {
+            "discriminator": {
+              "mapping": {
+                "ipsec": "#/components/schemas/IpsecOut",
+                "openconnect": "#/components/schemas/OpenConnectOut",
+                "openvpn": "#/components/schemas/OpenVpnOut",
+                "wireguard": "#/components/schemas/WireGuardOut"
+              },
+              "propertyName": "protocol"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WireGuardOut"
+              },
+              {
+                "$ref": "#/components/schemas/IpsecOut"
+              },
+              {
+                "$ref": "#/components/schemas/OpenVpnOut"
+              },
+              {
+                "$ref": "#/components/schemas/OpenConnectOut"
+              }
+            ],
+            "title": "Tunnel"
+          },
+          "tunnel_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tunnel Changed At"
+          },
+          "tunnel_up": {
+            "title": "Tunnel Up",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "protocol",
+          "state",
+          "tunnel_up",
+          "tunnel_changed_at",
+          "checked_at",
+          "remote_cidrs",
+          "local_address",
+          "dns",
+          "tunnel",
+          "socks_url",
+          "forwards",
+          "created_at",
+          "updated_at",
+          "user_id",
+          "pod_phase"
+        ],
+        "title": "AdminGatewayOut",
+        "type": "object"
+      },
       "AdminImageOut": {
         "description": "Public catalog fields + admin prewarm view.",
         "properties": {
@@ -3043,6 +3230,56 @@
         "title": "DiskOut",
         "type": "object"
       },
+      "DnsIn": {
+        "description": "Split DNS: these domains are resolved by these servers (inside remote_cidrs) through the\ntunnel.",
+        "properties": {
+          "domains": {
+            "items": {
+              "maxLength": 253,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Domains",
+            "type": "array"
+          },
+          "servers": {
+            "items": {
+              "format": "ipv4",
+              "type": "string"
+            },
+            "maxItems": 3,
+            "title": "Servers",
+            "type": "array"
+          }
+        },
+        "title": "DnsIn",
+        "type": "object"
+      },
+      "DnsOut": {
+        "properties": {
+          "domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Domains",
+            "type": "array"
+          },
+          "servers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Servers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "servers",
+          "domains"
+        ],
+        "title": "DnsOut",
+        "type": "object"
+      },
       "EmailTestOut": {
         "properties": {
           "ok": {
@@ -3206,6 +3443,322 @@
           "reason"
         ],
         "title": "EnrollmentRevokeRequest",
+        "type": "object"
+      },
+      "ForwardOut": {
+        "properties": {
+          "available": {
+            "description": "false: the target instance is released",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "instance_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Name"
+          },
+          "instance_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Uuid"
+          },
+          "kind": {
+            "enum": [
+              "intranet",
+              "instance"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "target_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Host"
+          },
+          "target_port": {
+            "title": "Target Port",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "port",
+          "target_host",
+          "instance_uuid",
+          "instance_name",
+          "target_port",
+          "available",
+          "created_at"
+        ],
+        "title": "ForwardOut",
+        "type": "object"
+      },
+      "GatewayIn": {
+        "properties": {
+          "dns": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DnsIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "local_address": {
+            "anyOf": [
+              {
+                "format": "ipv4",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Address"
+          },
+          "name": {
+            "maxLength": 40,
+            "minLength": 1,
+            "pattern": "^[a-z]([-a-z0-9]{0,38}[a-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "remote_cidrs": {
+            "items": {
+              "maxLength": 18,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Remote Cidrs",
+            "type": "array"
+          },
+          "tunnel": {
+            "discriminator": {
+              "mapping": {
+                "ipsec": "#/components/schemas/IpsecIn",
+                "openconnect": "#/components/schemas/OpenConnectIn",
+                "openvpn": "#/components/schemas/OpenVpnIn",
+                "wireguard": "#/components/schemas/WireGuardIn"
+              },
+              "propertyName": "protocol"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WireGuardIn"
+              },
+              {
+                "$ref": "#/components/schemas/IpsecIn"
+              },
+              {
+                "$ref": "#/components/schemas/OpenVpnIn"
+              },
+              {
+                "$ref": "#/components/schemas/OpenConnectIn"
+              }
+            ],
+            "title": "Tunnel"
+          }
+        },
+        "required": [
+          "name",
+          "remote_cidrs",
+          "tunnel"
+        ],
+        "title": "GatewayIn",
+        "type": "object"
+      },
+      "GatewayOut": {
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dns": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DnsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "forwards": {
+            "items": {
+              "$ref": "#/components/schemas/ForwardOut"
+            },
+            "title": "Forwards",
+            "type": "array"
+          },
+          "local_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Address"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "protocol": {
+            "enum": [
+              "wireguard",
+              "ipsec",
+              "openvpn",
+              "openconnect"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "remote_cidrs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Remote Cidrs",
+            "type": "array"
+          },
+          "socks_url": {
+            "description": "SOCKS5 endpoint for the tenant's instances",
+            "title": "Socks Url",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "applying",
+              "connected",
+              "disconnected",
+              "deleting"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "tunnel": {
+            "discriminator": {
+              "mapping": {
+                "ipsec": "#/components/schemas/IpsecOut",
+                "openconnect": "#/components/schemas/OpenConnectOut",
+                "openvpn": "#/components/schemas/OpenVpnOut",
+                "wireguard": "#/components/schemas/WireGuardOut"
+              },
+              "propertyName": "protocol"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WireGuardOut"
+              },
+              {
+                "$ref": "#/components/schemas/IpsecOut"
+              },
+              {
+                "$ref": "#/components/schemas/OpenVpnOut"
+              },
+              {
+                "$ref": "#/components/schemas/OpenConnectOut"
+              }
+            ],
+            "title": "Tunnel"
+          },
+          "tunnel_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tunnel Changed At"
+          },
+          "tunnel_up": {
+            "title": "Tunnel Up",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "protocol",
+          "state",
+          "tunnel_up",
+          "tunnel_changed_at",
+          "checked_at",
+          "remote_cidrs",
+          "local_address",
+          "dns",
+          "tunnel",
+          "socks_url",
+          "forwards",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "GatewayOut",
         "type": "object"
       },
       "GpuModelAggregateOut": {
@@ -3857,6 +4410,49 @@
         "title": "InstanceEventOut",
         "type": "object"
       },
+      "InstanceForwardIn": {
+        "description": "The tenant network reaches `<tunnel address>:<port>`; the gateway connects to the\ninstance's target_port.",
+        "properties": {
+          "instance_uuid": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Instance Uuid",
+            "type": "string"
+          },
+          "kind": {
+            "const": "instance",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 40,
+            "minLength": 1,
+            "pattern": "^[a-z]([-a-z0-9]{0,38}[a-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "target_port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Target Port",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "port",
+          "instance_uuid",
+          "target_port"
+        ],
+        "title": "InstanceForwardIn",
+        "type": "object"
+      },
       "InstanceGpuSeries": {
         "properties": {
           "last": {
@@ -4216,6 +4812,50 @@
         "title": "InstanceSubscriptionOut",
         "type": "object"
       },
+      "IntranetForwardIn": {
+        "description": "Instances reach `<name>:<port>`; the gateway connects to target_host:target_port.",
+        "properties": {
+          "kind": {
+            "const": "intranet",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 40,
+            "minLength": 1,
+            "pattern": "^[a-z]([-a-z0-9]{0,38}[a-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "target_host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "title": "Target Host",
+            "type": "string"
+          },
+          "target_port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Target Port",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "port",
+          "target_host",
+          "target_port"
+        ],
+        "title": "IntranetForwardIn",
+        "type": "object"
+      },
       "InvoiceCreate": {
         "description": "Invoice request. amount is not part of the contract: computed server-side per period.",
         "properties": {
@@ -4399,6 +5039,141 @@
           "reason"
         ],
         "title": "InvoiceReject",
+        "type": "object"
+      },
+      "IpsecIn": {
+        "properties": {
+          "local_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Id"
+          },
+          "peer": {
+            "maxLength": 253,
+            "minLength": 1,
+            "title": "Peer",
+            "type": "string"
+          },
+          "proposals": {
+            "default": "compatible",
+            "enum": [
+              "default",
+              "compatible",
+              "modern"
+            ],
+            "title": "Proposals",
+            "type": "string"
+          },
+          "protocol": {
+            "const": "ipsec",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "psk": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Psk"
+          },
+          "remote_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote Id"
+          },
+          "version": {
+            "default": 2,
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "protocol",
+          "peer"
+        ],
+        "title": "IpsecIn",
+        "type": "object"
+      },
+      "IpsecOut": {
+        "properties": {
+          "local_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Id"
+          },
+          "peer": {
+            "title": "Peer",
+            "type": "string"
+          },
+          "proposals": {
+            "enum": [
+              "default",
+              "compatible",
+              "modern"
+            ],
+            "title": "Proposals",
+            "type": "string"
+          },
+          "protocol": {
+            "const": "ipsec",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "remote_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote Id"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "protocol",
+          "version",
+          "peer",
+          "local_id",
+          "remote_id",
+          "proposals"
+        ],
+        "title": "IpsecOut",
         "type": "object"
       },
       "KycSubmitRequest": {
@@ -4999,6 +5774,47 @@
         "title": "MfaTicketRequest",
         "type": "object"
       },
+      "NetgwConfigOut": {
+        "properties": {
+          "bandwidth_mbps": {
+            "title": "Bandwidth Mbps",
+            "type": "integer"
+          },
+          "egress_ips": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Egress Ips",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "max_forwards": {
+            "title": "Max Forwards",
+            "type": "integer"
+          },
+          "max_gateways": {
+            "title": "Max Gateways",
+            "type": "integer"
+          },
+          "socks_port": {
+            "title": "Socks Port",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "egress_ips",
+          "max_gateways",
+          "max_forwards",
+          "bandwidth_mbps",
+          "socks_port"
+        ],
+        "title": "NetgwConfigOut",
+        "type": "object"
+      },
       "NodeCordonOut": {
         "properties": {
           "node_name": {
@@ -5562,6 +6378,235 @@
           "created_at"
         ],
         "title": "NotificationOut",
+        "type": "object"
+      },
+      "OpenConnectIn": {
+        "properties": {
+          "authgroup": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authgroup"
+          },
+          "flavor": {
+            "default": "anyconnect",
+            "enum": [
+              "anyconnect",
+              "array",
+              "f5",
+              "fortinet",
+              "gp",
+              "pulse"
+            ],
+            "title": "Flavor",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "protocol": {
+            "const": "openconnect",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "server": {
+            "description": "https://host[:port][/path]",
+            "maxLength": 512,
+            "minLength": 9,
+            "title": "Server",
+            "type": "string"
+          },
+          "servercert": {
+            "anyOf": [
+              {
+                "maxLength": 140,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Servercert"
+          },
+          "username": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol",
+          "server",
+          "username"
+        ],
+        "title": "OpenConnectIn",
+        "type": "object"
+      },
+      "OpenConnectOut": {
+        "properties": {
+          "authgroup": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authgroup"
+          },
+          "flavor": {
+            "enum": [
+              "anyconnect",
+              "array",
+              "f5",
+              "fortinet",
+              "gp",
+              "pulse"
+            ],
+            "title": "Flavor",
+            "type": "string"
+          },
+          "protocol": {
+            "const": "openconnect",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "server": {
+            "title": "Server",
+            "type": "string"
+          },
+          "servercert": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Servercert"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol",
+          "flavor",
+          "server",
+          "username",
+          "servercert",
+          "authgroup"
+        ],
+        "title": "OpenConnectOut",
+        "type": "object"
+      },
+      "OpenVpnIn": {
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "maxLength": 65536,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Client profile",
+            "title": "Config"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "protocol": {
+            "const": "openvpn",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "protocol"
+        ],
+        "title": "OpenVpnIn",
+        "type": "object"
+      },
+      "OpenVpnOut": {
+        "properties": {
+          "has_password": {
+            "title": "Has Password",
+            "type": "boolean"
+          },
+          "protocol": {
+            "const": "openvpn",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "remotes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Remotes",
+            "type": "array"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "protocol",
+          "remotes",
+          "username",
+          "has_password"
+        ],
+        "title": "OpenVpnOut",
         "type": "object"
       },
       "OrderBackfillOut": {
@@ -10160,6 +11205,94 @@
         ],
         "title": "WarnThresholdUpdate",
         "type": "object"
+      },
+      "WireGuardIn": {
+        "properties": {
+          "endpoint": {
+            "description": "Peer host:port",
+            "maxLength": 260,
+            "minLength": 3,
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "mtu": {
+            "default": 1420,
+            "maximum": 1500.0,
+            "minimum": 1280.0,
+            "title": "Mtu",
+            "type": "integer"
+          },
+          "peer_public_key": {
+            "maxLength": 44,
+            "minLength": 44,
+            "title": "Peer Public Key",
+            "type": "string"
+          },
+          "preshared_key": {
+            "anyOf": [
+              {
+                "maxLength": 44,
+                "minLength": 44,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preshared Key"
+          },
+          "protocol": {
+            "const": "wireguard",
+            "title": "Protocol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol",
+          "endpoint",
+          "peer_public_key"
+        ],
+        "title": "WireGuardIn",
+        "type": "object"
+      },
+      "WireGuardOut": {
+        "properties": {
+          "endpoint": {
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "has_preshared_key": {
+            "title": "Has Preshared Key",
+            "type": "boolean"
+          },
+          "mtu": {
+            "title": "Mtu",
+            "type": "integer"
+          },
+          "peer_public_key": {
+            "title": "Peer Public Key",
+            "type": "string"
+          },
+          "protocol": {
+            "const": "wireguard",
+            "title": "Protocol",
+            "type": "string"
+          },
+          "public_key": {
+            "title": "Public Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol",
+          "endpoint",
+          "peer_public_key",
+          "public_key",
+          "has_preshared_key",
+          "mtu"
+        ],
+        "title": "WireGuardOut",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -13828,6 +14961,123 @@
         "summary": "Admin Change Own Password",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/netgw/gateways": {
+      "get": {
+        "description": "Every tenant's gateways (newest first, at most 500); secrets never included.",
+        "operationId": "admin_list_gateways_api_admin_v1_netgw_gateways_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminGatewayOut"
+                  },
+                  "title": "Response Admin List Gateways Api Admin V1 Netgw Gateways Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Gateways",
+        "tags": [
+          "admin-netgw"
+        ]
+      }
+    },
+    "/api/admin/v1/netgw/gateways/{uuid}/delete": {
+      "post": {
+        "description": "Tear down a tenant's gateway (reason required).",
+        "operationId": "admin_delete_gateway_api_admin_v1_netgw_gateways__uuid__delete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminGatewayDelete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Delete Gateway",
+        "tags": [
+          "admin-netgw"
         ]
       }
     },
@@ -19653,6 +20903,463 @@
         "summary": "Instances Metrics Summary",
         "tags": [
           "metering"
+        ]
+      }
+    },
+    "/api/v1/netgw/config": {
+      "get": {
+        "description": "Whether gateways are offered here, limits, and the platform egress addresses to allow on\nthe tenant side.",
+        "operationId": "get_config_api_v1_netgw_config_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetgwConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Config",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/netgw/gateways": {
+      "get": {
+        "operationId": "list_gateways_api_v1_netgw_gateways_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GatewayOut"
+                  },
+                  "title": "Response List Gateways Api V1 Netgw Gateways Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Gateways",
+        "tags": [
+          "netgw"
+        ]
+      },
+      "post": {
+        "description": "Create a gateway; the Pod is converged asynchronously (state `applying`). An\nidempotency-key replay returns 200 + X-Idempotent-Replay.",
+        "operationId": "create_gateway_api_v1_netgw_gateways_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Gateway",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/netgw/gateways/{uuid}": {
+      "delete": {
+        "operationId": "delete_gateway_api_v1_netgw_gateways__uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Gateway",
+        "tags": [
+          "netgw"
+        ]
+      },
+      "get": {
+        "operationId": "get_gateway_api_v1_netgw_gateways__uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Gateway",
+        "tags": [
+          "netgw"
+        ]
+      },
+      "put": {
+        "description": "Replace the configuration (protocol fixed; null secrets keep the stored ones). The gateway\nPod restarts with the new spec.",
+        "operationId": "update_gateway_api_v1_netgw_gateways__uuid__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Gateway",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/netgw/gateways/{uuid}/forwards": {
+      "post": {
+        "operationId": "add_forward_api_v1_netgw_gateways__uuid__forwards_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "instance": "#/components/schemas/InstanceForwardIn",
+                    "intranet": "#/components/schemas/IntranetForwardIn"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/IntranetForwardIn"
+                  },
+                  {
+                    "$ref": "#/components/schemas/InstanceForwardIn"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add Forward",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/netgw/gateways/{uuid}/forwards/{forward_id}": {
+      "delete": {
+        "operationId": "delete_forward_api_v1_netgw_gateways__uuid__forwards__forward_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "forward_id",
+            "required": true,
+            "schema": {
+              "title": "Forward Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Forward",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/netgw/gateways/{uuid}/logs": {
+      "get": {
+        "description": "Gateway container log: owner only, 20/h per user, not audited.",
+        "operationId": "gateway_logs_api_v1_netgw_gateways__uuid__logs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tail_lines",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Tail Lines",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceLogsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Gateway Logs",
+        "tags": [
+          "netgw"
         ]
       }
     },

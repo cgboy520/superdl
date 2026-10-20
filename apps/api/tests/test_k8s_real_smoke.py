@@ -4,6 +4,7 @@ import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -16,10 +17,16 @@ from app.core.k8s.base import (
     GATEWAY_APP_LISTENER,
     GATEWAY_NAME,
     HTTPROUTE_PLURAL,
+    NETGW_LABEL,
+    NETGW_NAMESPACE,
     InstancePodSpec,
+    NetgwInstanceForward,
+    NetgwIntranetForward,
+    NetgwSpec,
     data_disk_pvc_name,
     instance_disk_pvc_name,
     jupyter_service_name,
+    netgw_object_name,
 )
 from app.core.k8s.real import MANAGED_LABEL, PRIVATE_CIDRS, RealOrchestrator
 from tests.helpers import use_kubeconfig, wait_pvc_bound
@@ -109,12 +116,12 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
     netpol: Any = orch.net.read_namespaced_network_policy("tenant-default", namespace)
     spec = netpol.spec
     assert spec is not None and set(spec.policy_types) == {"Ingress", "Egress"}
-    assert spec.egress is not None and len(spec.egress) == 3
+    assert spec.egress is not None and len(spec.egress) == 4
     tcp_rule = spec.egress[1]
     assert tcp_rule.ports is not None and any(p.end_port for p in tcp_rule.ports)
     assert tcp_rule.to is not None and tcp_rule.to[0].ip_block is not None
     assert set(tcp_rule.to[0].ip_block._except or []) == set(PRIVATE_CIDRS)
-    assert spec.ingress is not None and len(spec.ingress) == 2
+    assert spec.ingress is not None and len(spec.ingress) == 3
     ssh_block = spec.ingress[1]._from[0].ip_block
     assert ssh_block is not None and ssh_block.cidr == "0.0.0.0/0"
     assert ssh_block._except == [get_settings().tenant_pod_cidr]
@@ -225,3 +232,59 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
 
     await orch.delete_instance_disk(namespace, name)
     await _wait_pvc_gone(orch, namespace, pvc_name)
+
+
+def _netgw_service_names(orch: RealOrchestrator, namespace: str, gateway_uuid: str) -> set[str]:
+    svcs: Any = orch.core.list_namespaced_service(
+        namespace, label_selector=f"{NETGW_LABEL}={gateway_uuid}"
+    )
+    return {s.metadata.name for s in svcs.items}
+
+
+async def test_netgw_converge_and_delete(orch: RealOrchestrator, namespace: str) -> None:
+    """Fails when gateway objects do not converge (create, shrink on re-apply) or survive
+    deletion in either namespace."""
+    try:
+        await asyncio.to_thread(
+            orch.core.create_namespace,
+            k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NETGW_NAMESPACE)),
+        )
+    except k8s_client.ApiException as exc:
+        if exc.status != 409:
+            raise
+    gw = uuid.uuid4().hex
+    spec = NetgwSpec(
+        uuid=gw,
+        tenant_namespace=namespace,
+        socks_name="corp",
+        image="registry.invalid/superdl/superdl-netgw@sha256:" + "0" * 64,
+        spec_json='{"version": 1}',
+        egress_ports=(("udp", 51820),),
+        intranet=(NetgwIntranetForward(forward_id=1, name="nas", port=2049, listen_port=20000),),
+        instance=(NetgwInstanceForward(forward_id=2, instance_name="box", port=22),),
+    )
+    await orch.apply_netgw(spec)
+    await orch.apply_netgw(spec)
+    name = netgw_object_name(gw)
+    orch.apps.read_namespaced_deployment(name, NETGW_NAMESPACE)
+    orch.net.read_namespaced_network_policy(name, NETGW_NAMESPACE)
+    secret: Any = orch.core.read_namespaced_secret(name, NETGW_NAMESPACE)
+    assert set(secret.data) == {"spec.json"}
+    assert _netgw_service_names(orch, NETGW_NAMESPACE, gw) == {name, f"{name}-1"}
+    assert _netgw_service_names(orch, namespace, gw) == {"corp", "nas", f"{name}-2"}
+    assert [s.uuid for s in await orch.list_netgw() if s.uuid == gw] == [gw]
+
+    await orch.apply_netgw(replace(spec, intranet=(), instance=()))
+    assert _netgw_service_names(orch, NETGW_NAMESPACE, gw) == {name}
+    assert _netgw_service_names(orch, namespace, gw) == {"corp"}
+
+    await orch.delete_netgw(gw, namespace)
+    assert _netgw_service_names(orch, NETGW_NAMESPACE, gw) == set()
+    assert _netgw_service_names(orch, namespace, gw) == set()
+    for read in (
+        lambda: orch.core.read_namespaced_secret(name, NETGW_NAMESPACE),
+        lambda: orch.net.read_namespaced_network_policy(name, NETGW_NAMESPACE),
+    ):
+        with pytest.raises(k8s_client.ApiException) as exc_info:
+            read()
+        assert exc_info.value.status == 404

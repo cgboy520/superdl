@@ -151,6 +151,7 @@ jobs:
       - name: Apply the production RBAC and statically assert each SA's verb surface
         run: |
           kubectl create namespace superdl
+          kubectl create namespace superdl-netgw
           kubectl apply -f deploy/app/k8s/01-rbac.yaml
 
           need() {
@@ -179,9 +180,15 @@ jobs:
           for pair in "delete namespaces" "patch nodes" "delete nodes" "list secrets" "get secrets" \
                       "create roles" "patch roles" "escalate roles" "bind roles" \
                       "escalate clusterroles" "bind clusterroles" \
-                      "bind clusterroles/cluster-admin" "bind clusterroles/superdl-tenant-mgr"; do
+                      "bind clusterroles/cluster-admin" "bind clusterroles/superdl-tenant-mgr" \
+                      "create deployments.apps"; do
             # shellcheck disable=SC2086
             deny superdl-tenant-mgr $pair
+          done
+          for pair in "create deployments.apps" "update deployments.apps" "delete deployments.apps" \
+                      "create secrets" "patch secrets" "delete secrets"; do
+            # shellcheck disable=SC2086
+            need superdl-tenant-mgr $pair -n superdl-netgw
           done
 
           need superdl-api get pods --subresource=log
@@ -386,6 +393,35 @@ jobs:
                 command: ["sleep", "1"]
                 envFrom:
                   - secretRef: {name: superdl-db-migrate}
+          EOF
+
+          deny_check "a gateway Pod adds SYS_ADMIN" \
+            system:serviceaccount:kube-system:replicaset-controller <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata: {name: netgw-sysadmin, namespace: superdl-netgw}
+          spec:
+            automountServiceAccountToken: false
+            containers:
+              - name: gateway
+                image: registry.invalid/superdl/superdl-netgw@sha256:0000000000000000000000000000000000000000000000000000000000000000
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities: {drop: [ALL], add: [NET_ADMIN, SYS_ADMIN]}
+          EOF
+          deny_check "a gateway Pod runs an image that is not the digest-pinned gateway image" \
+            system:serviceaccount:kube-system:replicaset-controller <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata: {name: netgw-other-image, namespace: superdl-netgw}
+          spec:
+            automountServiceAccountToken: false
+            containers:
+              - name: gateway
+                image: busybox:1.36
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities: {drop: [ALL], add: [NET_ADMIN]}
           EOF
 
           deny_delete() {

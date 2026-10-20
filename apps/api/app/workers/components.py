@@ -28,6 +28,8 @@ COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
             "instance.release",
             "instance.disk_cleanup",
             "service.retire",
+            "netgw.apply",
+            "netgw.delete",
         }
     ),
     WorkerComponent.NODE_MGR: frozenset({"node.cordon", "node.decommission", "node.switch_pool"}),
