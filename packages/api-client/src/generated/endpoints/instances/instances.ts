@@ -73,11 +73,25 @@ export const getCreateInstanceApiV1InstancesPostUrl = () => {
 export const createInstanceApiV1InstancesPost = async (instanceCreate: InstanceCreate,
     headers?: CreateInstanceApiV1InstancesPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
 
-  return customFetch<InstanceOut>(getCreateInstanceApiV1InstancesPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<InstanceOut>(getCreateInstanceApiV1InstancesPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(instanceCreate)
   }
 );}
@@ -177,11 +191,25 @@ export const getRenameInstanceApiV1InstancesUuidPatchUrl = (uuid: string,) => {
 export const renameInstanceApiV1InstancesUuidPatch = async (uuid: string,
     instanceRename: InstanceRename, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
 
-  return customFetch<InstanceOut>(getRenameInstanceApiV1InstancesUuidPatchUrl(uuid),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<InstanceOut>(getRenameInstanceApiV1InstancesUuidPatchUrl(uuid),
   {
     ...options,
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(instanceRename)
   }
 );}
@@ -226,11 +254,25 @@ export const getSetAutoRenewApiV1InstancesUuidAutoRenewPostUrl = (uuid: string,)
 export const setAutoRenewApiV1InstancesUuidAutoRenewPost = async (uuid: string,
     instanceAutoRenew: InstanceAutoRenew, options?: Parameters<typeof customFetch>[1]): Promise<InstanceOut> => {
 
-  return customFetch<InstanceOut>(getSetAutoRenewApiV1InstancesUuidAutoRenewPostUrl(uuid),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<InstanceOut>(getSetAutoRenewApiV1InstancesUuidAutoRenewPostUrl(uuid),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(instanceAutoRenew)
   }
 );}
@@ -322,11 +364,25 @@ export const renewInstanceApiV1InstancesUuidRenewPost = async (uuid: string,
     instanceRenew: InstanceRenew,
     headers?: RenewInstanceApiV1InstancesUuidRenewPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<RenewOut> => {
 
-  return customFetch<RenewOut>(getRenewInstanceApiV1InstancesUuidRenewPostUrl(uuid),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<RenewOut>(getRenewInstanceApiV1InstancesUuidRenewPostUrl(uuid),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(instanceRenew)
   }
 );}
@@ -441,11 +497,25 @@ export const subscribeInstanceApiV1InstancesUuidSubscribePost = async (uuid: str
     instanceRenew: InstanceRenew,
     headers?: SubscribeInstanceApiV1InstancesUuidSubscribePostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<RenewOut> => {
 
-  return customFetch<RenewOut>(getSubscribeInstanceApiV1InstancesUuidSubscribePostUrl(uuid),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<RenewOut>(getSubscribeInstanceApiV1InstancesUuidSubscribePostUrl(uuid),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(instanceRenew)
   }
 );}

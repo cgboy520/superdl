@@ -50,11 +50,25 @@ export const getCreateDiskApiV1DisksPostUrl = () => {
 export const createDiskApiV1DisksPost = async (diskCreate: DiskCreate,
     headers?: CreateDiskApiV1DisksPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<DiskOut> => {
 
-  return customFetch<DiskOut>(getCreateDiskApiV1DisksPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<DiskOut>(getCreateDiskApiV1DisksPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(diskCreate)
   }
 );}
@@ -99,11 +113,25 @@ export const getExpandDiskApiV1DisksUuidPatchUrl = (uuid: string,) => {
 export const expandDiskApiV1DisksUuidPatch = async (uuid: string,
     diskExpand: DiskExpand, options?: Parameters<typeof customFetch>[1]): Promise<DiskOut> => {
 
-  return customFetch<DiskOut>(getExpandDiskApiV1DisksUuidPatchUrl(uuid),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<DiskOut>(getExpandDiskApiV1DisksUuidPatchUrl(uuid),
   {
     ...options,
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(diskExpand)
   }
 );}

@@ -77,11 +77,25 @@ export const getCreateServiceApiV1ServicesPostUrl = () => {
 export const createServiceApiV1ServicesPost = async (serviceCreate: ServiceCreate,
     headers?: CreateServiceApiV1ServicesPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<ServiceOut> => {
 
-  return customFetch<ServiceOut>(getCreateServiceApiV1ServicesPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ServiceOut>(getCreateServiceApiV1ServicesPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(serviceCreate)
   }
 );}
@@ -150,11 +164,25 @@ export const getPatchServiceApiV1ServicesSlugPatchUrl = (slug: string,) => {
 export const patchServiceApiV1ServicesSlugPatch = async (slug: string,
     servicePatch: ServicePatch, options?: Parameters<typeof customFetch>[1]): Promise<ServiceOut> => {
 
-  return customFetch<ServiceOut>(getPatchServiceApiV1ServicesSlugPatchUrl(slug),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ServiceOut>(getPatchServiceApiV1ServicesSlugPatchUrl(slug),
   {
     ...options,
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(servicePatch)
   }
 );}
@@ -200,11 +228,25 @@ export const getCreateApiKeyApiV1ServicesSlugApiKeysPostUrl = (slug: string,) =>
 export const createApiKeyApiV1ServicesSlugApiKeysPost = async (slug: string,
     apiKeyCreate: ApiKeyCreate, options?: Parameters<typeof customFetch>[1]): Promise<ApiKeyCreateOut> => {
 
-  return customFetch<ApiKeyCreateOut>(getCreateApiKeyApiV1ServicesSlugApiKeysPostUrl(slug),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ApiKeyCreateOut>(getCreateApiKeyApiV1ServicesSlugApiKeysPostUrl(slug),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(apiKeyCreate)
   }
 );}
@@ -393,11 +435,25 @@ export const createRevisionApiV1ServicesSlugRevisionsPost = async (slug: string,
     serviceRevisionCreate: ServiceRevisionCreate,
     headers?: CreateRevisionApiV1ServicesSlugRevisionsPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<ServiceOut> => {
 
-  return customFetch<ServiceOut>(getCreateRevisionApiV1ServicesSlugRevisionsPostUrl(slug),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ServiceOut>(getCreateRevisionApiV1ServicesSlugRevisionsPostUrl(slug),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(serviceRevisionCreate)
   }
 );}

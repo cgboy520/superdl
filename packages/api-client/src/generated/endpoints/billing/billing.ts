@@ -116,11 +116,25 @@ export const getCreateInvoiceApiV1BillingInvoicesPostUrl = () => {
 export const createInvoiceApiV1BillingInvoicesPost = async (invoiceCreate: InvoiceCreate,
     headers?: CreateInvoiceApiV1BillingInvoicesPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<InvoiceOut> => {
 
-  return customFetch<InvoiceOut>(getCreateInvoiceApiV1BillingInvoicesPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<InvoiceOut>(getCreateInvoiceApiV1BillingInvoicesPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(invoiceCreate)
   }
 );}
@@ -335,11 +349,25 @@ export const getCreateRechargeApiV1WalletRechargesPostUrl = () => {
 export const createRechargeApiV1WalletRechargesPost = async (rechargeCreate: RechargeCreate,
     headers?: CreateRechargeApiV1WalletRechargesPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<RechargeOut> => {
 
-  return customFetch<RechargeOut>(getCreateRechargeApiV1WalletRechargesPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<RechargeOut>(getCreateRechargeApiV1WalletRechargesPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(rechargeCreate)
   }
 );}
@@ -416,11 +444,25 @@ export const getCreateRefundApiV1WalletRefundsPostUrl = () => {
 export const createRefundApiV1WalletRefundsPost = async (refundCreate: RefundCreate,
     headers?: CreateRefundApiV1WalletRefundsPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<RefundOut> => {
 
-  return customFetch<RefundOut>(getCreateRefundApiV1WalletRefundsPostUrl(),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<RefundOut>(getCreateRefundApiV1WalletRefundsPostUrl(),
   {
     ...options,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json',...headers, ...options?.headers },
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
     body: JSON.stringify(refundCreate)
   }
 );}
