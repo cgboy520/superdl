@@ -1,6 +1,7 @@
 /** Query keys and bulk invalidation prefixes; all is the resource-domain prefix. */
 
 import type {
+  GatewayLogsApiV1NetgwGatewaysUuidLogsGetParams,
   GetInstanceLogsApiV1InstancesUuidLogsGetParams,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
   GetServiceLogsApiV1ServicesSlugLogsGetParams,
@@ -55,6 +56,12 @@ export const keys = {
     logs: (slug: string, params: GetServiceLogsApiV1ServicesSlugLogsGetParams) => ["services", slug, "logs", params],
     apiKeys: (slug: string) => ["services", slug, "api-keys"],
     billPages: (slug: string) => ["services", slug, "bills", "pages"],
+  },
+  netgw: {
+    all: ["netgw"],
+    config: ["netgw", "config"],
+    gateways: ["netgw", "gateways"],
+    logs: (uuid: string, params: GatewayLogsApiV1NetgwGatewaysUuidLogsGetParams) => ["netgw", uuid, "logs", params],
   },
   bills: {
     all: ["bills"],

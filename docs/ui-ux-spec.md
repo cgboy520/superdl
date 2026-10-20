@@ -92,7 +92,8 @@ Console (neutral top bar + grouped sidebar; source of truth apps/web/src/compone
 ├─ Resources
 │  ├─ Instances        /instances   ← default landing page after login (CONSOLE_HOME); dev boxes only; true empty state = full-page onboarding; AttentionBar + status count bar at the top
 │  ├─ Online services  /services    # /services/new deploys, /services/:slug detail (?tab=)
-│  └─ Storage          /storage     # data disks + mount overview
+│  ├─ Storage          /storage     # data disks + mount overview
+│  └─ Private network  /network     # tenant VPN gateways, forwards, SOCKS5 (?gw= detail)
 ├─ Purchasing & billing
 │  ├─ Market           /market      ← browsable when signed out, ordering redirects to login
 │  └─ Billing          /billing     # balance / top-up / bills / ledger / refunds / invoices
@@ -279,6 +280,14 @@ The two `More ▾` menus (list / detail) match: Access keys (→ `?tab=keys`) / 
 - A "mount overview" bar at the top: `/root` (instance disk · reclaimed with the instance · free, capacity per spec, no hard-coded number) · `/root/data` (data disk · X/GB·month · kept independently). **Only real mount points are listed.**
 - Data-disk list: name / size (right-aligned) / billing (per-disk snapshot price `price_gb_month`, daily in small type) / status / expiry · reclamation (active "billed daily"; grace "grace period (read-only), X days left"; frozen "frozen, erased in X days"; the deadline is computed client-side from `grace_started_at` / `frozen_started_at` + the `/policies` day counts) / mounting instance / created / actions (`RowActions`: `Expand` drawer (`DiskSizeField` with baseline and price difference, footer cancel + confirm), `Delete` with two gates (type the disk name + checkbox)).
 - No "Renew" button. The reclamation policy is transparent: arrears → 7-day grace (read-only) → frozen 30 days → erased, with a countdown in the row. Empty state `EmptyState(disk)` "Data disks are independent of instances; releasing an instance loses no data" + create.
+
+### 3.10.1 Screen ⑨b Private network
+
+- `PageContainer` (primary button "New gateway", gated with the reason when the platform has no gateway image or the per-user limit is reached; description says what the page does in one sentence). Unavailable platforms show only an `EmptyState` pointing to support.
+- An "egress addresses" card first: the addresses to allow on the tenant's VPN side (copyable), or "not published" with the support hint.
+- Gateway table: name (opens the detail drawer) / protocol / status (`netgwStateMap`: applying, connected, not connected, deleting) / tunnelled networks (`Mono`) / forwards (right-aligned) / SOCKS5 address / created / `RowActions` (primary "Manage", More: edit, delete). Delete is L3 (type the gateway name).
+- Create / edit drawer (`drawerWidth.lg`, leave guard): network card (name, tunnelled networks as tags, the gateway tunnel address only for WireGuard / IPsec, optional split DNS) + tunnel card (protocol as `OptionTile` on create, fixed text on edit; per-protocol fields; secret fields are write-only and say "leave empty to keep" on edit; the OpenVPN profile can be pasted or imported from a file). After a create the detail drawer opens, so a WireGuard user sees the public key to add on their server.
+- Detail drawer (`?gw=<uuid>`, header = name + status, extra = "View log" + "Edit"): connection facts (`KeyValue`: protocol, peer, networks, tunnel address, WireGuard public key with copy, egress addresses, DNS, last tunnel change); "use it from an instance" card (the `export ALL_PROXY=socks5h://<name>:1080` line, copyable, plus the rule that only tunnelled networks are reachable); forwards table (direction / address to use (copyable) / target, "instance released" when unavailable / L2 delete) with an "Add forward" modal (direction as `Segmented`; instance forwards pick from the user's instances).
 
 ### 3.11 Screen ⑩ Account settings
 

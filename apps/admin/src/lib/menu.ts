@@ -2,6 +2,7 @@
 
 import {
   AlertOutlined,
+  ApartmentOutlined,
   ApiOutlined,
   AuditOutlined,
   CloudDownloadOutlined,
@@ -38,6 +39,7 @@ export const MENU_ROLES = {
 
   "/tenants": ALL_ROLES,
   "/services": ALL_ROLES,
+  "/netgw": ALL_ROLES,
   "/finance": ["admin", "finance", "readonly"],
   "/tickets": ALL_ROLES,
   "/audit": ALL_ROLES,
@@ -71,6 +73,7 @@ export const MENU = [
   { key: "/images", icon: CloudDownloadOutlined, labelKey: "menu.images", group: "resources" },
   { key: "/tenants", icon: TeamOutlined, labelKey: "menu.tenants", group: "business" },
   { key: "/services", icon: CloudServerOutlined, labelKey: "menu.services", group: "business" },
+  { key: "/netgw", icon: ApartmentOutlined, labelKey: "menu.netgw", group: "business" },
   { key: "/finance", icon: PayCircleOutlined, labelKey: "menu.finance", group: "business" },
   { key: "/tickets", icon: CustomerServiceOutlined, labelKey: "menu.tickets", group: "business" },
   { key: "/alerts", icon: AlertOutlined, labelKey: "menu.alerts", group: "governance" },

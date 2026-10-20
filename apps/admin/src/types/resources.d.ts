@@ -527,6 +527,7 @@ export default interface Resources {
       "groupOverview": "总览",
       "groupResources": "资源",
       "images": "镜像与预热",
+      "netgw": "私网网关",
       "nodes": "节点与 GPU",
       "overview": "运营总览",
       "platform": "平台配置",
@@ -535,6 +536,29 @@ export default interface Resources {
       "skus": "SKU 与定价",
       "tenants": "租户与实例",
       "tickets": "工单"
+    },
+    "netgw": {
+      "alreadyDeleting": "网关正在删除",
+      "colActions": "操作",
+      "colChecked": "最近巡检",
+      "colCreated": "创建时间",
+      "colForwards": "映射",
+      "colGateway": "网关",
+      "colPeer": "对端",
+      "colProtocol": "协议",
+      "colRemote": "隧道网段",
+      "colState": "状态",
+      "delete": "删除网关",
+      "deleteConfirm": "删除租户 #{{user}} 的网关 {{name}}?隧道立即断开,该网关的映射一并删除,租户会看到网关消失。",
+      "deleteTitle": "删除私网网关",
+      "empty": "还没有私网网关",
+      "protocol": {
+        "ipsec": "IPsec",
+        "openconnect": "SSL VPN",
+        "openvpn": "OpenVPN",
+        "wireguard": "WireGuard"
+      },
+      "tenantFilter": "租户 #{{id}} · 清除"
     },
     "nodes": {
       "actionCordon": "停止调度",
@@ -1619,6 +1643,45 @@ export default interface Resources {
       "badRange": "range 须为 1h/6h/24h",
       "unavailable": "监控数据暂不可用,不影响计费(计费依据为实例事件流水)"
     },
+    "netgw": {
+      "cidrForbidden": "网段 {{cidr}} 与保留网段({{range}})重叠",
+      "cidrInvalid": "{{cidr}} 不是有效的 IPv4 网段",
+      "cidrOverlap": "网段 {{cidr}} 与 {{other}} 重叠",
+      "cidrTooWide": "网段 {{cidr}} 范围过大,掩码须不小于 /{{min}}",
+      "credentialInvalid": "{{field}} 须为 1~256 位可见字符,不含空格",
+      "dnsIncomplete": "DNS 服务器和域名需同时填写或同时留空",
+      "dnsServerOutside": "DNS 服务器 {{server}} 须在隧道网段内",
+      "endpointInvalid": "对端地址 {{endpoint}} 须为 主机:端口",
+      "forwardNotFound": "映射不存在",
+      "forwardQuota": "该网关的映射数已达上限({{max}} 条)",
+      "gatewayDeleting": "网关正在删除",
+      "gatewayQuota": "私网网关数量已达上限({{max}} 个)",
+      "hostInvalid": "{{host}} 不是有效的主机名或 IPv4 地址",
+      "identityInvalid": "{{field}} 含有不允许的字符",
+      "instanceNotEligible": "只能映射未释放的开发实例",
+      "localAddressForbidden": "隧道地址 {{address}} 位于保留网段内",
+      "localAddressNotAllowed": "该协议的隧道地址由服务端分配,请留空",
+      "localAddressRequired": "请填写网关的隧道地址",
+      "logsUnavailable": "网关日志暂不可用,请稍后重试",
+      "nameReserved": "名称 {{name}} 为保留名称",
+      "nameTaken": "名称 {{name}} 已被你的其他网关或映射使用",
+      "notFound": "网关不存在",
+      "openvpnProfileInvalid": "OpenVPN 配置不被接受:{{reason}}",
+      "peerInsideRemote": "VPN 服务器 {{host}} 不能位于隧道网段内",
+      "peerNotPublic": "VPN 服务器 {{host}} 须为公网地址",
+      "peerPortBlocked": "不能通过端口 {{port}} 连接 VPN 服务器",
+      "portReserved": "端口 {{port}} 为网关保留端口",
+      "portTaken": "端口 {{port}} 已被该网关的其他映射使用",
+      "protocolImmutable": "网关协议不可修改,请新建网关",
+      "pskInvalid": "预共享密钥须为 16~128 位可见字符,不含引号和反斜杠",
+      "realNameRequired": "按监管要求,接入私网前需完成实名认证",
+      "secretRequired": "请填写 {{field}}",
+      "serverCertInvalid": "服务器证书指纹格式须为 sha256:… 或 pin-sha256:…",
+      "serverUrlInvalid": "VPN 服务器地址须为 https://主机[:端口][/路径]",
+      "targetOutsideRemote": "目标 {{host}} 不在隧道网段内",
+      "unavailable": "本平台未开通私网网关",
+      "wireguardKeyInvalid": "{{field}} 不是有效的 WireGuard 密钥"
+    },
     "nodes": {
       "alreadyTerminal": "状态 {{status}} 已是终态,无需吊销",
       "clusterNotConfigured": "集群接入参数未配置:请超管在「平台配置 · 集群接入」录入 RKE2 Server 地址与 join token",
@@ -1930,6 +1993,12 @@ export default interface Resources {
       },
       "marketHint": {
         "spot": "容量紧张时,平台会按创建时间从新到旧回收竞价实例;回收前提前通知"
+      },
+      "netgw": {
+        "applying": "配置中",
+        "connected": "已连接",
+        "deleting": "删除中",
+        "disconnected": "未连接"
       },
       "node": {
         "Cordoned": "已封锁",

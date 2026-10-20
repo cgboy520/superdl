@@ -15,6 +15,7 @@ export default defineConfig({
     ignoreNamespaces: ["shared", "errors"],
     preservePatterns: [
       "menu.*",
+      "netgw.protocol.*",
       "roles.*",
       "alerts.type*",
       "nodes.phase*",

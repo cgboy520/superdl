@@ -541,6 +541,7 @@
     "groupOverview": "Overview",
     "groupResources": "Resources",
     "images": "Images & prewarm",
+    "netgw": "Private networks",
     "nodes": "Nodes & GPUs",
     "overview": "Overview",
     "platform": "Platform config",
@@ -549,6 +550,29 @@
     "skus": "SKUs & pricing",
     "tenants": "Tenants & instances",
     "tickets": "Tickets"
+  },
+  "netgw": {
+    "alreadyDeleting": "The gateway is being deleted",
+    "colActions": "Actions",
+    "colChecked": "Last checked",
+    "colCreated": "Created",
+    "colForwards": "Forwards",
+    "colGateway": "Gateway",
+    "colPeer": "Peer",
+    "colProtocol": "Protocol",
+    "colRemote": "Tunnelled networks",
+    "colState": "Status",
+    "delete": "Delete gateway",
+    "deleteConfirm": "Delete gateway {{name}} of tenant #{{user}}? The tunnel drops at once and its forwards are deleted; the tenant sees the gateway disappear.",
+    "deleteTitle": "Delete private-network gateway",
+    "empty": "No private-network gateways yet",
+    "protocol": {
+      "ipsec": "IPsec",
+      "openconnect": "SSL VPN",
+      "openvpn": "OpenVPN",
+      "wireguard": "WireGuard"
+    },
+    "tenantFilter": "Tenant #{{id}} · clear"
   },
   "nodes": {
     "actionCordon": "Cordon",

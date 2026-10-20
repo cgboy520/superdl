@@ -17,6 +17,7 @@ import { Route as AppAuditRouteImport } from './routes/_app/audit'
 import { Route as AppClusterRouteImport } from './routes/_app/cluster'
 import { Route as AppFinanceRouteImport } from './routes/_app/finance'
 import { Route as AppImagesRouteImport } from './routes/_app/images'
+import { Route as AppNetgwRouteImport } from './routes/_app/netgw'
 import { Route as AppNodesRouteImport } from './routes/_app/nodes'
 import { Route as AppPlatformRouteImport } from './routes/_app/platform'
 import { Route as AppServicesRouteImport } from './routes/_app/services'
@@ -63,6 +64,11 @@ const AppFinanceRoute = AppFinanceRouteImport.update({
 const AppImagesRoute = AppImagesRouteImport.update({
   id: '/images',
   path: '/images',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNetgwRoute = AppNetgwRouteImport.update({
+  id: '/netgw',
+  path: '/netgw',
   getParentRoute: () => AppRoute,
 } as any)
 const AppNodesRoute = AppNodesRouteImport.update({
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/cluster': typeof AppClusterRouteWithChildren
   '/finance': typeof AppFinanceRoute
   '/images': typeof AppImagesRoute
+  '/netgw': typeof AppNetgwRoute
   '/nodes': typeof AppNodesRoute
   '/platform': typeof AppPlatformRoute
   '/services': typeof AppServicesRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/cluster': typeof AppClusterRouteWithChildren
   '/finance': typeof AppFinanceRoute
   '/images': typeof AppImagesRoute
+  '/netgw': typeof AppNetgwRoute
   '/nodes': typeof AppNodesRoute
   '/platform': typeof AppPlatformRoute
   '/services': typeof AppServicesRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/_app/cluster': typeof AppClusterRouteWithChildren
   '/_app/finance': typeof AppFinanceRoute
   '/_app/images': typeof AppImagesRoute
+  '/_app/netgw': typeof AppNetgwRoute
   '/_app/nodes': typeof AppNodesRoute
   '/_app/platform': typeof AppPlatformRoute
   '/_app/services': typeof AppServicesRoute
@@ -169,6 +178,7 @@ export interface FileRouteTypes {
     | '/cluster'
     | '/finance'
     | '/images'
+    | '/netgw'
     | '/nodes'
     | '/platform'
     | '/services'
@@ -185,6 +195,7 @@ export interface FileRouteTypes {
     | '/cluster'
     | '/finance'
     | '/images'
+    | '/netgw'
     | '/nodes'
     | '/platform'
     | '/services'
@@ -203,6 +214,7 @@ export interface FileRouteTypes {
     | '/_app/cluster'
     | '/_app/finance'
     | '/_app/images'
+    | '/_app/netgw'
     | '/_app/nodes'
     | '/_app/platform'
     | '/_app/services'
@@ -275,6 +287,13 @@ declare module '@tanstack/react-router' {
       path: '/images'
       fullPath: '/images'
       preLoaderRoute: typeof AppImagesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/netgw': {
+      id: '/_app/netgw'
+      path: '/netgw'
+      fullPath: '/netgw'
+      preLoaderRoute: typeof AppNetgwRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/nodes': {
@@ -354,6 +373,7 @@ interface AppRouteChildren {
   AppClusterRoute: typeof AppClusterRouteWithChildren
   AppFinanceRoute: typeof AppFinanceRoute
   AppImagesRoute: typeof AppImagesRoute
+  AppNetgwRoute: typeof AppNetgwRoute
   AppNodesRoute: typeof AppNodesRoute
   AppPlatformRoute: typeof AppPlatformRoute
   AppServicesRoute: typeof AppServicesRoute
@@ -370,6 +390,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppClusterRoute: AppClusterRouteWithChildren,
   AppFinanceRoute: AppFinanceRoute,
   AppImagesRoute: AppImagesRoute,
+  AppNetgwRoute: AppNetgwRoute,
   AppNodesRoute: AppNodesRoute,
   AppPlatformRoute: AppPlatformRoute,
   AppServicesRoute: AppServicesRoute,
