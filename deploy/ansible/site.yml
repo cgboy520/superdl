@@ -235,6 +235,16 @@
       register: infra_label
       changed_when: "'labeled' in infra_label.stdout"
 
+    - name: "k3s: keep ServiceLB (the Envoy LoadBalancer, 80/443) on control-plane nodes; once one node carries the label only labelled nodes run svclb, without it every agent does"
+      command: >-
+        {{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }}
+        label nodes -l node-role.kubernetes.io/control-plane
+        svccontroller.k3s.cattle.io/enablelb=true
+        --overwrite
+      register: servicelb_label
+      changed_when: servicelb_label.stdout is search('(?m)^\\S+ labeled$')
+      when: cluster_distro == 'k3s'
+
     - name: k3s state backup dependencies (sqlite3 for online consistent copies, gpg, rsync)
       apt:
         name: [sqlite3, gnupg, rsync]

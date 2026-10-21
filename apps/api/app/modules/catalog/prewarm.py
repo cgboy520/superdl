@@ -56,7 +56,7 @@ async def prewarm_patrol(sm: async_sessionmaker[AsyncSession]) -> dict[str, int]
         if not got:
             return counts
         orch = get_orchestrator()
-        nodes = await orch.list_nodes()
+        nodes = await orch.list_nodes(gpu_usage=False)
         known_nodes = {n.name for n in nodes}
         target_nodes = {
             n.name for n in nodes if n.status in TARGET_NODE_STATUSES and n.pool_label != POOL_CPU

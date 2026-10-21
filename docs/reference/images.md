@@ -27,7 +27,7 @@ The image matrix, version selection rules, per-image tags, mandatory Jupyter pac
 
 - `is_prewarmed` on the public `GET /api/v1/images` is computed: `prewarm_enabled AND` (no cache rows → equals prewarm_enabled; rows present → coverage ≥ `prewarm_min_coverage_pct`).
 - Policy parameters (ops-adjustable): `prewarm_min_coverage_pct` and `prewarm_recheck_hours`; defaults in [limits.md](./limits.md).
-- Prewarming is driven by the `image.prewarm` outbox handler (idempotent) plus the `prewarm_patrol` (60 s, advisory lock 1008) that seeds rows, converges and re-checks; node additions and removals are discovered by the patrol. The executor is a per-node pinned Job.
+- Prewarming is driven by the `image.prewarm` outbox handler (idempotent) plus the `prewarm_patrol` (60 s, advisory lock 1008) that seeds rows, converges and re-checks; node additions and removals are discovered by the patrol. The executor is a per-node pinned Job. The patrol lists nodes without GPU usage (`list_nodes(gpu_usage=False)`): the prewarm SA holds only nodes get/list and Jobs, no Pod read.
 - The cpu pool is not prewarmed (the patrol's `target_nodes` excludes `pool_label == cpu`): a CPU SKU pulls its image on first start and the create page does not promise second-level start-up for it.
 - Deleting an image does not affect running instances: instances store an image_ref snapshot.
 - An instance's image_ref snapshot never changes: stop / start / restart all use it; there is no "change image" endpoint; image fixes apply to new instances only.

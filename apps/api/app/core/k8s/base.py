@@ -492,9 +492,12 @@ class K8sOrchestrator(Protocol):
         Missing PVC or vanished ns count as success."""
         ...
 
-    async def list_nodes(self, include_unlabeled: bool = False) -> list["NodeInfo"]:
+    async def list_nodes(
+        self, include_unlabeled: bool = False, *, gpu_usage: bool = True
+    ) -> list["NodeInfo"]:
         """Node view; by default only nodes with the pool label (POOL_NODE_LABEL),
-        include_unlabeled=True adds unlabeled nodes."""
+        include_unlabeled=True adds unlabeled nodes. gpu_usage=False skips the cluster-wide Pod
+        read (gpu_used is 0), for callers without pods RBAC (the prewarm SA)."""
         ...
 
     async def set_node_labels(self, node_name: str, labels: dict[str, str | None]) -> None:

@@ -347,6 +347,21 @@ class TestListNodesInfra:
         orch._list_nodes_sync(include_unlabeled=False)
         assert calls[-1]["label_selector"] == POOL_NODE_LABEL
 
+    def test_list_nodes_without_gpu_usage_reads_no_pods(self):
+        """gpu_usage=False never lists Pods: the prewarm SA has no pods RBAC (403 every round)."""
+        orch = _bare()
+
+        class CoreStub:
+            def list_node(self, **kwargs: Any) -> Any:
+                return _page([_k8s_node("gpu-1", {POOL_NODE_LABEL: "hami"})])
+
+            def list_pod_for_all_namespaces(self, **kwargs: Any) -> Any:
+                raise AssertionError("pods listed with gpu_usage=False")
+
+        orch.core = cast(Any, CoreStub())
+        out = orch._list_nodes_sync(gpu_usage=False)
+        assert [(n.name, n.gpu_used) for n in out] == [("gpu-1", 0)]
+
 
 class TestHamiCapacityAccounting:
     """HAMi pool capacity: physical cards from the GFD label, used share converted by gpucores."""

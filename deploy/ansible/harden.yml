@@ -74,6 +74,7 @@
         executable: /bin/bash
       register: pubkey_count
       changed_when: false
+      check_mode: false
 
     - name: A public key must exist before turning password login off (lock-out guard)
       assert:
