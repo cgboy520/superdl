@@ -43,6 +43,12 @@ export function CommandPalette() {
           run: () => void navigate({ to: "/settings" }),
         },
         {
+          key: "/org",
+          label: t("org.title"),
+          keywords: ["organization", "team", "zuzhi", "members"],
+          run: () => void navigate({ to: "/org" }),
+        },
+        {
           key: "/help",
           label: t("topbar.help"),
           keywords: ["help", "faq"],

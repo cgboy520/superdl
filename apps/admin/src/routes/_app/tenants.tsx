@@ -1,4 +1,4 @@
-/** Tenants and instances: tabs (tenants -TenantsTab / instances -InstancesTab / deletion requests -DeletionsTab) + tenant drawer (-TenantDrawer, ?tenant= deep link); filters and search all in the URL. */
+/** Tenants and instances: tabs (tenants -TenantsTab / instances -InstancesTab / organizations -OrgsTab / deletion requests -DeletionsTab) + tenant drawer (-TenantDrawer, ?tenant= deep link) + organization drawer (-OrgDrawer, ?org=); filters and search all in the URL. */
 
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Card, Tabs } from "antd";
@@ -11,8 +11,9 @@ import { DRAWER_TABS, type DrawerTab } from "./-TenantDrawer";
 import { TenantsTab } from "./-TenantsTab";
 import { InstancesTab } from "./-InstancesTab";
 import { DeletionsTab } from "./-DeletionsTab";
+import { OrgsTab } from "./-OrgsTab";
 
-const TENANTS_TABS = ["tenants", "instances", "deletions"] as const;
+const TENANTS_TABS = ["tenants", "instances", "orgs", "deletions"] as const;
 type TenantsTabKey = (typeof TENANTS_TABS)[number];
 export const Route = createFileRoute("/_app/tenants")({
   validateSearch: (
@@ -29,6 +30,10 @@ export const Route = createFileRoute("/_app/tenants")({
     dstatus?: string;
     /** Tenant id whose drawer is open (shareable view, in the URL) */
     tenant?: number;
+    oq?: string;
+    ostatus?: "active" | "dissolved";
+    /** Organization uuid whose drawer is open */
+    org?: string;
   } => ({
     q: typeof search.q === "string" && search.q ? search.q : undefined,
     tab: TENANTS_TABS.includes(search.tab as TenantsTabKey) ? (search.tab as TenantsTabKey) : undefined,
@@ -40,6 +45,9 @@ export const Route = createFileRoute("/_app/tenants")({
     order: search.order === "asc" ? "asc" : undefined,
     dstatus: typeof search.dstatus === "string" && search.dstatus in deletionStatusMap ? search.dstatus : undefined,
     tenant: Number.isInteger(Number(search.tenant)) && Number(search.tenant) > 0 ? Number(search.tenant) : undefined,
+    oq: typeof search.oq === "string" && search.oq ? search.oq : undefined,
+    ostatus: search.ostatus === "active" || search.ostatus === "dissolved" ? search.ostatus : undefined,
+    org: typeof search.org === "string" && /^[0-9a-f]{32}$/.test(search.org) ? search.org : undefined,
   }),
   component: TenantsPage,
 });
@@ -63,6 +71,7 @@ function TenantsPage() {
           items={[
             { key: "tenants", label: t("tenants.tabTenants"), children: <TenantsTab /> },
             { key: "instances", label: t("tenants.tabInstances"), children: <InstancesTab /> },
+            { key: "orgs", label: t("orgs.tab"), children: <OrgsTab /> },
             { key: "deletions", label: t("tenants.tabDeletions"), children: <DeletionsTab /> },
           ]}
         />

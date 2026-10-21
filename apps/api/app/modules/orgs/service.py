@@ -126,7 +126,9 @@ def _label(remark: str | None, email: str | None) -> str:
 
 
 def _org_out(org: Organization) -> OrgOut:
-    return OrgOut(uuid=org.uuid, name=org.name, status=org.status, created_at=org.created_at)
+    return OrgOut.model_validate(
+        {"uuid": org.uuid, "name": org.name, "status": org.status, "created_at": org.created_at}
+    )
 
 
 def _invitation_status(inv: OrgInvitation) -> str:
@@ -866,16 +868,20 @@ async def _admin_outs(session: AsyncSession, orgs: list[Organization]) -> list[A
     )
     emails = await account_service.emails_by_user(session, owners.values())
     return [
-        AdminOrgOut(
-            uuid=o.uuid,
-            name=o.name,
-            status=o.status,
-            owner_user_id=owners.get(o.id),
-            owner_email_masked=(mask_handle(emails.get(owners[o.id])) if o.id in owners else None),
-            members=counts.get(o.id, 0),
-            pending_invitations=pending.get(o.id, 0),
-            created_at=o.created_at,
-            dissolved_at=o.dissolved_at,
+        AdminOrgOut.model_validate(
+            {
+                "uuid": o.uuid,
+                "name": o.name,
+                "status": o.status,
+                "owner_user_id": owners.get(o.id),
+                "owner_email_masked": (
+                    mask_handle(emails.get(owners[o.id])) if o.id in owners else None
+                ),
+                "members": counts.get(o.id, 0),
+                "pending_invitations": pending.get(o.id, 0),
+                "created_at": o.created_at,
+                "dissolved_at": o.dissolved_at,
+            }
         )
         for o in orgs
     ]

@@ -11,6 +11,7 @@ import {
   SearchOutlined,
   SettingOutlined,
   SunOutlined,
+  TeamOutlined,
   UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
@@ -138,6 +139,7 @@ export function TopBarUser() {
   };
   const menuItems: NonNullable<MenuProps["items"]> = [
     { key: "settings", icon: <SettingOutlined />, label: t("settings.title") },
+    { key: "org", icon: <TeamOutlined />, label: t("org.title") },
     { key: "notifications", icon: <BellOutlined />, label: t("notifications.title") },
     { key: "help", icon: <QuestionCircleOutlined />, label: t("topbar.help") },
     {
@@ -199,6 +201,7 @@ export function TopBarUser() {
             else if (key === "help") void navigate({ to: "/help" });
             else if (key === "notifications") void navigate({ to: "/notifications" });
             else if (key === "settings") void navigate({ to: "/settings" });
+            else if (key === "org") void navigate({ to: "/org" });
             else if (key.startsWith("lang:")) void i18n.changeLanguage(key.slice(5));
           },
         }}

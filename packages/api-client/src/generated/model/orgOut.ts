@@ -4,10 +4,11 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { OrgOutStatus } from './orgOutStatus';
 
 export interface OrgOut {
   created_at: string;
   name: string;
-  status: string;
+  status: OrgOutStatus;
   uuid: string;
 }

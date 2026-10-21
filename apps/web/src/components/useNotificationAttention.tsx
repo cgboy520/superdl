@@ -1,16 +1,29 @@
-/** Site-wide AttentionBar items derived from unread notifications: announcements / balance warnings / arrears; expiring / frozen / failed items live in InstanceAttention. */
+/** Site-wide AttentionBar items: pending organization invitations, then those derived from unread notifications (announcements / balance warnings / arrears); expiring / frozen / failed items live in InstanceAttention. */
 
 import type { AttentionItem } from "@superdl/ui/components";
 import { Link } from "@tanstack/react-router";
 import { Button } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { useNotifications } from "../api/queries";
+import { useMyOrg, useNotifications } from "../api/queries";
 
 export function useNotificationAttention(): AttentionItem[] {
   const { t } = useTranslation();
   const { data: unread } = useNotifications({ unread: true });
+  const { data: my } = useMyOrg();
   const items: AttentionItem[] = [];
+  if (my && my.received_invitations > 0) {
+    items.push({
+      key: "org_invitations",
+      severity: "info",
+      title: t("attention.orgInvitations", { n: my.received_invitations }),
+      action: (
+        <Link to="/org">
+          <Button size="small">{t("attention.viewOrg")}</Button>
+        </Link>
+      ),
+    });
+  }
   const list = unread?.items ?? [];
   const announcement = list.find((n) => n.type === "announcement");
   if (announcement) {

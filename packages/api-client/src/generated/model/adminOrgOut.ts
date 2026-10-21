@@ -4,6 +4,7 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminOrgOutStatus } from './adminOrgOutStatus';
 
 export interface AdminOrgOut {
   created_at: string;
@@ -13,6 +14,6 @@ export interface AdminOrgOut {
   owner_email_masked: string | null;
   owner_user_id: number | null;
   pending_invitations: number;
-  status: string;
+  status: AdminOrgOutStatus;
   uuid: string;
 }

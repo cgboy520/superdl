@@ -1,4 +1,4 @@
-/** Private-network gateways (all tenants): one table, optionally narrowed to a tenant (?user_id=); the only disposal is deletion with a reason. Secrets are never returned by the API. */
+/** Private-network gateways (all tenants, personal and organization): one table, optionally narrowed to a tenant (?user_id=, owner or creator) or an organization (?org=); the only disposal is deletion with a reason. Secrets are never returned by the API. */
 
 import { formatDateTime, metaOf, netgwStateMap, POLL, useAutoRefresh } from "@superdl/ui";
 import { EmptyState, HexTag, Mono, PageContainer, RowActions, TableErrorEmpty } from "@superdl/ui/components";
@@ -14,11 +14,15 @@ import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 export interface NetgwSearch {
   user_id?: number;
+  org?: string;
 }
 
 export function netgwValidateSearch(search: Record<string, unknown>): NetgwSearch {
+  const out: NetgwSearch = {};
   const uid = Number(search.user_id);
-  return Number.isInteger(uid) && uid > 0 ? { user_id: uid } : {};
+  if (Number.isInteger(uid) && uid > 0) out.user_id = uid;
+  if (typeof search.org === "string" && /^[0-9a-f]{32}$/.test(search.org)) out.org = search.org;
+  return out;
 }
 
 export const Route = createFileRoute("/_app/netgw")({
@@ -42,10 +46,10 @@ function peerOf(g: AdminGatewayOut): string {
 
 function NetgwPage() {
   const { t } = useTranslation(["admin", "shared"]);
-  const { user_id: userId } = Route.useSearch();
+  const { user_id: userId, org: orgUuid } = Route.useSearch();
   const writable = canWriteOps(useAdminRole());
   const auto = useAutoRefresh(POLL.steady);
-  const q = useAdminGateways(userId, { refetchInterval: auto.refetchInterval });
+  const q = useAdminGateways({ userId, orgUuid }, { refetchInterval: auto.refetchInterval });
   const del = useAdminDeleteGateway();
 
   const columns: TableColumnsType<AdminGatewayOut> = [
@@ -61,6 +65,21 @@ function NetgwPage() {
           </Typography.Text>
         </Space>
       ),
+    },
+    {
+      title: t("netgw.colScope"),
+      width: 170,
+      render: (_, g) =>
+        g.scope === "org" && g.org_uuid ? (
+          <Space orientation="vertical" size={0}>
+            <Link to="/tenants" search={{ tab: "orgs", org: g.org_uuid }}>
+              {g.org_name}
+            </Link>
+            <Typography.Text type="secondary">{t("netgw.createdBy", { id: g.user_id })}</Typography.Text>
+          </Space>
+        ) : (
+          <Typography.Text>{t("netgw.scopePersonal")}</Typography.Text>
+        ),
     },
     tenantColumn<AdminGatewayOut>(t("tenants.colOwner"), 90),
     { title: t("netgw.colProtocol"), width: 110, render: (_, g) => t(`netgw.protocol.${g.protocol}`) },
@@ -94,7 +113,12 @@ function NetgwPage() {
           "—"
         ),
     },
-    { title: t("netgw.colForwards"), width: 80, align: "right", render: (_, g) => g.forwards.length },
+    {
+      title: t("netgw.colForwards"),
+      width: 80,
+      align: "right",
+      render: (_, g) => (g.scope === "org" ? "—" : g.forwards.length),
+    },
     {
       title: t("netgw.colChecked"),
       width: 170,
@@ -132,10 +156,12 @@ function NetgwPage() {
       width="full"
       title={t("menu.netgw")}
       tags={
-        userId ? (
+        userId || orgUuid ? (
           <Tag closable={false}>
             <Link to="/netgw" search={{}}>
-              {t("netgw.tenantFilter", { id: userId })}
+              {userId
+                ? t("netgw.tenantFilter", { id: userId })
+                : t("netgw.orgFilter", { uuid: (orgUuid ?? "").slice(0, 8) })}
             </Link>
           </Tag>
         ) : undefined

@@ -30,12 +30,13 @@ test("公开层可访问性(落地页/登录/市场/帮助)", async ({ page }) =
   }
 });
 
-test("控制台关键页可访问性(实例/费用/设置)", async ({ page }) => {
+test("控制台关键页可访问性(实例/费用/设置/组织)", async ({ page }) => {
   await loginViaApi(page, uniqueEmail());
   for (const [path, name] of [
     ["/instances", "容器实例"],
     ["/billing", "费用中心"],
     ["/settings", "账户设置"],
+    ["/org", "组织"],
   ] as const) {
     await page.goto(path);
     await page.waitForLoadState("networkidle");

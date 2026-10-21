@@ -18,6 +18,23 @@ import {
   deleteGatewayApiV1NetgwGatewaysUuidDelete,
   detachInstanceApiV1NetgwGatewaysUuidAttachmentsInstanceUuidDelete,
   updateGatewayApiV1NetgwGatewaysUuidPut,
+  acceptInvitationApiV1OrgInvitationsReceivedUuidAcceptPost,
+  attachOrgInstanceApiV1OrgNetgwGatewaysUuidAttachmentsPost,
+  createOrgApiV1OrgPost,
+  createOrgGatewayApiV1OrgNetgwGatewaysPost,
+  declineInvitationApiV1OrgInvitationsReceivedUuidDeclinePost,
+  deleteOrgGatewayApiV1OrgNetgwGatewaysUuidDelete,
+  detachOrgInstanceApiV1OrgNetgwGatewaysUuidAttachmentsInstanceUuidDelete,
+  detachOwnApiV1NetgwAttachmentsInstanceUuidDelete,
+  dissolveOrgApiV1OrgDissolvePost,
+  inviteApiV1OrgInvitationsPost,
+  leaveOrgApiV1OrgLeavePost,
+  removeMemberApiV1OrgMembersMemberIdDelete,
+  renameOrgApiV1OrgPatch,
+  revokeInvitationApiV1OrgInvitationsUuidDelete,
+  transferOwnerApiV1OrgTransferPost,
+  updateMemberApiV1OrgMembersMemberIdPatch,
+  updateOrgGatewayApiV1OrgNetgwGatewaysUuidPut,
   createInstanceApiV1InstancesPost,
   createInvoiceApiV1BillingInvoicesPost,
   createRechargeApiV1WalletRechargesPost,
@@ -63,6 +80,12 @@ import type {
   DiskExpand,
   GatewayIn,
   GatewayOut,
+  InvitationCreate,
+  InvitationOut,
+  MemberOut,
+  MemberUpdate,
+  MyOrgOut,
+  OrgGatewayOut,
   InstanceForwardIn,
   IntranetForwardIn,
   HandleCodeRequest,
@@ -422,4 +445,96 @@ export const useCloseTicket = (o?: { onSuccess?: () => void }) =>
   useApiMutation((ticketId: number) => closeTicketApiV1TicketsTicketIdClosePost(ticketId), {
     ...o,
     invalidates: [keys.tickets.all],
+  });
+
+/** Organization gateways (owners and admins): creation carries an idempotency key; attaching a member's instance refreshes the candidates too. */
+const ORG_GW = [keys.netgw.orgGateways, keys.netgw.orgInstances, keys.netgw.myAttachments] as const;
+export const useCreateOrgGateway = (o?: CallerOpts<OrgGatewayOut>) =>
+  useApiMutation(
+    ({ body, idempotencyKey }: { body: GatewayIn; idempotencyKey: string }) =>
+      createOrgGatewayApiV1OrgNetgwGatewaysPost(body, { "Idempotency-Key": idempotencyKey }),
+    { ...o, invalidates: ORG_GW },
+  );
+export const useUpdateOrgGateway = (o?: CallerOpts<OrgGatewayOut>) =>
+  useApiMutation(
+    ({ uuid, body }: { uuid: string; body: GatewayIn }) => updateOrgGatewayApiV1OrgNetgwGatewaysUuidPut(uuid, body),
+    { ...o, invalidates: ORG_GW },
+  );
+export const useDeleteOrgGateway = (o?: CallerOpts<OrgGatewayOut>) =>
+  useApiMutation((uuid: string) => deleteOrgGatewayApiV1OrgNetgwGatewaysUuidDelete(uuid), {
+    ...o,
+    invalidates: ORG_GW,
+  });
+export const useAttachOrgInstance = (o?: CallerOpts<OrgGatewayOut>) =>
+  useApiMutation(
+    ({ uuid, instanceUuid }: { uuid: string; instanceUuid: string }) =>
+      attachOrgInstanceApiV1OrgNetgwGatewaysUuidAttachmentsPost(uuid, { instance_uuid: instanceUuid }),
+    { ...o, invalidates: ORG_GW },
+  );
+export const useDetachOrgInstance = (o?: CallerOpts<OrgGatewayOut>) =>
+  useApiMutation(
+    ({ uuid, instanceUuid }: { uuid: string; instanceUuid: string }) =>
+      detachOrgInstanceApiV1OrgNetgwGatewaysUuidAttachmentsInstanceUuidDelete(uuid, instanceUuid),
+    { ...o, invalidates: ORG_GW },
+  );
+/** The instance owner detaches it from whatever gateway holds it. */
+export const useDetachOwn = (o?: CallerOpts) =>
+  useApiMutation((instanceUuid: string) => detachOwnApiV1NetgwAttachmentsInstanceUuidDelete(instanceUuid), {
+    ...o,
+    invalidates: [keys.netgw.myAttachments, keys.netgw.gateways, keys.netgw.orgGateways],
+  });
+
+/** Organization: membership changes refresh every org view and the gateways (removal detaches instances). */
+const ORG_ALL = [keys.org.all, keys.netgw.orgGateways, keys.netgw.orgInstances, keys.netgw.myAttachments] as const;
+export const useCreateOrg = (o?: CallerOpts<MyOrgOut>) =>
+  useApiMutation(
+    ({ name, idempotencyKey }: { name: string; idempotencyKey: string }) =>
+      createOrgApiV1OrgPost({ name }, { "Idempotency-Key": idempotencyKey }),
+    { ...o, invalidates: ORG_ALL },
+  );
+export const useRenameOrg = (o?: CallerOpts<MyOrgOut>) =>
+  useApiMutation((name: string) => renameOrgApiV1OrgPatch({ name }), { ...o, invalidates: ORG_ALL });
+export const useTransferOrg = (o?: CallerOpts<MyOrgOut>) =>
+  useApiMutation((memberId: number) => transferOwnerApiV1OrgTransferPost({ member_id: memberId }), {
+    ...o,
+    invalidates: ORG_ALL,
+  });
+export const useDissolveOrg = (o?: CallerOpts<MyOrgOut>) =>
+  useApiMutation((confirmName: string) => dissolveOrgApiV1OrgDissolvePost({ confirm_name: confirmName }), {
+    ...o,
+    invalidates: ORG_ALL,
+  });
+export const useLeaveOrg = (o?: CallerOpts<MyOrgOut>) =>
+  useApiMutation(() => leaveOrgApiV1OrgLeavePost(), { ...o, invalidates: ORG_ALL });
+export const useUpdateMember = (o?: CallerOpts<MemberOut>) =>
+  useApiMutation(
+    ({ memberId, body }: { memberId: number; body: MemberUpdate }) =>
+      updateMemberApiV1OrgMembersMemberIdPatch(memberId, body),
+    { ...o, invalidates: [keys.org.all] },
+  );
+export const useRemoveMember = (o?: CallerOpts) =>
+  useApiMutation((memberId: number) => removeMemberApiV1OrgMembersMemberIdDelete(memberId), {
+    ...o,
+    invalidates: ORG_ALL,
+  });
+export const useInvite = (o?: CallerOpts<InvitationOut>) =>
+  useApiMutation((body: InvitationCreate) => inviteApiV1OrgInvitationsPost(body), {
+    ...o,
+    invalidates: [keys.org.invitations],
+  });
+export const useRevokeInvitation = (o?: CallerOpts) =>
+  useApiMutation((uuid: string) => revokeInvitationApiV1OrgInvitationsUuidDelete(uuid), {
+    ...o,
+    invalidates: [keys.org.invitations],
+  });
+export const useAcceptInvitation = (o?: CallerOpts<MyOrgOut>) =>
+  useApiMutation(
+    ({ uuid, consentVersion }: { uuid: string; consentVersion: string }) =>
+      acceptInvitationApiV1OrgInvitationsReceivedUuidAcceptPost(uuid, { consent_version: consentVersion }),
+    { ...o, invalidates: ORG_ALL },
+  );
+export const useDeclineInvitation = (o?: CallerOpts) =>
+  useApiMutation((uuid: string) => declineInvitationApiV1OrgInvitationsReceivedUuidDeclinePost(uuid), {
+    ...o,
+    invalidates: [keys.org.all],
   });

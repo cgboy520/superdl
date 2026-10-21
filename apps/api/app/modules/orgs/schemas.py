@@ -11,6 +11,7 @@ OrgRole = Literal["owner", "admin", "member"]
 InviteRole = Literal["admin", "member"]
 InvitationStatus = Literal["pending", "accepted", "declined", "revoked", "expired"]
 MemberStatus = Literal["active", "frozen", "deleted"]
+OrgStatus = Literal["active", "dissolved"]
 
 _NAME = re.compile(r"^[\w][\w .&()+-]*$")
 _REMARK_FORBIDDEN = re.compile(r"[\x00-\x1f\x7f]")
@@ -76,7 +77,7 @@ class InvitationAccept(BaseModel):
 class OrgOut(BaseModel):
     uuid: str
     name: str
-    status: str
+    status: OrgStatus
     created_at: datetime
 
 
@@ -183,7 +184,7 @@ class OrgRefOut(BaseModel):
 class AdminOrgOut(BaseModel):
     uuid: str
     name: str
-    status: str
+    status: OrgStatus
     owner_user_id: int | None
     owner_email_masked: str | None
     members: int

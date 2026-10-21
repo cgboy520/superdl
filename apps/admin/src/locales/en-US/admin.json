@@ -562,19 +562,23 @@
     "colPeer": "Peer",
     "colProtocol": "Protocol",
     "colRemote": "Tunnelled networks",
+    "colScope": "Scope",
     "colState": "Status",
+    "createdBy": "created by #{{id}}",
     "delete": "Delete gateway",
     "deleteConfirm": "Delete gateway {{name}} of tenant #{{user}}? The tunnel drops at once and its forwards are deleted; the tenant sees the gateway disappear.",
     "deleteTitle": "Delete private-network gateway",
     "empty": "No private-network gateways yet",
     "l3Routed": "Routed",
     "l3Summary": "{{mode}} · {{n}} attached",
+    "orgFilter": "Organization {{uuid}}… · clear",
     "protocol": {
       "ipsec": "IPsec",
       "openconnect": "SSL VPN",
       "openvpn": "OpenVPN",
       "wireguard": "WireGuard"
     },
+    "scopePersonal": "Personal",
     "tenantFilter": "Tenant #{{id}} · clear"
   },
   "nodes": {
@@ -730,6 +734,64 @@
     "vramChart": "VRAM used",
     "xidBadge_one": "24h XID {{count}}",
     "xidBadge_other": "24h XID {{count}}"
+  },
+  "orgs": {
+    "account": {
+      "active": "Active",
+      "deleted": "Deleted",
+      "frozen": "Frozen"
+    },
+    "adminOnly": "Only super admins can transfer ownership",
+    "alreadyDissolved": "The organization is dissolved",
+    "alreadyOwner": "Already the owner",
+    "colAccount": "Account",
+    "colActions": "Actions",
+    "colCreated": "Created",
+    "colDissolved": "Dissolved",
+    "colEmail": "Email",
+    "colExpires": "Expires",
+    "colJoined": "Joined",
+    "colMembers": "Members",
+    "colOrg": "Organization",
+    "colOwner": "Owner",
+    "colPending": "Pending invitations",
+    "colRole": "Role",
+    "colStatus": "Status",
+    "dissolve": "Dissolve",
+    "dissolveConfirm": "Dissolve \"{{name}}\": every membership and pending invitation ends and its gateways are deleted; members' accounts, balances and resources are untouched.",
+    "dissolveTitle": "Dissolve organization",
+    "drawerTitle": "Organization",
+    "empty": "No organizations yet",
+    "invitation": {
+      "accepted": "Accepted",
+      "declined": "Declined",
+      "expired": "Expired",
+      "pending": "Pending",
+      "revoked": "Revoked"
+    },
+    "invitationsTitle": "Invitations",
+    "makeOwner": "Make owner",
+    "membersTitle": "Members",
+    "noInvitations": "No invitations",
+    "noMembers": "No members",
+    "ownerNotRemovable": "The owner cannot be removed",
+    "remove": "Remove",
+    "removeConfirm": "Remove tenant #{{id}} from \"{{name}}\"; their instances are detached from its gateways at once.",
+    "removeTitle": "Remove member",
+    "role": {
+      "admin": "Admin",
+      "member": "Member",
+      "owner": "Owner"
+    },
+    "searchPlaceholder": "Organization UUID / member ID / name",
+    "status": {
+      "active": "Active",
+      "dissolved": "Dissolved"
+    },
+    "tab": "Organizations",
+    "transferConfirm": "Make tenant #{{id}} the owner of \"{{name}}\"; the previous owner becomes an admin. The owner sees every member's balance and spending.",
+    "transferTitle": "Transfer ownership",
+    "viewGateways": "View gateways"
   },
   "overview": {
     "ack": "Acknowledge",
@@ -1402,6 +1464,8 @@
     "gotoAudit": "View in audit log",
     "instancesCapped": "Showing the first {{shown}} of {{total}}; use the name filter for the full list",
     "noPermission": "Your role cannot perform this action",
+    "org": "Organization",
+    "orgValue": "{{name}} ({{role}})",
     "preempt": "Reclaim",
     "preemptConfirm": "Reclaim spot instance {{name}} ({{id}})? The user is notified and a tail bill settles immediately; SSH stays available through the grace window, and the instance stops when the window ends (its instance disk is kept).",
     "preemptNeedsRunning": "Only running instances can be reclaimed",

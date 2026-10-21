@@ -2,7 +2,12 @@
 
 import {
   adminDeleteGatewayApiAdminV1NetgwGatewaysUuidDeletePost,
+  adminDissolveOrgApiAdminV1OrgsUuidDissolvePost,
+  adminGetOrgApiAdminV1OrgsUuidGet,
   adminListGatewaysApiAdminV1NetgwGatewaysGet,
+  adminListOrgsApiAdminV1OrgsGet,
+  adminRemoveOrgMemberApiAdminV1OrgsUuidMembersRemovePost,
+  adminTransferOrgApiAdminV1OrgsUuidTransferPost,
   adminAckAlertApiAdminV1AlertsAlertIdAckPost,
   adminAlertsApiAdminV1AlertsGet,
   adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet,
@@ -116,6 +121,9 @@ import {
   skuCapacityPreviewApiAdminV1SkusCapacityPreviewGet,
 } from "@superdl/api-client";
 import type {
+  AdminListOrgsApiAdminV1OrgsGetParams,
+  OrgUserReason,
+  ReasonBody,
   AdjustmentCreate,
   AdminAdjustmentsExportApiAdminV1AdjustmentsExportGetParams,
   LegalDocVersionCreateLocale as LegalLocale,
@@ -203,6 +211,8 @@ export type {
   EnrollmentCommandOut,
   NodeSwitchPoolOut,
   AdminGatewayOut,
+  AdminOrgDetailOut,
+  AdminOrgOut,
   AdminInstanceOut,
   AdminServiceOut,
   NodeMetricsOut,
@@ -810,14 +820,42 @@ export const usePrewarmImage = adminMutation((v: { imageId: number }) =>
   adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost(v.imageId),
 );
 
-/** Private-network gateways of every tenant (newest 500), optionally one tenant's. */
-export function useAdminGateways(userId?: number, opts?: { refetchInterval?: number | false }) {
+/** Private-network gateways of every tenant (newest 500), optionally one tenant's (owner or creator) or one organization's. */
+export function useAdminGateways(
+  filter: { userId?: number; orgUuid?: string },
+  opts?: { refetchInterval?: number | false },
+) {
+  const params = {
+    ...(filter.userId ? { user_id: filter.userId } : {}),
+    ...(filter.orgUuid ? { org_uuid: filter.orgUuid } : {}),
+  };
   return useKeyedQuery(
-    [...adminKeys.netgw, userId ?? null],
-    () => adminListGatewaysApiAdminV1NetgwGatewaysGet(userId ? { user_id: userId } : undefined),
+    [...adminKeys.netgw, filter.userId ?? null, filter.orgUuid ?? null],
+    () => adminListGatewaysApiAdminV1NetgwGatewaysGet(params),
     opts,
   );
 }
+
+/** Organizations (cursor pagination, newest first); q = uuid, a member's user id or a name fragment. */
+export function useAdminOrgs(params?: Omit<AdminListOrgsApiAdminV1OrgsGetParams, "cursor" | "limit">) {
+  return useCursorPages(["admin", "orgs", params], adminListOrgsApiAdminV1OrgsGet, params, undefined);
+}
+/** One organization with its members and invitations (masked). */
+export function useAdminOrg(uuid: string | null) {
+  return useKeyedQuery(
+    ["admin", "org", uuid],
+    uuid === null ? skipToken : () => adminGetOrgApiAdminV1OrgsUuidGet(uuid),
+  );
+}
+export const useAdminDissolveOrg = adminMutation((v: { uuid: string; data: ReasonBody }) =>
+  adminDissolveOrgApiAdminV1OrgsUuidDissolvePost(v.uuid, v.data),
+);
+export const useAdminRemoveOrgMember = adminMutation((v: { uuid: string; data: OrgUserReason }) =>
+  adminRemoveOrgMemberApiAdminV1OrgsUuidMembersRemovePost(v.uuid, v.data),
+);
+export const useAdminTransferOrg = adminMutation((v: { uuid: string; data: OrgUserReason }) =>
+  adminTransferOrgApiAdminV1OrgsUuidTransferPost(v.uuid, v.data),
+);
 export const useAdminDeleteGateway = adminMutation((v: { uuid: string; data: AdminGatewayDelete }) =>
   adminDeleteGatewayApiAdminV1NetgwGatewaysUuidDeletePost(v.uuid, v.data),
 );

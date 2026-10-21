@@ -1,6 +1,6 @@
-/** Gateway detail drawer: connection facts (what to configure on the tenant side), how instances use it, forwards (add / delete), whole-subnet attachments (L3) and the gateway log. */
+/** Gateway detail drawer: connection facts (what to configure on the tenant side), how instances use it, forwards (add / delete), whole-subnet attachments (L3) and the gateway log. scope="org": an organization gateway, whole-subnet access only; owners and admins attach members' instances. */
 
-import type { AttachmentOut, ForwardOut, GatewayOut } from "@superdl/api-client";
+import type { AttachmentOut, ForwardOut, GatewayOut, OrgInstanceOut } from "@superdl/api-client";
 import { drawerWidth, formatDateTime, netgwStateMap, space } from "@superdl/ui";
 import { CopyField, GatedButton, KeyValue, Mono, StatusTag, useConfirm } from "@superdl/ui/components";
 import {
@@ -20,13 +20,21 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useAddForward, useAttachInstance, useDeleteForward, useDetachInstance } from "../../api/mutations";
-import { useGatewayLogs, useInstances } from "../../api/queries";
+import {
+  useAddForward,
+  useAttachInstance,
+  useAttachOrgInstance,
+  useDeleteForward,
+  useDetachInstance,
+  useDetachOrgInstance,
+} from "../../api/mutations";
+import { useGatewayLogs, useInstances, useOrgGatewayLogs, useOrgInstances } from "../../api/queries";
 import { Field } from "../Field";
+import type { AnyGateway, GatewayScope } from "./GatewayFormDrawer";
 
 type Kind = ForwardOut["kind"];
 
-function peerOf(g: GatewayOut): string {
+function peerOf(g: AnyGateway): string {
   const tn = g.tunnel;
   switch (tn.protocol) {
     case "wireguard":
@@ -161,7 +169,7 @@ function attachable(i: { status: string; workload_type: string; gpu_count: numbe
   );
 }
 
-function AttachModal({ gateway, open, onClose }: { gateway: GatewayOut; open: boolean; onClose: () => void }) {
+function AttachModal({ gateway, open, onClose }: { gateway: AnyGateway; open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const { data: instances } = useInstances({ enabled: open });
@@ -207,9 +215,78 @@ function AttachModal({ gateway, open, onClose }: { gateway: GatewayOut; open: bo
   );
 }
 
-function LogsModal({ gateway, open, onClose }: { gateway: GatewayOut; open: boolean; onClose: () => void }) {
+/** Members' instances grouped by member; ineligible ones stay listed with the reason. */
+function OrgAttachModal({ gateway, open, onClose }: { gateway: AnyGateway; open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
-  const { data, isFetching, refetch } = useGatewayLogs(gateway.uuid, { tail_lines: 300 }, { enabled: open });
+  const { message } = App.useApp();
+  const { data: candidates } = useOrgInstances({ enabled: open });
+  const [instanceUuid, setInstanceUuid] = useState<string>();
+  const attach = useAttachOrgInstance({
+    onSuccess: () => {
+      message.success(t("network.l3.attached"));
+      setInstanceUuid(undefined);
+      onClose();
+    },
+  });
+  const groups = new Map<string, OrgInstanceOut[]>();
+  for (const c of candidates ?? []) groups.set(c.member_label, [...(groups.get(c.member_label) ?? []), c]);
+  const suffix = (c: OrgInstanceOut) =>
+    c.reason === "kata_tier"
+      ? ` · ${t("network.l3.kataUnsupported")}`
+      : c.reason === "attached"
+        ? ` · ${c.attached_to === gateway.uuid ? t("network.org.attachedHere") : t("network.org.attachedElsewhere")}`
+        : "";
+  const options = [...groups.entries()].map(([label, items]) => ({
+    label,
+    title: label,
+    options: items.map((c) => ({
+      value: c.instance_uuid,
+      label: `${c.instance_name}${suffix(c)}`,
+      disabled: !c.attachable,
+    })),
+  }));
+  return (
+    <Modal
+      title={t("network.l3.attachTitle")}
+      open={open}
+      onCancel={onClose}
+      onOk={() => instanceUuid && attach.mutate({ uuid: gateway.uuid, instanceUuid })}
+      okText={t("network.l3.attachSubmit")}
+      okButtonProps={{ disabled: instanceUuid === undefined }}
+      confirmLoading={attach.isPending}
+    >
+      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+        <Typography.Text type="secondary">{t("network.org.attachHint")}</Typography.Text>
+        <Field label={t("network.l3.instance")} required>
+          <Select
+            showSearch={{ optionFilterProp: "label" }}
+            value={instanceUuid}
+            onChange={setInstanceUuid}
+            placeholder={t("network.forward.instancePlaceholder")}
+            options={options}
+            aria-label={t("network.l3.instance")}
+          />
+        </Field>
+      </Space>
+    </Modal>
+  );
+}
+
+function LogsModal({
+  gateway,
+  org,
+  open,
+  onClose,
+}: {
+  gateway: AnyGateway;
+  org: boolean;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const personalLogs = useGatewayLogs(gateway.uuid, { tail_lines: 300 }, { enabled: open && !org });
+  const orgLogs = useOrgGatewayLogs(gateway.uuid, { tail_lines: 300 }, { enabled: open && org });
+  const { data, isFetching, refetch } = org ? orgLogs : personalLogs;
   return (
     <Modal
       title={t("network.logsTitle", { name: gateway.name })}
@@ -240,18 +317,20 @@ function LogsModal({ gateway, open, onClose }: { gateway: GatewayOut; open: bool
 
 export function GatewayDetailDrawer({
   gateway,
+  scope = "personal",
   egressIps,
   socksPort,
   maxForwards,
   onClose,
   onEdit,
 }: {
-  gateway: GatewayOut | null;
+  gateway: AnyGateway | null;
+  scope?: GatewayScope;
   egressIps: string[];
   socksPort: number;
   maxForwards: number;
   onClose: () => void;
-  onEdit: (g: GatewayOut) => void;
+  onEdit: (g: AnyGateway) => void;
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
@@ -260,9 +339,13 @@ export function GatewayDetailDrawer({
   const [attaching, setAttaching] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const del = useDeleteForward({ onSuccess: () => message.success(t("network.forward.deleted")) });
-  const detach = useDetachInstance({ onSuccess: () => message.success(t("network.l3.detached")) });
+  const detachPersonal = useDetachInstance({ onSuccess: () => message.success(t("network.l3.detached")) });
+  const detachOrg = useDetachOrgInstance({ onSuccess: () => message.success(t("network.l3.detached")) });
   if (!gateway) return <Drawer open={false} />;
   const g = gateway;
+  const org = scope === "org";
+  const personal: GatewayOut | null = !org && "socks_url" in g ? g : null;
+  const detach = org ? detachOrg : detachPersonal;
   const deleting = g.state === "deleting";
   const tunnelAddr = g.local_address ?? t("network.assignedByServer");
   const target = (f: ForwardOut) =>
@@ -325,77 +408,81 @@ export function GatewayDetailDrawer({
             ]}
           />
         </Card>
-        <Card size="small" title={t("network.detail.usage")}>
-          <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
-            <Typography.Text>{t("network.detail.socksLine")}</Typography.Text>
-            <CopyField value={`export ALL_PROXY=${g.socks_url}`} mono />
-            <Typography.Text type="secondary">{t("network.detail.socksNote", { port: socksPort })}</Typography.Text>
-            <Typography.Text>{t("network.detail.forwardLine")}</Typography.Text>
-          </Space>
-        </Card>
-        <Card
-          size="small"
-          title={t("network.detail.forwards", { n: g.forwards.length, max: maxForwards })}
-          extra={
-            <GatedButton
+        {personal && (
+          <>
+            <Card size="small" title={t("network.detail.usage")}>
+              <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
+                <Typography.Text>{t("network.detail.socksLine")}</Typography.Text>
+                <CopyField value={`export ALL_PROXY=${personal.socks_url}`} mono />
+                <Typography.Text type="secondary">{t("network.detail.socksNote", { port: socksPort })}</Typography.Text>
+                <Typography.Text>{t("network.detail.forwardLine")}</Typography.Text>
+              </Space>
+            </Card>
+            <Card
               size="small"
-              type="primary"
-              reason={
-                deleting
-                  ? t("network.deletingReason")
-                  : g.forwards.length >= maxForwards
-                    ? t("network.forward.quotaReached", { max: maxForwards })
-                    : undefined
+              title={t("network.detail.forwards", { n: personal.forwards.length, max: maxForwards })}
+              extra={
+                <GatedButton
+                  size="small"
+                  type="primary"
+                  reason={
+                    deleting
+                      ? t("network.deletingReason")
+                      : personal.forwards.length >= maxForwards
+                        ? t("network.forward.quotaReached", { max: maxForwards })
+                        : undefined
+                  }
+                  onClick={() => setAdding(true)}
+                >
+                  {t("network.forward.add")}
+                </GatedButton>
               }
-              onClick={() => setAdding(true)}
             >
-              {t("network.forward.add")}
-            </GatedButton>
-          }
-        >
-          <Table<ForwardOut>
-            rowKey="id"
-            size="small"
-            pagination={false}
-            dataSource={g.forwards}
-            locale={{ emptyText: t("network.forward.empty") }}
-            columns={[
-              { title: t("network.forward.colKind"), render: (_, f) => t(`network.forward.kind.${f.kind}`) },
-              { title: t("network.forward.colEntry"), render: (_, f) => <CopyField value={entry(f)} mono /> },
-              {
-                title: t("network.forward.colTarget"),
-                render: (_, f) =>
-                  f.available ? (
-                    <Mono>{target(f)}</Mono>
-                  ) : (
-                    <Typography.Text type="secondary">{t("network.forward.unavailable")}</Typography.Text>
-                  ),
-              },
-              {
-                title: t("network.col.actions"),
-                render: (_, f) => (
-                  <GatedButton
-                    size="small"
-                    danger
-                    reason={deleting ? t("network.deletingReason") : undefined}
-                    onClick={() =>
-                      confirm({
-                        title: t("network.forward.deleteTitle", { name: f.name }),
-                        consequences: [t("network.forward.deleteConsequence", { entry: entry(f) })],
-                        okText: t("network.forward.deleteOk"),
-                        cancelText: t("network.cancel"),
-                        danger: true,
-                        onOk: () => del.mutate({ uuid: g.uuid, forwardId: f.id }),
-                      })
-                    }
-                  >
-                    {t("network.forward.delete")}
-                  </GatedButton>
-                ),
-              },
-            ]}
-          />
-        </Card>
+              <Table<ForwardOut>
+                rowKey="id"
+                size="small"
+                pagination={false}
+                dataSource={personal.forwards}
+                locale={{ emptyText: t("network.forward.empty") }}
+                columns={[
+                  { title: t("network.forward.colKind"), render: (_, f) => t(`network.forward.kind.${f.kind}`) },
+                  { title: t("network.forward.colEntry"), render: (_, f) => <CopyField value={entry(f)} mono /> },
+                  {
+                    title: t("network.forward.colTarget"),
+                    render: (_, f) =>
+                      f.available ? (
+                        <Mono>{target(f)}</Mono>
+                      ) : (
+                        <Typography.Text type="secondary">{t("network.forward.unavailable")}</Typography.Text>
+                      ),
+                  },
+                  {
+                    title: t("network.col.actions"),
+                    render: (_, f) => (
+                      <GatedButton
+                        size="small"
+                        danger
+                        reason={deleting ? t("network.deletingReason") : undefined}
+                        onClick={() =>
+                          confirm({
+                            title: t("network.forward.deleteTitle", { name: f.name }),
+                            consequences: [t("network.forward.deleteConsequence", { entry: entry(f) })],
+                            okText: t("network.forward.deleteOk"),
+                            cancelText: t("network.cancel"),
+                            danger: true,
+                            onOk: () => del.mutate({ uuid: personal.uuid, forwardId: f.id }),
+                          })
+                        }
+                      >
+                        {t("network.forward.delete")}
+                      </GatedButton>
+                    ),
+                  },
+                ]}
+              />
+            </Card>
+          </>
+        )}
         {g.l3 && (
           <Card
             size="small"
@@ -439,6 +526,14 @@ export function GatewayDetailDrawer({
                 dataSource={g.l3.attachments}
                 locale={{ emptyText: t("network.l3.empty") }}
                 columns={[
+                  ...(org
+                    ? [
+                        {
+                          title: t("network.org.colMember"),
+                          render: (_: unknown, a: AttachmentOut) => a.member_label ?? "—",
+                        },
+                      ]
+                    : []),
                   { title: t("network.l3.colInstance"), render: (_, a) => a.instance_name },
                   { title: t("network.l3.colAddress"), render: (_, a) => <CopyField value={a.address} mono /> },
                   {
@@ -478,9 +573,13 @@ export function GatewayDetailDrawer({
           </Card>
         )}
       </Space>
-      <AddForwardModal gateway={g} open={adding} onClose={() => setAdding(false)} />
-      <AttachModal gateway={g} open={attaching} onClose={() => setAttaching(false)} />
-      <LogsModal gateway={g} open={logsOpen} onClose={() => setLogsOpen(false)} />
+      {personal && <AddForwardModal gateway={personal} open={adding} onClose={() => setAdding(false)} />}
+      {org ? (
+        <OrgAttachModal gateway={g} open={attaching} onClose={() => setAttaching(false)} />
+      ) : (
+        <AttachModal gateway={g} open={attaching} onClose={() => setAttaching(false)} />
+      )}
+      <LogsModal gateway={g} org={org} open={logsOpen} onClose={() => setLogsOpen(false)} />
     </Drawer>
   );
 }

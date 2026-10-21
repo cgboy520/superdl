@@ -1300,6 +1300,10 @@
             "type": "integer"
           },
           "status": {
+            "enum": [
+              "active",
+              "dissolved"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -1473,6 +1477,10 @@
             "type": "integer"
           },
           "status": {
+            "enum": [
+              "active",
+              "dissolved"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -7988,6 +7996,10 @@
             "type": "string"
           },
           "status": {
+            "enum": [
+              "active",
+              "dissolved"
+            ],
             "title": "Status",
             "type": "string"
           },
