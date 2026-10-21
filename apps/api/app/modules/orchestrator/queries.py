@@ -65,6 +65,30 @@ async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
     return sum((hourly_cost(price, count) for price, count in rows), Decimal("0.00"))
 
 
+async def running_cost_by_user(
+    session: AsyncSession, user_ids: Iterable[int]
+) -> dict[int, tuple[Decimal, int]]:
+    """user_id → (hourly cost of running non-subscription instances, running instance count);
+    users with nothing running are absent."""
+    ids = list(user_ids)
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                Instance.user_id, Instance.market, Instance.price_hourly, Instance.gpu_count
+            ).where(Instance.user_id.in_(ids), Instance.status == sm_def.RUNNING)
+        )
+    ).tuples()
+    out: dict[int, tuple[Decimal, int]] = {}
+    for user_id, market, price, count in rows:
+        burn, running = out.get(user_id, (Decimal("0.00"), 0))
+        if market != MARKET_SUBSCRIPTION:
+            burn += hourly_cost(price, count)
+        out[user_id] = (burn, running + 1)
+    return out
+
+
 async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> None:
     """FOR UPDATE lock the instance row before settlement, then read the events; lock order instance
     → bill_hourly → wallet."""

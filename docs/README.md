@@ -25,6 +25,7 @@ Deployment guides and runbooks for operators live under [`deploy/`](../deploy/RE
 | File                                                 | Scope                                                                                                                                     |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | [account.md](./reference/account.md)                 | Registration and login, JWT sessions, SSH keys, identity verification, account deletion                                                   |
+| [orgs.md](./reference/orgs.md)                       | Organizations: membership and roles, email invitations and consent, the read-only member finance view                                     |
 | [catalog.md](./reference/catalog.md)                 | SKUs, platform image catalog, approximate inventory                                                                                       |
 | [orchestrator.md](./reference/orchestrator.md)       | Instance state machine, outbox orchestration, reconciler, SSH / JupyterLab access, K8s abstraction                                        |
 | [services.md](./reference/services.md)               | Online-service aggregate: data model and derived state, deploy / stop / delete contracts, domain rules, gateway API-key auth, rate limits |

@@ -18,7 +18,7 @@ class WorkerComponent(StrEnum):
 
 
 COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
-    WorkerComponent.CORE: frozenset({"notify.sms"}),
+    WorkerComponent.CORE: frozenset({"notify.sms", "orgs.invite_notify"}),
     WorkerComponent.TENANT_MGR: frozenset(
         {
             "instance.create",

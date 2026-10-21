@@ -18,6 +18,7 @@ from app.modules.account.schemas import AdminDeletionRequestOut
 from app.modules.account.service import get_user
 from app.modules.billing import service as billing_service
 from app.modules.orchestrator import queries as orchestrator_queries
+from app.modules.orgs import service as orgs_service
 
 logger = get_logger(__name__)
 
@@ -38,10 +39,13 @@ async def _pending_deletion_of_user(
 async def request_deletion(
     session: AsyncSession, user: User, *, handle: str, reason: str
 ) -> AccountDeletionRequest:
-    """The retyped handle must be one of the account's own; an existing pending request is
-    returned unchanged."""
+    """The retyped handle must be one of the account's own; the owner of an organization with
+    other members is refused; an existing pending request is returned unchanged."""
     if handle not in (user.email, user.phone):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="account.deletionHandleMismatch")
+    others = await orgs_service.owned_org_other_members(session, user.id)
+    if others:
+        raise conflict(key="account.deletionOrgOwner", params={"members": others})
     existing = await _pending_deletion_of_user(session, user.id)
     if existing is not None:
         return existing
@@ -187,10 +191,11 @@ async def approve_deletion(
     """Lock the request and the user, then execute the deletion; the caller handles admin
     authorisation and note validation.
 
-    Cooling-off not over → 409; leftover resources or a non-zero balance commit a rejection and
-    return 409.
-    On approval, the same transaction clears both handles and the KYC name / masked identity,
-    revokes sessions and marks the account deleted; the identity digest and bills are kept.
+    Cooling-off not over → 409; leftover resources, a non-zero balance or owning an organization
+    with other members commit a rejection and return 409.
+    On approval, the same transaction leaves the organization (a sole owner's dissolves), clears
+    both handles and the KYC name / masked identity, revokes sessions and marks the account
+    deleted; the identity digest and bills are kept.
     """
     req = await _get_deletion_for_update(session, request_id)
     if req.status != "pending":
@@ -239,6 +244,16 @@ async def approve_deletion(
             params={"balance": money_label(balance)},
             detail={"balance": money_str(balance)},
         )
+    others = await orgs_service.owned_org_other_members(session, user.id)
+    if others:
+        _auto_reject_deletion(
+            req,
+            admin_id=admin_id,
+            note=server_copy("account.deletion_reject.org_owner", members=others),
+        )
+        await session.commit()
+        raise conflict(key="account.deletionOrgOwner", params={"members": others})
+    await orgs_service.drop_deleted_user(session, user.id)
     user.email = None
     user.email_verified_at = None
     user.phone = None

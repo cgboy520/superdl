@@ -4,7 +4,7 @@ In-app notifications, SMS, the Alertmanager webhook and balance warnings.
 
 ## Data model
 
-- `notifications`: user_id, type (account/instance/service/balance_warn/arrears/subscription/preempted/gpu_fault/ticket/announcement/admin_alert plus the money types recharge/consume/adjust/refund/invoice), title, content, severity, dedup_key?, read_at?, target_id? (navigation target), target_kind? (deep-link kind for the admin alert feed: tenant / node / ticket, written in full at insert time, never inferred from the title)
+- `notifications`: user_id, type (account/instance/service/balance_warn/arrears/subscription/preempted/gpu_fault/ticket/org/announcement/admin_alert plus the money types recharge/consume/adjust/refund/invoice), title, content, severity, dedup_key?, read_at?, target_id? (navigation target), target_kind? (deep-link kind for the admin alert feed: tenant / node / ticket, written in full at insert time, never inferred from the title)
 - The warning threshold is stored in `users.low_balance_warn_hours`
 
 ## Contract
@@ -23,4 +23,5 @@ In-app notifications, SMS, the Alertmanager webhook and balance warnings.
 - The Alertmanager webhook deduplicates by fingerprint; endpoint hardening values in [limits.md](./limits.md).
 - SMS providers: `sms_provider` mock / aliyun / twilio (`app/core/sms.py`); email providers: `email_provider` mock / smtp (`app/core/email.py`, aiosmtplib) carrying verification codes, bodies from `app/core/verification/templates.py`. Both have independent platform budgets (`sms-platform:*`, `email-platform:*`, see [limits.md](./limits.md)); counter `superdl_verification_sent_total{channel, purpose}`.
 - Notification SMS is enqueued through the outbox (`notify.sms`) in the same database as the business transaction and delivered asynchronously by the worker: request and patrol transactions make no channel network calls; failures retry with backoff, and exhausting the budget lands in the dead-letter alert. At-least-once: the same notification may arrive more than once; the channel seam is in [security.md](./security.md).
+- Organization notices (type `org`): invitations go through the outbox task `orgs.invite_notify` (deduplicated per invitation, only to an active account with that verified email); removal, dissolution and ownership transfer are written in the same transaction; see [orgs.md](./orgs.md).
 - In-app notifications store the rendered copy and do not switch with the language, see [i18n.md](./i18n.md).

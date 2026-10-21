@@ -601,6 +601,24 @@ async def user_statuses(session: AsyncSession, user_ids: Iterable[int]) -> dict[
     return dict(rows.tuples().all())
 
 
+async def emails_by_user(session: AsyncSession, user_ids: Iterable[int]) -> dict[int, str | None]:
+    """user_id → email (None once removed or anonymised); unknown ids are absent."""
+    ids = list(user_ids)
+    if not ids:
+        return {}
+    rows = await session.execute(select(User.id, User.email).where(User.id.in_(ids)))
+    return dict(rows.tuples().all())
+
+
+async def active_user_id_by_verified_email(session: AsyncSession, email: str) -> int | None:
+    """The active account whose verified email is `email` (already normalised), else None."""
+    return await session.scalar(
+        select(User.id).where(
+            User.email == email, User.email_verified_at.is_not(None), User.status == "active"
+        )
+    )
+
+
 async def require_real_name_if_required(session: AsyncSession, user: User, *, key: str) -> None:
     """With real_name_required_for_recharge=true, unverified users get 403 — only when the
     compliance profile offers a KYC form (no form, no gate)."""

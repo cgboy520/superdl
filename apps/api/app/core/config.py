@@ -219,6 +219,9 @@ class Settings(BaseSettings):
     netgw_bandwidth_mbps: int = Field(default=100, ge=0, le=10000)
     netgw_egress_ips: str = ""
 
+    org_max_members: int = Field(default=50, ge=2, le=500)
+    org_max_pending_invitations: int = Field(default=50, ge=1, le=500)
+
     alertmanager_token: str | None = None
     grafana_url: str = ""
     oncall_phone: str = ""

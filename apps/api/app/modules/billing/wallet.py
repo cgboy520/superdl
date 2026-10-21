@@ -4,12 +4,12 @@ Updates must `SELECT ... FOR UPDATE` and write balance_ledger (balance_after sna
 transaction. Nothing here commits.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, Select, case, func, select
+from sqlalchemy import ColumnElement, Select, and_, case, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -398,6 +398,46 @@ async def balances_by_user(
         stmt = stmt.where(Wallet.user_id.in_(user_ids))
     rows = (await session.execute(stmt)).tuples().all()
     return dict(rows)
+
+
+async def available_by_user(session: AsyncSession, user_ids: list[int]) -> dict[int, Decimal]:
+    """Available balance (balance - frozen) of the given users; users without a wallet are
+    absent."""
+    if not user_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(Wallet.user_id, Wallet.balance - Wallet.frozen).where(
+                Wallet.user_id.in_(user_ids)
+            )
+        )
+    ).tuples()
+    return {uid: as_amount(value) for uid, value in rows}
+
+
+async def billed_by_user_since(
+    session: AsyncSession, since: Mapping[int, datetime], end: datetime
+) -> dict[int, Decimal]:
+    """Hourly and daily-disk bills per user attributed to [since[user], end), the basis of the
+    console's monthly summary; users without bills are absent."""
+    if not since:
+        return {}
+    totals: dict[int, Decimal] = {}
+    for model, start_col in (
+        (BillHourly, BillHourly.hour_start),
+        (BillDailyDisk, BillDailyDisk.day),
+    ):
+        window = or_(*(and_(model.user_id == uid, start_col >= s) for uid, s in since.items()))
+        rows = (
+            await session.execute(
+                select(model.user_id, func.sum(model.amount))
+                .where(window, start_col < end)
+                .group_by(model.user_id)
+            )
+        ).tuples()
+        for uid, amount in rows:
+            totals[uid] = totals.get(uid, Decimal("0.00")) + Decimal(amount or 0)
+    return {uid: as_amount(v) for uid, v in totals.items()}
 
 
 def net_consumption_entries() -> ColumnElement[bool]:

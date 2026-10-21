@@ -11,6 +11,7 @@ from app.modules.adminapi import (
     router_netgw,
     router_nodes,
     router_ops,
+    router_orgs,
     router_tenants,
 )
 
@@ -25,3 +26,4 @@ router.include_router(router_finance.router)
 router.include_router(router_tenants.router)
 router.include_router(router_legal.router)
 router.include_router(router_netgw.router)
+router.include_router(router_orgs.router)

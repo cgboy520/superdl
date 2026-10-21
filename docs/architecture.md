@@ -55,6 +55,7 @@ apps/api/app/
 │  └─ k8s/          # base (interface) / real (kubernetes client) / fake (dev and tests)
 ├─ modules/
 │  ├─ account/      # registration and login, JWT, SSH keys, identity verification
+│  ├─ orgs/         # organizations: membership and roles, invitations, read-only member finance
 │  ├─ catalog/      # SKUs, image catalog, approximate inventory, image prewarming
 │  ├─ orchestrator/ # instance state machine, K8s orchestration, reconciler, SSH port pool, data disks
 │  ├─ services/     # online-service aggregate: deploy / stop / delete / keys, gateway auth callback, derived state
@@ -111,14 +112,16 @@ Invariant: every hop on this path (Envoy data-plane Pod CIDR, front-proxy egress
 
 ## 6. Data model
 
-`users` own many `instances` / `data_disks` / `orders` and exactly one `wallets` row; `skus` define specs; `services` own many `instances` (each an immutable revision); `instances` derive `instance_events`, `bills_hourly`, `usage_hourly` and may attach one `data_disks` row (billed daily into `bills_daily_disk`).
+`users` belong to at most one `organizations` row (through `org_members`, a visibility layer: funds and resources stay per user) and own many `instances` / `data_disks` / `orders` and exactly one `wallets` row; `skus` define specs; `services` own many `instances` (each an immutable revision); `instances` derive `instance_events`, `bills_hourly`, `usage_hourly` and may attach one `data_disks` row (billed daily into `bills_daily_disk`).
 
 | Module       | Tables                                                                                                                                                                                                          |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | account      | `users` `ssh_keys` `used_refresh_tokens` `verification_codes` `user_quota_overrides` `account_deletion_requests`                                                                                                |
+| orgs         | `organizations` `org_members` `org_invitations`                                                                                                                                                                 |
 | catalog      | `skus` `images` `image_node_cache`                                                                                                                                                                              |
 | orchestrator | `instances` `instance_events` `port_allocations` `data_disks`                                                                                                                                                   |
 | services     | `services` `service_api_keys`                                                                                                                                                                                   |
+| netgw        | `net_gateways` `net_gateway_forwards` `net_gateway_attachments`                                                                                                                                                 |
 | billing      | `wallets` `balance_ledger` `bills_hourly` `bills_daily_disk` `subscriptions` `settlement_watermarks` `settlement_gaps` `reconcile_checkpoints` `orders` `invoice_requests` `refund_requests` `billing_identity` |
 | metering     | `usage_hourly`                                                                                                                                                                                                  |
 | nodes        | `node_enrollments` `node_specs` `cluster_status`                                                                                                                                                                |

@@ -122,6 +122,7 @@ modules = [
     "app.modules.tickets",
     "app.modules.legal",
     "app.modules.netgw",
+    "app.modules.orgs",
 ]
 ignore_imports = [
     "app.modules.** -> app.modules.*.service",

@@ -33,6 +33,10 @@ MESSAGES: dict[str, str] = {
     ),
     "account.deletionNotCancellable": "Deletion request is {status} and cannot be cancelled",
     "account.deletionNotPending": "Deletion request is {status} and cannot be processed",
+    "account.deletionOrgOwner": (
+        "You own an organization with {members} other member(s) — transfer ownership or "
+        "dissolve it first"
+    ),
     "account.emailRequiredFirst": "Add an email address before removing the phone number",
     "account.emailTaken": "This email is already registered — sign in instead",
     "account.handleTaken": "This contact is already bound to another account",
@@ -571,6 +575,28 @@ MESSAGES: dict[str, str] = {
         "CPU instances would exceed your vCPU limit ({max} vCPU). Release one first or "
         "contact support to raise the limit"
     ),
+    "orgs.alreadyMember": "You already belong to an organization — leave it first",
+    "orgs.cannotRemoveOwner": "The owner cannot be removed",
+    "orgs.confirmNameMismatch": "The name you typed does not match the organization name",
+    "orgs.consentOutdated": (
+        "What administrators can see has changed — review it again before accepting"
+    ),
+    "orgs.dissolved": "The organization has been dissolved",
+    "orgs.invitationNotFound": "Invitation not found",
+    "orgs.invitationNotPending": "The invitation is {status}",
+    "orgs.invitationQuota": "The organization already has the maximum of {max} pending invitations",
+    "orgs.memberNotFound": "Member not found",
+    "orgs.memberQuota": "The organization already has the maximum of {max} members",
+    "orgs.notFound": "Organization not found",
+    "orgs.notMember": "You are not in an organization",
+    "orgs.ownerCannotLeave": (
+        "The owner cannot leave — transfer ownership or dissolve the organization first"
+    ),
+    "orgs.ownerRoleViaTransfer": "Use ownership transfer to change the owner",
+    "orgs.realNameRequired": "Identity verification is required before creating an organization",
+    "orgs.roleNotAllowed": "Your role in the organization does not allow this",
+    "orgs.transferTargetInvalid": "Choose another member of the organization as the new owner",
+    "orgs.useLeave": "To remove yourself, leave the organization",
     "services.apiKeyInvalid": "Invalid API key",
     "services.apiKeyNotFound": "API key not found",
     "services.apiKeyQuota": (
