@@ -440,8 +440,11 @@ class FakeOrchestrator:
         """Simulate a leaked Pod: released in the DB but still present in K8s."""
         self.pods[(namespace, name)] = _FakePod(spec=spec, ready=True)
 
-    async def list_nodes(self, include_unlabeled: bool = False) -> list[NodeInfo]:
-        """Node view (Fake: nodes synthesised per pool; include_unlabeled adds unlabeled nodes)."""
+    async def list_nodes(
+        self, include_unlabeled: bool = False, *, gpu_usage: bool = True
+    ) -> list[NodeInfo]:
+        """Node view (Fake: nodes synthesised per pool; include_unlabeled adds unlabeled nodes;
+        gpu_usage=False reports gpu_used 0 like Real)."""
         models = {"kata": "RTX4090", "hami": "RTX4090", "mig": "H100"}
         nodes = []
         for pool, cap in self.pool_capacity.items():
@@ -450,7 +453,7 @@ class FakeOrchestrator:
                 sum(
                     int(p.spec.gpu_resources.get("nvidia.com/gpu", "0"))
                     for p in self.pods.values()
-                    if p.spec.node_selector.get(POOL_NODE_LABEL) == pool
+                    if gpu_usage and p.spec.node_selector.get(POOL_NODE_LABEL) == pool
                 ),
             )
             name = f"fake-{pool}-node-1"

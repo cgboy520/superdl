@@ -1436,8 +1436,10 @@ class RealOrchestrator:
                 used[node] = used.get(node, 0.0) + self._pod_gpu_occupancy(limits)
         return {node: math.ceil(v) for node, v in used.items()}
 
-    async def list_nodes(self, include_unlabeled: bool = False) -> list[NodeInfo]:
-        return await self._run(self._list_nodes_sync, include_unlabeled)
+    async def list_nodes(
+        self, include_unlabeled: bool = False, *, gpu_usage: bool = True
+    ) -> list[NodeInfo]:
+        return await self._run(self._list_nodes_sync, include_unlabeled, gpu_usage)
 
     async def set_node_labels(self, node_name: str, labels: dict[str, str | None]) -> None:
         await self._run(self.core.patch_node, node_name, {"metadata": {"labels": labels}})
@@ -1489,10 +1491,12 @@ class RealOrchestrator:
         ]
         return ".".join(p for p in parts if p)
 
-    def _list_nodes_sync(self, include_unlabeled: bool = False) -> list[NodeInfo]:
+    def _list_nodes_sync(
+        self, include_unlabeled: bool = False, gpu_usage: bool = True
+    ) -> list[NodeInfo]:
         selector = None if include_unlabeled else POOL_NODE_LABEL
         nodes = self._list_all(self.core.list_node, label_selector=selector)
-        used_by_node = self._used_gpus_by_node()
+        used_by_node = self._used_gpus_by_node() if gpu_usage else {}
         out: list[NodeInfo] = []
         for node in nodes:
             labels = node.metadata.labels or {}

@@ -123,7 +123,7 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
    - gpu-operator turns the toolkit off (the host toolkit is installed by node-join, k3s detects it and generates the RuntimeClass nvidia itself). `nvidia.com/gpu.count` is provided by the GFD bundled with gpu-operator.
    - kps / Loki trimmed (with tight disks the log stack can be turned off in `environments/light.yaml`); releases with ServiceMonitors enabled must `needs: [monitoring/kube-prometheus-stack]`.
    - Envoy Gateway control plane down to 1 replica with the PDB off.
-   - Cilium installs alike and takes over kube-proxy; `values/light/cilium-light.yaml` overrides only `k8sServiceHost` (the server's real IP) and turns `l2announcements` off; the north-south LoadBalancer still belongs to k3s ServiceLB.
+   - Cilium installs alike and takes over kube-proxy; `values/light/cilium-light.yaml` overrides only `k8sServiceHost` (the server's real IP) and turns `l2announcements` off; the north-south LoadBalancer still belongs to k3s ServiceLB, pinned to the server by the node label `svccontroller.k3s.cattle.io/enablelb=true` (applied by `../ansible/site.yml`; without it every agent that joins also runs a svclb Pod for 80/443). An existing server gets it by hand: `kubectl label nodes -l node-role.kubernetes.io/control-plane svccontroller.k3s.cattle.io/enablelb=true --overwrite`.
    - acme-dns is not installed; the tenant Jupyter wildcard certificate is loaded from an existing wildcard certificate as `superdl/superdl-jupyter-wildcard-tls`.
    - **TopoLVM must be on** (the VG `superdl-nvme` is created by node-join.sh); **Rook-Ceph must be on** (data disks on CephFS, OSDs on TopoLVM Block PVCs, `values/rook-ceph-cluster.yaml`).
 ### Switching an existing cluster's CNI (flannel → Cilium)

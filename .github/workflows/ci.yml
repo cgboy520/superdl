@@ -193,6 +193,8 @@ jobs:
           need superdl-tenant-mgr list services --all-namespaces
           need superdl-tenant-mgr delete networkpolicies -n tenant-probe
 
+          need superdl-prewarm list nodes
+          deny superdl-prewarm list pods --all-namespaces
           need superdl-api get pods --subresource=log
           for sa in superdl-worker superdl-tenant-mgr superdl-node-mgr superdl-prewarm superdl-disk-ops; do
             deny "$sa" get pods --subresource=log

@@ -67,6 +67,23 @@ class TestPrewarmFullChain:
         )
         assert not any(n.startswith("fake-cpu-") for n in nodes), nodes
 
+    async def test_patrol_lists_nodes_without_gpu_usage(
+        self, sm, fake: FakeOrchestrator, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The patrol asks for nodes without GPU usage: usage needs a cluster-wide Pod list the
+        prewarm SA cannot do."""
+        seen: list[bool] = []
+        original = fake.list_nodes
+
+        async def spy(include_unlabeled: bool = False, *, gpu_usage: bool = True):
+            seen.append(gpu_usage)
+            return await original(include_unlabeled, gpu_usage=gpu_usage)
+
+        monkeypatch.setattr(fake, "list_nodes", spy)
+        await make_image(sm)
+        await prewarm_patrol(sm)
+        assert seen == [False]
+
     async def test_plan_pull_converge_to_cached(self, sm, fake: FakeOrchestrator) -> None:
         """Create image → patrol seeds rows (= node count) → drain sets pulling → patrol converges
         to
