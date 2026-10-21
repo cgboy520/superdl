@@ -67,6 +67,14 @@ def forbidden_networks() -> tuple[Net, ...]:
     return FORBIDDEN_NETS + cluster
 
 
+def check_org_remote(remote: list[Net]) -> None:
+    """Organization gateways tunnel private networks only: a public range would route members'
+    outbound traffic for it into the organization's VPN."""
+    for net in remote:
+        if not any(net.subnet_of(r) for r in L3_RANGES):
+            raise _invalid("orgRemoteNotPrivate", cidr=str(net))
+
+
 def parse_remote_cidrs(values: Iterable[str]) -> list[Net]:
     out: list[Net] = []
     for raw in values:

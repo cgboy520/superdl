@@ -4,6 +4,7 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { OrgRefOut } from './orgRefOut';
 
 export interface TenantOut {
   balance: string;
@@ -14,6 +15,7 @@ export interface TenantOut {
   instances: number;
   kyc_name?: string | null;
   kyc_status?: string;
+  org?: OrgRefOut | null;
   phone_masked: string | null;
   status: string;
   total_consumed: string;

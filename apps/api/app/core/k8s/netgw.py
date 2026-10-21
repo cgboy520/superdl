@@ -2,9 +2,11 @@
 Deployment, NetworkPolicy, SOCKS Service, one Service per intranet forward and (L3) the hub
 headless Service. Tenant namespace: ExternalNames for the SOCKS endpoint and the intranet forwards,
 one ClusterIP Service per instance forward and (L3) the headless Service naming attached Pods.
-Every object carries NETGW_LABEL=<uuid> (never MANAGED_LABEL: the instance reconciler would treat
-it as a leaked instance endpoint). The instance side of L3 (attach Secret, init container) is
-built here too and owned by the instance."""
+Organization gateways (L3 only) have no SOCKS or forwards; each attached instance's namespace gets
+the headless Service and a NetworkPolicy admitting the gateway Pod to the attached Pods on the
+hub port. Every object carries NETGW_LABEL=<uuid> (never MANAGED_LABEL: the instance reconciler
+would treat it as a leaked instance endpoint). The instance side of L3 (attach Secret, init
+container) is built here too and owned by the instance."""
 
 from typing import Any
 
@@ -43,15 +45,20 @@ ATTACH_MOUNT = "/etc/netgw-attach"
 
 
 def netgw_labels(spec: NetgwSpec) -> dict[str, str]:
-    return {
-        NETGW_LABEL: spec.uuid,
-        NETGW_TENANT_LABEL: spec.tenant_namespace,
-        "app.kubernetes.io/name": "superdl-netgw",
-    }
+    """An organization gateway carries no tenant label: a tenant-default policy would otherwise
+    admit it to every Pod of that namespace, and its Pod labels never follow membership."""
+    labels = {NETGW_LABEL: spec.uuid, "app.kubernetes.io/name": "superdl-netgw"}
+    if spec.tenant_namespace is not None:
+        labels[NETGW_TENANT_LABEL] = spec.tenant_namespace
+    return labels
 
 
 def _ns_selector(namespace: str) -> "client.V1LabelSelector":
     return client.V1LabelSelector(match_labels={"kubernetes.io/metadata.name": namespace})
+
+
+def _hub_port() -> list["client.V1NetworkPolicyPort"]:
+    return [client.V1NetworkPolicyPort(protocol="UDP", port=NETGW_HUB_PORT)]
 
 
 def _svc_fqdn(name: str, namespace: str) -> str:
@@ -171,11 +178,42 @@ def build_netgw_deployment(spec: NetgwSpec) -> "client.V1Deployment":
     )
 
 
+def _tenant_rules(
+    spec: NetgwSpec,
+) -> tuple[list["client.V1NetworkPolicyIngressRule"], list["client.V1NetworkPolicyEgressRule"]]:
+    """Personal: the tenant's whole namespace, every port (forwards, SOCKS, instance forwards).
+    Organization: the attached Pods of the listed namespaces on the hub port only; no rule at all
+    without attachments (an empty `In` list is invalid)."""
+    if spec.tenant_namespace is not None:
+        tenant = client.V1NetworkPolicyPeer(namespace_selector=_ns_selector(spec.tenant_namespace))
+        return (
+            [client.V1NetworkPolicyIngressRule(_from=[tenant])],
+            [client.V1NetworkPolicyEgressRule(to=[tenant])],
+        )
+    if not spec.l3_namespaces:
+        return [], []
+    attached = client.V1NetworkPolicyPeer(
+        namespace_selector=client.V1LabelSelector(
+            match_expressions=[
+                client.V1LabelSelectorRequirement(
+                    key="kubernetes.io/metadata.name",
+                    operator="In",
+                    values=list(spec.l3_namespaces),
+                )
+            ]
+        ),
+        pod_selector=client.V1LabelSelector(match_labels={NETGW_L3_LABEL: spec.uuid}),
+    )
+    return (
+        [client.V1NetworkPolicyIngressRule(_from=[attached], ports=_hub_port())],
+        [client.V1NetworkPolicyEgressRule(to=[attached], ports=_hub_port())],
+    )
+
+
 def build_netgw_netpol(spec: NetgwSpec, *, except_cidrs: list[str]) -> "client.V1NetworkPolicy":
-    """Ingress: the tenant's own namespace (forwards, SOCKS). Egress: cluster DNS, the peer ports
-    to the internet (private ranges excepted, so a peer must be public), the tenant's own namespace
-    (instance forwards)."""
-    tenant = client.V1NetworkPolicyPeer(namespace_selector=_ns_selector(spec.tenant_namespace))
+    """Ingress: the tenant side (`_tenant_rules`). Egress: cluster DNS, the peer ports to the
+    internet (private ranges excepted, so a peer must be public), the tenant side."""
+    ingress, tenant_egress = _tenant_rules(spec)
     return client.V1NetworkPolicy(
         metadata=client.V1ObjectMeta(
             name=netgw_object_name(spec.uuid), namespace=NETGW_NAMESPACE, labels=netgw_labels(spec)
@@ -183,7 +221,7 @@ def build_netgw_netpol(spec: NetgwSpec, *, except_cidrs: list[str]) -> "client.V
         spec=client.V1NetworkPolicySpec(
             pod_selector=client.V1LabelSelector(match_labels={NETGW_LABEL: spec.uuid}),
             policy_types=["Ingress", "Egress"],
-            ingress=[client.V1NetworkPolicyIngressRule(_from=[tenant])],
+            ingress=ingress,
             egress=[
                 client.V1NetworkPolicyEgressRule(
                     to=[
@@ -210,8 +248,28 @@ def build_netgw_netpol(spec: NetgwSpec, *, except_cidrs: list[str]) -> "client.V
                         for proto, port in spec.egress_ports
                     ],
                 ),
-                client.V1NetworkPolicyEgressRule(to=[tenant]),
+                *tenant_egress,
             ],
+        ),
+    )
+
+
+def build_netgw_tenant_netpol(spec: NetgwSpec, namespace: str) -> "client.V1NetworkPolicy":
+    """Organization gateway, one per attached instance's namespace: the attached Pods and the
+    gateway Pod reach each other on the hub port (adds to tenant-default, which stays as is)."""
+    gateway = client.V1NetworkPolicyPeer(
+        namespace_selector=_ns_selector(NETGW_NAMESPACE),
+        pod_selector=client.V1LabelSelector(match_labels={NETGW_LABEL: spec.uuid}),
+    )
+    return client.V1NetworkPolicy(
+        metadata=client.V1ObjectMeta(
+            name=netgw_object_name(spec.uuid), namespace=namespace, labels={NETGW_LABEL: spec.uuid}
+        ),
+        spec=client.V1NetworkPolicySpec(
+            pod_selector=client.V1LabelSelector(match_labels={NETGW_L3_LABEL: spec.uuid}),
+            policy_types=["Ingress", "Egress"],
+            ingress=[client.V1NetworkPolicyIngressRule(_from=[gateway], ports=_hub_port())],
+            egress=[client.V1NetworkPolicyEgressRule(to=[gateway], ports=_hub_port())],
         ),
     )
 
@@ -261,16 +319,18 @@ def build_netgw_services(spec: NetgwSpec) -> list["client.V1Service"]:
     tunnel is down)."""
     labels = netgw_labels(spec)
     selector = {NETGW_LABEL: spec.uuid}
-    out = [
-        _service(
-            netgw_object_name(spec.uuid),
-            NETGW_NAMESPACE,
-            labels,
-            selector=selector,
-            port=NETGW_SOCKS_PORT,
-            target_port=NETGW_SOCKS_PORT,
+    out = []
+    if not spec.org:
+        out.append(
+            _service(
+                netgw_object_name(spec.uuid),
+                NETGW_NAMESPACE,
+                labels,
+                selector=selector,
+                port=NETGW_SOCKS_PORT,
+                target_port=NETGW_SOCKS_PORT,
+            )
         )
-    ]
     out.extend(
         _service(
             netgw_forward_service_name(spec.uuid, f.forward_id),
@@ -295,11 +355,24 @@ def build_netgw_services(spec: NetgwSpec) -> list["client.V1Service"]:
     return out
 
 
+def build_l3_service(spec: NetgwSpec, namespace: str) -> "client.V1Service":
+    """Headless Service naming the gateway's attached Pods of one namespace (their `subdomain`)."""
+    return _service(
+        netgw_l3_service_name(spec.uuid),
+        namespace,
+        {NETGW_LABEL: spec.uuid},
+        selector={NETGW_L3_LABEL: spec.uuid},
+        headless_udp=NETGW_HUB_PORT,
+    )
+
+
 def build_tenant_services(spec: NetgwSpec) -> list["client.V1Service"]:
-    """Tenant namespace: ExternalNames (SOCKS under the gateway name, intranet forwards under their
-    names), the instance-forward Services and (L3) the headless Service of the attached Pods."""
+    """Personal gateway, tenant namespace: ExternalNames (SOCKS under the gateway name, intranet
+    forwards under their names), the instance-forward Services and (L3) the headless Service of the
+    attached Pods."""
     labels = {NETGW_LABEL: spec.uuid}
     ns = spec.tenant_namespace
+    assert ns is not None
     out = [
         _service(
             spec.socks_name,
@@ -331,15 +404,7 @@ def build_tenant_services(spec: NetgwSpec) -> list["client.V1Service"]:
         for f in spec.instance
     )
     if spec.l3:
-        out.append(
-            _service(
-                netgw_l3_service_name(spec.uuid),
-                ns,
-                labels,
-                selector={NETGW_L3_LABEL: spec.uuid},
-                headless_udp=NETGW_HUB_PORT,
-            )
-        )
+        out.append(build_l3_service(spec, ns))
     return out
 
 

@@ -20,6 +20,16 @@ import {
   instancesMetricsSummaryApiV1MetricsInstancesGet,
   listDisksApiV1DisksGet,
   getConfigApiV1NetgwConfigGet,
+  getDisclosureApiV1OrgDisclosureGet,
+  getMyOrgApiV1OrgGet,
+  listInvitationsApiV1OrgInvitationsGet,
+  listMembersApiV1OrgMembersGet,
+  listOrgGatewaysApiV1OrgNetgwGatewaysGet,
+  myAttachmentsApiV1NetgwAttachmentsGet,
+  orgFinanceApiV1OrgFinanceGet,
+  orgGatewayLogsApiV1OrgNetgwGatewaysUuidLogsGet,
+  orgInstancesApiV1OrgNetgwInstancesGet,
+  receivedInvitationsApiV1OrgInvitationsReceivedGet,
   gatewayLogsApiV1NetgwGatewaysUuidLogsGet,
   listGatewaysApiV1NetgwGatewaysGet,
   listHourlyBillsApiV1BillsHourlyGet,
@@ -49,6 +59,7 @@ import type {
   ApiKeyOut,
   GatewayLogsApiV1NetgwGatewaysUuidLogsGetParams,
   GatewayOut,
+  OrgGatewayOut,
   GetInstanceLogsApiV1InstancesUuidLogsGetParams,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
   GetServiceLogsApiV1ServicesSlugLogsGetParams,
@@ -153,6 +164,45 @@ export const useGatewayLogs = (
     queryFn: () => gatewayLogsApiV1NetgwGatewaysUuidLogsGet(uuid, params),
     ...opts,
   });
+/** Organization gateways (owners and admins) and their attachment candidates; my own attachments on any gateway. */
+export const useOrgGateways = (opts?: QueryOpts<OrgGatewayOut[]>) =>
+  useQuery({ queryKey: keys.netgw.orgGateways, queryFn: () => listOrgGatewaysApiV1OrgNetgwGatewaysGet(), ...opts });
+export const useOrgInstances = (opts?: QueryOpts) =>
+  useQuery({ queryKey: keys.netgw.orgInstances, queryFn: () => orgInstancesApiV1OrgNetgwInstancesGet(), ...opts });
+export const useMyAttachments = (opts?: QueryOpts) =>
+  useQuery({ queryKey: keys.netgw.myAttachments, queryFn: () => myAttachmentsApiV1NetgwAttachmentsGet(), ...opts });
+export const useOrgGatewayLogs = (
+  uuid: string,
+  params: GatewayLogsApiV1NetgwGatewaysUuidLogsGetParams,
+  opts?: QueryOpts<InstanceLogsOut>,
+) =>
+  useQuery({
+    queryKey: keys.netgw.orgLogs(uuid, params),
+    queryFn: () => orgGatewayLogsApiV1OrgNetgwGatewaysUuidLogsGet(uuid, params),
+    ...opts,
+  });
+/** My organization (org null outside one), the disclosure, and the owner / admin views; members, invitations and spending change through other accounts, so they refetch on every mount. */
+export const useMyOrg = (opts?: QueryOpts) =>
+  useQuery({ queryKey: keys.org.mine, queryFn: () => getMyOrgApiV1OrgGet(), ...opts });
+export const useOrgDisclosure = (opts?: QueryOpts) =>
+  useQuery({ queryKey: keys.org.disclosure, queryFn: () => getDisclosureApiV1OrgDisclosureGet(), ...opts });
+export const useOrgMembers = (opts?: QueryOpts) =>
+  useQuery({ queryKey: keys.org.members, queryFn: () => listMembersApiV1OrgMembersGet(), staleTime: 0, ...opts });
+export const useOrgInvitations = (opts?: QueryOpts) =>
+  useQuery({
+    queryKey: keys.org.invitations,
+    queryFn: () => listInvitationsApiV1OrgInvitationsGet(),
+    staleTime: 0,
+    ...opts,
+  });
+export const useReceivedInvitations = (opts?: QueryOpts) =>
+  useQuery({
+    queryKey: keys.org.received,
+    queryFn: () => receivedInvitationsApiV1OrgInvitationsReceivedGet(),
+    ...opts,
+  });
+export const useOrgFinance = (opts?: QueryOpts) =>
+  useQuery({ queryKey: keys.org.finance, queryFn: () => orgFinanceApiV1OrgFinanceGet(), staleTime: 0, ...opts });
 /** Lightweight whole-table view (first 100; dashboard counts / storage page / support link selection); the list page uses useInstancePages. */
 export const useInstances = (opts?: QueryOpts<PageInstanceOut>) =>
   useQuery<PageInstanceOut, ApiError, InstanceOut[]>({

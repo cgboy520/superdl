@@ -612,6 +612,28 @@
             "title": "Name",
             "type": "string"
           },
+          "org_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Name"
+          },
+          "org_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Uuid"
+          },
           "pod_phase": {
             "anyOf": [
               {
@@ -640,10 +662,24 @@
             "title": "Remote Cidrs",
             "type": "array"
           },
-          "socks_url": {
-            "description": "SOCKS5 endpoint for the tenant's instances",
-            "title": "Socks Url",
+          "scope": {
+            "enum": [
+              "personal",
+              "org"
+            ],
+            "title": "Scope",
             "type": "string"
+          },
+          "socks_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Socks Url"
           },
           "state": {
             "enum": [
@@ -703,6 +739,7 @@
             "type": "string"
           },
           "user_id": {
+            "description": "owner of a personal gateway, creator of an organization one",
             "title": "User Id",
             "type": "integer"
           },
@@ -724,12 +761,15 @@
           "dns",
           "l3",
           "tunnel",
-          "socks_url",
-          "forwards",
           "created_at",
           "updated_at",
+          "socks_url",
+          "forwards",
           "user_id",
-          "pod_phase"
+          "pod_phase",
+          "scope",
+          "org_uuid",
+          "org_name"
         ],
         "title": "AdminGatewayOut",
         "type": "object"
@@ -1190,6 +1230,277 @@
           "user_id"
         ],
         "title": "AdminOrderOut",
+        "type": "object"
+      },
+      "AdminOrgDetailOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dissolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dissolved At"
+          },
+          "invitations": {
+            "items": {
+              "$ref": "#/components/schemas/AdminOrgInvitationOut"
+            },
+            "title": "Invitations",
+            "type": "array"
+          },
+          "member_list": {
+            "items": {
+              "$ref": "#/components/schemas/AdminOrgMemberOut"
+            },
+            "title": "Member List",
+            "type": "array"
+          },
+          "members": {
+            "title": "Members",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_email_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Email Masked"
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
+          "pending_invitations": {
+            "title": "Pending Invitations",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "dissolved"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "status",
+          "owner_user_id",
+          "owner_email_masked",
+          "members",
+          "pending_invitations",
+          "created_at",
+          "dissolved_at",
+          "member_list",
+          "invitations"
+        ],
+        "title": "AdminOrgDetailOut",
+        "type": "object"
+      },
+      "AdminOrgInvitationOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email_masked": {
+            "title": "Email Masked",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "accepted",
+              "declined",
+              "revoked",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "email_masked",
+          "role",
+          "status",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "AdminOrgInvitationOut",
+        "type": "object"
+      },
+      "AdminOrgMemberOut": {
+        "properties": {
+          "email_masked": {
+            "title": "Email Masked",
+            "type": "string"
+          },
+          "joined_at": {
+            "format": "date-time",
+            "title": "Joined At",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "frozen",
+              "deleted"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id",
+          "role",
+          "email_masked",
+          "status",
+          "joined_at"
+        ],
+        "title": "AdminOrgMemberOut",
+        "type": "object"
+      },
+      "AdminOrgOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dissolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dissolved At"
+          },
+          "members": {
+            "title": "Members",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_email_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Email Masked"
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
+          "pending_invitations": {
+            "title": "Pending Invitations",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "dissolved"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "status",
+          "owner_user_id",
+          "owner_email_masked",
+          "members",
+          "pending_invitations",
+          "created_at",
+          "dissolved_at"
+        ],
+        "title": "AdminOrgOut",
         "type": "object"
       },
       "AdminOut": {
@@ -2194,6 +2505,29 @@
             "title": "Instance Uuid",
             "type": "string"
           },
+          "member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "organization gateways: the member owning the instance",
+            "title": "Member Id"
+          },
+          "member_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Member Label"
+          },
           "pending_restart": {
             "description": "the running instance started before this attachment or the last change of the gateway's remote networks: they apply on its next start",
             "title": "Pending Restart",
@@ -3168,6 +3502,28 @@
         "title": "DeploymentIdentityOut",
         "type": "object"
       },
+      "DisclosureOut": {
+        "description": "What organization owners and admins can see about a member; accepting records `version`.",
+        "properties": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "items"
+        ],
+        "title": "DisclosureOut",
+        "type": "object"
+      },
       "DiskCreate": {
         "properties": {
           "name": {
@@ -3505,6 +3861,34 @@
         "title": "EnrollmentRevokeRequest",
         "type": "object"
       },
+      "FinanceTotalsOut": {
+        "properties": {
+          "available_balance": {
+            "title": "Available Balance",
+            "type": "string"
+          },
+          "burn_per_hour": {
+            "title": "Burn Per Hour",
+            "type": "string"
+          },
+          "month_to_date": {
+            "title": "Month To Date",
+            "type": "string"
+          },
+          "running_instances": {
+            "title": "Running Instances",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "available_balance",
+          "month_to_date",
+          "burn_per_hour",
+          "running_instances"
+        ],
+        "title": "FinanceTotalsOut",
+        "type": "object"
+      },
       "ForwardOut": {
         "properties": {
           "available": {
@@ -3678,6 +4062,7 @@
         "type": "object"
       },
       "GatewayOut": {
+        "description": "A personal gateway.",
         "properties": {
           "checked_at": {
             "anyOf": [
@@ -3835,10 +4220,10 @@
           "dns",
           "l3",
           "tunnel",
-          "socks_url",
-          "forwards",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "socks_url",
+          "forwards"
         ],
         "title": "GatewayOut",
         "type": "object"
@@ -4938,6 +5323,129 @@
         "title": "IntranetForwardIn",
         "type": "object"
       },
+      "InvitationAccept": {
+        "description": "The disclosure version the invitee reviewed (`GET /org/disclosure`).",
+        "properties": {
+          "consent_version": {
+            "maxLength": 16,
+            "title": "Consent Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "consent_version"
+        ],
+        "title": "InvitationAccept",
+        "type": "object"
+      },
+      "InvitationCreate": {
+        "properties": {
+          "email": {
+            "description": "Email address; trimmed and lower-cased",
+            "examples": [
+              "user@example.com"
+            ],
+            "maxLength": 254,
+            "title": "Email",
+            "type": "string"
+          },
+          "remark": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark"
+          },
+          "role": {
+            "default": "member",
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "InvitationCreate",
+        "type": "object"
+      },
+      "InvitationOut": {
+        "description": "Sent invitation. A pending one shows the email the inviter typed (the list never tells\nwhether an account exists for it); once answered, revoked or expired it is masked like any\nmember's.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "invited_by": {
+            "title": "Invited By",
+            "type": "string"
+          },
+          "remark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "accepted",
+              "declined",
+              "revoked",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "email",
+          "role",
+          "remark",
+          "status",
+          "invited_by",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "InvitationOut",
+        "type": "object"
+      },
       "InvoiceCreate": {
         "description": "Invoice request. amount is not part of the contract: computed server-side per period.",
         "properties": {
@@ -5767,6 +6275,168 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MemberFinanceOut": {
+        "description": "month_to_date counts from window_start = max(billing month start, joined_at);\nburn_per_hour covers running on-demand / spot instances; est_hours_left is null without burn\nand excludes the current, not yet settled hour.",
+        "properties": {
+          "available_balance": {
+            "title": "Available Balance",
+            "type": "string"
+          },
+          "burn_per_hour": {
+            "title": "Burn Per Hour",
+            "type": "string"
+          },
+          "est_hours_left": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Est Hours Left"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "member_id": {
+            "title": "Member Id",
+            "type": "integer"
+          },
+          "month_to_date": {
+            "title": "Month To Date",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "running_instances": {
+            "title": "Running Instances",
+            "type": "integer"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_id",
+          "role",
+          "label",
+          "available_balance",
+          "month_to_date",
+          "window_start",
+          "burn_per_hour",
+          "running_instances",
+          "est_hours_left"
+        ],
+        "title": "MemberFinanceOut",
+        "type": "object"
+      },
+      "MemberOut": {
+        "properties": {
+          "email_masked": {
+            "title": "Email Masked",
+            "type": "string"
+          },
+          "joined_at": {
+            "format": "date-time",
+            "title": "Joined At",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "member_id": {
+            "title": "Member Id",
+            "type": "integer"
+          },
+          "remark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "frozen",
+              "deleted"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_id",
+          "role",
+          "label",
+          "email_masked",
+          "remark",
+          "status",
+          "joined_at"
+        ],
+        "title": "MemberOut",
+        "type": "object"
+      },
+      "MemberUpdate": {
+        "description": "Omitted fields stay; an empty remark clears it. Only the owner changes roles.",
+        "properties": {
+          "remark": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "admin",
+                  "member"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "title": "MemberUpdate",
+        "type": "object"
+      },
       "MfaChallengeOut": {
         "description": "Login response, challenge branch (admin_mfa_enabled on): mfa_setup = first enrolment\n(enrolment ticket 10 min);\nmfa_required = enrolled verification (second-factor ticket 5 min).",
         "properties": {
@@ -5914,6 +6584,134 @@
         "title": "MfaTicketRequest",
         "type": "object"
       },
+      "MyAttachmentOut": {
+        "description": "One of the caller's instances attached to a gateway (personal or organization).",
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "gateway_name": {
+            "title": "Gateway Name",
+            "type": "string"
+          },
+          "gateway_uuid": {
+            "title": "Gateway Uuid",
+            "type": "string"
+          },
+          "instance_name": {
+            "title": "Instance Name",
+            "type": "string"
+          },
+          "instance_uuid": {
+            "title": "Instance Uuid",
+            "type": "string"
+          },
+          "pending_restart": {
+            "title": "Pending Restart",
+            "type": "boolean"
+          },
+          "scope": {
+            "enum": [
+              "personal",
+              "org"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gateway_uuid",
+          "gateway_name",
+          "scope",
+          "instance_uuid",
+          "instance_name",
+          "address",
+          "pending_restart",
+          "created_at"
+        ],
+        "title": "MyAttachmentOut",
+        "type": "object"
+      },
+      "MyOrgOut": {
+        "description": "org is null outside an organization; received_invitations counts the pending ones.",
+        "properties": {
+          "admins": {
+            "items": {
+              "$ref": "#/components/schemas/OrgContactOut"
+            },
+            "title": "Admins",
+            "type": "array"
+          },
+          "member_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Member Count"
+          },
+          "member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Member Id"
+          },
+          "org": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrgOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "received_invitations": {
+            "title": "Received Invitations",
+            "type": "integer"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "owner",
+                  "admin",
+                  "member"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "required": [
+          "org",
+          "role",
+          "member_id",
+          "member_count",
+          "admins",
+          "received_invitations"
+        ],
+        "title": "MyOrgOut",
+        "type": "object"
+      },
       "NetgwConfigOut": {
         "properties": {
           "bandwidth_mbps": {
@@ -5939,6 +6737,10 @@
             "title": "Max Gateways",
             "type": "integer"
           },
+          "max_org_gateways": {
+            "title": "Max Org Gateways",
+            "type": "integer"
+          },
           "socks_port": {
             "title": "Socks Port",
             "type": "integer"
@@ -5948,6 +6750,7 @@
           "enabled",
           "egress_ips",
           "max_gateways",
+          "max_org_gateways",
           "max_forwards",
           "bandwidth_mbps",
           "socks_port"
@@ -6856,6 +7659,440 @@
         "title": "OrderVerifyOut",
         "type": "object"
       },
+      "OrgContactOut": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "label"
+        ],
+        "title": "OrgContactOut",
+        "type": "object"
+      },
+      "OrgCreate": {
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "OrgCreate",
+        "type": "object"
+      },
+      "OrgDissolve": {
+        "description": "The organization name typed again (L3 confirmation).",
+        "properties": {
+          "confirm_name": {
+            "maxLength": 80,
+            "title": "Confirm Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm_name"
+        ],
+        "title": "OrgDissolve",
+        "type": "object"
+      },
+      "OrgFinanceOut": {
+        "properties": {
+          "billing_timezone": {
+            "title": "Billing Timezone",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/MemberFinanceOut"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date-time",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/FinanceTotalsOut"
+          }
+        },
+        "required": [
+          "currency",
+          "billing_timezone",
+          "period",
+          "period_start",
+          "generated_at",
+          "members",
+          "totals"
+        ],
+        "title": "OrgFinanceOut",
+        "type": "object"
+      },
+      "OrgGatewayOut": {
+        "description": "An organization gateway: whole-subnet access only; attachments carry their member.",
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "description": "masked email of the member who created it",
+            "title": "Created By",
+            "type": "string"
+          },
+          "dns": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DnsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "l3": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/L3Out"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "local_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Address"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "protocol": {
+            "enum": [
+              "wireguard",
+              "ipsec",
+              "openvpn",
+              "openconnect"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "remote_cidrs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Remote Cidrs",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "applying",
+              "connected",
+              "disconnected",
+              "deleting"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "tunnel": {
+            "discriminator": {
+              "mapping": {
+                "ipsec": "#/components/schemas/IpsecOut",
+                "openconnect": "#/components/schemas/OpenConnectOut",
+                "openvpn": "#/components/schemas/OpenVpnOut",
+                "wireguard": "#/components/schemas/WireGuardOut"
+              },
+              "propertyName": "protocol"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WireGuardOut"
+              },
+              {
+                "$ref": "#/components/schemas/IpsecOut"
+              },
+              {
+                "$ref": "#/components/schemas/OpenVpnOut"
+              },
+              {
+                "$ref": "#/components/schemas/OpenConnectOut"
+              }
+            ],
+            "title": "Tunnel"
+          },
+          "tunnel_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tunnel Changed At"
+          },
+          "tunnel_up": {
+            "title": "Tunnel Up",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "protocol",
+          "state",
+          "tunnel_up",
+          "tunnel_changed_at",
+          "checked_at",
+          "remote_cidrs",
+          "local_address",
+          "dns",
+          "l3",
+          "tunnel",
+          "created_at",
+          "updated_at",
+          "created_by"
+        ],
+        "title": "OrgGatewayOut",
+        "type": "object"
+      },
+      "OrgInstanceOut": {
+        "description": "A member's unreleased dev instance as an attachment candidate. reason: kata_tier (no attach\npath), attached (already on a gateway; attached_to is set when that gateway is this\norganization's).",
+        "properties": {
+          "attachable": {
+            "title": "Attachable",
+            "type": "boolean"
+          },
+          "attached_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attached To"
+          },
+          "instance_name": {
+            "title": "Instance Name",
+            "type": "string"
+          },
+          "instance_uuid": {
+            "title": "Instance Uuid",
+            "type": "string"
+          },
+          "member_id": {
+            "title": "Member Id",
+            "type": "integer"
+          },
+          "member_label": {
+            "title": "Member Label",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kata_tier",
+                  "attached"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instance_uuid",
+          "instance_name",
+          "status",
+          "member_id",
+          "member_label",
+          "attachable",
+          "reason",
+          "attached_to"
+        ],
+        "title": "OrgInstanceOut",
+        "type": "object"
+      },
+      "OrgOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "dissolved"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "status",
+          "created_at"
+        ],
+        "title": "OrgOut",
+        "type": "object"
+      },
+      "OrgRefOut": {
+        "description": "A user's organization as shown on admin tenant rows.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "member"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "role"
+        ],
+        "title": "OrgRefOut",
+        "type": "object"
+      },
+      "OrgRename": {
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "OrgRename",
+        "type": "object"
+      },
+      "OrgTransfer": {
+        "properties": {
+          "member_id": {
+            "title": "Member Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "member_id"
+        ],
+        "title": "OrgTransfer",
+        "type": "object"
+      },
+      "OrgUserReason": {
+        "properties": {
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reason",
+          "user_id"
+        ],
+        "title": "OrgUserReason",
+        "type": "object"
+      },
       "OutboxDiscardRequest": {
         "properties": {
           "reason": {
@@ -7178,6 +8415,44 @@
           "items"
         ],
         "title": "Page[AdminOrderOut]",
+        "type": "object"
+      },
+      "Page_AdminOrgOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminOrgOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "Page[AdminOrgOut]",
         "type": "object"
       },
       "Page_AdminRefundOut_": {
@@ -8351,6 +9626,80 @@
           "state"
         ],
         "title": "ProgressRequest",
+        "type": "object"
+      },
+      "ReasonBody": {
+        "description": "Request body carrying only the operator reason (into the audit detail); every admin \"reason\nrequired\" action derives from it.",
+        "properties": {
+          "reason": {
+            "maxLength": 256,
+            "minLength": 2,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ReasonBody",
+        "type": "object"
+      },
+      "ReceivedInvitationOut": {
+        "description": "blocked = \"member_of_org\" when the invitee already belongs to an organization.",
+        "properties": {
+          "blocked": {
+            "anyOf": [
+              {
+                "const": "member_of_org",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "invited_by": {
+            "title": "Invited By",
+            "type": "string"
+          },
+          "org_name": {
+            "title": "Org Name",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "org_name",
+          "role",
+          "invited_by",
+          "created_at",
+          "expires_at",
+          "blocked"
+        ],
+        "title": "ReceivedInvitationOut",
         "type": "object"
       },
       "RechargeCreate": {
@@ -10659,6 +12008,16 @@
             "default": "unverified",
             "title": "Kyc Status",
             "type": "string"
+          },
+          "org": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrgRefOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "phone_masked": {
             "anyOf": [
@@ -15106,7 +16465,7 @@
     },
     "/api/admin/v1/netgw/gateways": {
       "get": {
-        "description": "Every tenant's gateways (newest first, at most 500); secrets never included.",
+        "description": "Every tenant's gateways, personal and organization (newest first, at most 500); user_id is\nthe owner or the creator, org_uuid narrows to one organization; secrets never included.",
         "operationId": "admin_list_gateways_api_admin_v1_netgw_gateways_get",
         "parameters": [
           {
@@ -15123,6 +16482,22 @@
                 }
               ],
               "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "org_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Org Uuid"
             }
           }
         ],
@@ -16079,6 +17454,332 @@
           }
         ],
         "summary": "Admin Orders Export",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/orgs": {
+      "get": {
+        "description": "Organizations, newest first (cursor paged). q = organization uuid, a member's user id or a\nname fragment; every search writes an audit row.",
+        "operationId": "admin_list_orgs_api_admin_v1_orgs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AdminOrgOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Orgs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/orgs/{uuid}": {
+      "get": {
+        "description": "Members (masked handles) and invitations (masked emails).",
+        "operationId": "admin_get_org_api_admin_v1_orgs__uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrgDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Get Org",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/orgs/{uuid}/dissolve": {
+      "post": {
+        "description": "End every membership and pending invitation; the organization's gateways are deleted.",
+        "operationId": "admin_dissolve_org_api_admin_v1_orgs__uuid__dissolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrgDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Dissolve Org",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/orgs/{uuid}/members/remove": {
+      "post": {
+        "description": "Remove a member other than the owner.",
+        "operationId": "admin_remove_org_member_api_admin_v1_orgs__uuid__members_remove_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgUserReason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrgDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Remove Org Member",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/orgs/{uuid}/transfer": {
+      "post": {
+        "description": "Make a member the owner (the previous owner becomes an admin): ownership grants sight of\nmembers' balances, so admin role only.",
+        "operationId": "admin_transfer_org_api_admin_v1_orgs__uuid__transfer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgUserReason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrgDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Transfer Org",
         "tags": [
           "admin"
         ]
@@ -21046,6 +22747,78 @@
         ]
       }
     },
+    "/api/v1/netgw/attachments": {
+      "get": {
+        "description": "The caller's instances attached to a gateway, personal or organization.",
+        "operationId": "my_attachments_api_v1_netgw_attachments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MyAttachmentOut"
+                  },
+                  "title": "Response My Attachments Api V1 Netgw Attachments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "My Attachments",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/netgw/attachments/{instance_uuid}": {
+      "delete": {
+        "description": "Detach one of the caller's instances from whatever gateway holds it (always allowed to the\ninstance's owner, organization gateways included).",
+        "operationId": "detach_own_api_v1_netgw_attachments__instance_uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_uuid",
+            "required": true,
+            "schema": {
+              "title": "Instance Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Detach Own",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
     "/api/v1/netgw/config": {
       "get": {
         "description": "Whether gateways are offered here, limits, and the platform egress addresses to allow on\nthe tenant side.",
@@ -21919,6 +23692,1137 @@
         "summary": "Mark Read",
         "tags": [
           "notify"
+        ]
+      }
+    },
+    "/api/v1/org": {
+      "get": {
+        "description": "The caller's organization and role (org null outside one) and the count of pending\ninvitations addressed to the caller.",
+        "operationId": "get_my_org_api_v1_org_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyOrgOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get My Org",
+        "tags": [
+          "orgs"
+        ]
+      },
+      "patch": {
+        "description": "Owner only.",
+        "operationId": "rename_org_api_v1_org_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyOrgOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename Org",
+        "tags": [
+          "orgs"
+        ]
+      },
+      "post": {
+        "description": "Create an organization owned by the caller (outside any organization only). An\nidempotency-key replay returns 200 + X-Idempotent-Replay.",
+        "operationId": "create_org_api_v1_org_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyOrgOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Org",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/disclosure": {
+      "get": {
+        "description": "What organization owners and admins can see about a member; accepting an invitation\nrecords this version.",
+        "operationId": "get_disclosure_api_v1_org_disclosure_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisclosureOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Disclosure",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/dissolve": {
+      "post": {
+        "description": "Owner only, the organization name typed again: memberships and pending invitations end,\norganization gateways are deleted. Members' accounts, balances and resources are untouched.",
+        "operationId": "dissolve_org_api_v1_org_dissolve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgDissolve"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyOrgOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dissolve Org",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/finance": {
+      "get": {
+        "description": "Members' available balance, this billing month's bills since they joined, hourly burn and\nthe hours it lasts (owners and admins; every read is audited).",
+        "operationId": "org_finance_api_v1_org_finance_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgFinanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Org Finance",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/invitations": {
+      "get": {
+        "description": "Sent invitations (owners and admins), newest first.",
+        "operationId": "list_invitations_api_v1_org_invitations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InvitationOut"
+                  },
+                  "title": "Response List Invitations Api V1 Org Invitations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Invitations",
+        "tags": [
+          "orgs"
+        ]
+      },
+      "post": {
+        "description": "Invite an email address (admins invite members, the owner also admins). The answer never\ntells whether an account exists; a pending invitation for the same address is returned\nunchanged.",
+        "operationId": "invite_api_v1_org_invitations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Invite",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/invitations/received": {
+      "get": {
+        "description": "Pending invitations addressed to the caller's verified email.",
+        "operationId": "received_invitations_api_v1_org_invitations_received_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReceivedInvitationOut"
+                  },
+                  "title": "Response Received Invitations Api V1 Org Invitations Received Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Received Invitations",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/invitations/received/{uuid}/accept": {
+      "post": {
+        "description": "Join the organization; consent_version must be the current disclosure version.",
+        "operationId": "accept_invitation_api_v1_org_invitations_received__uuid__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationAccept"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyOrgOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accept Invitation",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/invitations/received/{uuid}/decline": {
+      "post": {
+        "operationId": "decline_invitation_api_v1_org_invitations_received__uuid__decline_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Decline Invitation",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/invitations/{uuid}": {
+      "delete": {
+        "operationId": "revoke_invitation_api_v1_org_invitations__uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Invitation",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/leave": {
+      "post": {
+        "description": "Admins and members; the owner transfers ownership or dissolves first.",
+        "operationId": "leave_org_api_v1_org_leave_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyOrgOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Leave Org",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/members": {
+      "get": {
+        "description": "Owners and admins.",
+        "operationId": "list_members_api_v1_org_members_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemberOut"
+                  },
+                  "title": "Response List Members Api V1 Org Members Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Members",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/members/{member_id}": {
+      "delete": {
+        "description": "Owner removes anyone else, an admin removes members only. The member's instances leave the\norganization's gateways in the same transaction.",
+        "operationId": "remove_member_api_v1_org_members__member_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Member",
+        "tags": [
+          "orgs"
+        ]
+      },
+      "patch": {
+        "description": "Owner: role (admin / member) and remark; admin: remark only.",
+        "operationId": "update_member_api_v1_org_members__member_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Member",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/gateways": {
+      "get": {
+        "description": "The organization's gateways (owners and admins).",
+        "operationId": "list_org_gateways_api_v1_org_netgw_gateways_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgGatewayOut"
+                  },
+                  "title": "Response List Org Gateways Api V1 Org Netgw Gateways Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Org Gateways",
+        "tags": [
+          "netgw"
+        ]
+      },
+      "post": {
+        "description": "Create an organization gateway (owners and admins): whole-subnet access is required\n(`netgw.orgL3Required`); members' instances are attached by owners and admins.",
+        "operationId": "create_org_gateway_api_v1_org_netgw_gateways_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Org Gateway",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/gateways/{uuid}": {
+      "delete": {
+        "operationId": "delete_org_gateway_api_v1_org_netgw_gateways__uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Org Gateway",
+        "tags": [
+          "netgw"
+        ]
+      },
+      "get": {
+        "operationId": "get_org_gateway_api_v1_org_netgw_gateways__uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Org Gateway",
+        "tags": [
+          "netgw"
+        ]
+      },
+      "put": {
+        "operationId": "update_org_gateway_api_v1_org_netgw_gateways__uuid__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Org Gateway",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/gateways/{uuid}/attachments": {
+      "post": {
+        "description": "Attach a member's dev instance; a non-member's instance is a 404 like a missing one. The\nmember is notified; the instance gets its tunnel interface on its next start.",
+        "operationId": "attach_org_instance_api_v1_org_netgw_gateways__uuid__attachments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachmentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Attach Org Instance",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/gateways/{uuid}/attachments/{instance_uuid}": {
+      "delete": {
+        "operationId": "detach_org_instance_api_v1_org_netgw_gateways__uuid__attachments__instance_uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "instance_uuid",
+            "required": true,
+            "schema": {
+              "title": "Instance Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Detach Org Instance",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/gateways/{uuid}/logs": {
+      "get": {
+        "description": "Gateway container log: owners and admins, 20/h per user, not audited.",
+        "operationId": "org_gateway_logs_api_v1_org_netgw_gateways__uuid__logs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tail_lines",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Tail Lines",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceLogsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Org Gateway Logs",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/instances": {
+      "get": {
+        "description": "Members' unreleased dev instances and whether each can be attached (owners and admins); no\naccess data.",
+        "operationId": "org_instances_api_v1_org_netgw_instances_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgInstanceOut"
+                  },
+                  "title": "Response Org Instances Api V1 Org Netgw Instances Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Org Instances",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/org/transfer": {
+      "post": {
+        "description": "Owner only: the target member becomes the owner, the caller an admin.",
+        "operationId": "transfer_owner_api_v1_org_transfer_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgTransfer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyOrgOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Transfer Owner",
+        "tags": [
+          "orgs"
         ]
       }
     },

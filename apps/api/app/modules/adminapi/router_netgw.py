@@ -13,10 +13,11 @@ router = APIRouter(tags=["admin-netgw"])
 
 @router.get("/netgw/gateways", dependencies=[require_roles("ops", "finance", "readonly")])
 async def admin_list_gateways(
-    session: DbSession, user_id: int | None = None
+    session: DbSession, user_id: int | None = None, org_uuid: str | None = None
 ) -> list[AdminGatewayOut]:
-    """Every tenant's gateways (newest first, at most 500); secrets never included."""
-    return await netgw_service.admin_list_gateways(session, user_id=user_id)
+    """Every tenant's gateways, personal and organization (newest first, at most 500); user_id is
+    the owner or the creator, org_uuid narrows to one organization; secrets never included."""
+    return await netgw_service.admin_list_gateways(session, user_id=user_id, org_uuid=org_uuid)
 
 
 @router.post("/netgw/gateways/{uuid}/delete", dependencies=[require_roles("ops")])
@@ -26,4 +27,4 @@ async def admin_delete_gateway(
     """Tear down a tenant's gateway (reason required)."""
     gw = await netgw_service.admin_delete_gateway(session, uuid)
     set_audit_target(request, f"netgw:{uuid}", detail={"reason": body.reason})
-    return (await netgw_service.admin_list_gateways(session, user_id=gw.user_id, uuid=uuid))[0]
+    return (await netgw_service.admin_list_gateways(session, uuid=gw.uuid))[0]

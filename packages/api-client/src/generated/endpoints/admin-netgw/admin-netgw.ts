@@ -28,7 +28,8 @@ export const getAdminListGatewaysApiAdminV1NetgwGatewaysGetUrl = (params?: Admin
 }
 
 /**
- * Every tenant's gateways (newest first, at most 500); secrets never included.
+ * Every tenant's gateways, personal and organization (newest first, at most 500); user_id is
+ * the owner or the creator, org_uuid narrows to one organization; secrets never included.
  * @summary Admin List Gateways
  */
 export const adminListGatewaysApiAdminV1NetgwGatewaysGet = async (params?: AdminListGatewaysApiAdminV1NetgwGatewaysGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminGatewayOut[]> => {

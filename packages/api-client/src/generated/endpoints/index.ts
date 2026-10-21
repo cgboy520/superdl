@@ -10,6 +10,7 @@ export * from "./metering/metering";
 export * from "./netgw/netgw";
 export * from "./node-enroll/node-enroll";
 export * from "./notify/notify";
+export * from "./orgs/orgs";
 export * from "./services/services";
 export * from "./tickets/tickets";
 export * from "./webhooks/webhooks";

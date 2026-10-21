@@ -11,5 +11,6 @@ export interface NetgwConfigOut {
   enabled: boolean;
   max_forwards: number;
   max_gateways: number;
+  max_org_gateways: number;
   socks_port: number;
 }

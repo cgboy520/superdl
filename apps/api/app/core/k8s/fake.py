@@ -120,7 +120,7 @@ class FakeOrchestrator:
     log_calls: list[tuple[str, str, int]] = field(default_factory=list)
     netgw: dict[str, NetgwSpec] = field(default_factory=dict)
     netgw_ready: dict[str, bool] = field(default_factory=dict)
-    netgw_deleted: list[tuple[str, str]] = field(default_factory=list)
+    netgw_deleted: list[str] = field(default_factory=list)
     netgw_logs: dict[str, str] = field(default_factory=dict)
     fail_next_netgw: bool = False
 
@@ -525,19 +525,19 @@ class FakeOrchestrator:
         if self.fail_next_netgw:
             self.fail_next_netgw = False
             raise RuntimeError("fake: apply_netgw failed")
-        self.namespaces.add(spec.tenant_namespace)
+        if spec.tenant_namespace is not None:
+            self.namespaces.add(spec.tenant_namespace)
         self.netgw[spec.uuid] = spec
 
-    async def delete_netgw(self, gateway_uuid: str, tenant_namespace: str) -> None:
+    async def delete_netgw(self, gateway_uuid: str) -> None:
         self.netgw.pop(gateway_uuid, None)
         self.netgw_ready.pop(gateway_uuid, None)
-        self.netgw_deleted.append((gateway_uuid, tenant_namespace))
+        self.netgw_deleted.append(gateway_uuid)
 
     async def list_netgw(self) -> list[NetgwStatus]:
         return [
             NetgwStatus(
                 uuid=uuid,
-                tenant_namespace=spec.tenant_namespace,
                 image=spec.image,
                 ready=self.netgw_ready.get(uuid, False),
                 phase="Running",

@@ -12,7 +12,7 @@ const INSTANCE_TYPES = new Set(["instance", "preempted", "subscription", "gpu_fa
 const SERVICE_TYPES = new Set(["service"]);
 
 /** Notification type → fallback target (list page without target_id) */
-function fallbackOf(type: string): "/billing" | "/instances" | "/services" | "/support" | null {
+function fallbackOf(type: string): "/billing" | "/instances" | "/services" | "/support" | "/org" | null {
   switch (type) {
     case "balance_warn":
     case "arrears":
@@ -28,6 +28,8 @@ function fallbackOf(type: string): "/billing" | "/instances" | "/services" | "/s
       return "/support";
     case "service":
       return "/services";
+    case "org":
+      return "/org";
     default:
       return null;
   }

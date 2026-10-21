@@ -18,6 +18,7 @@ import { Route as ConsoleInstancesRouteImport } from './routes/_console.instance
 import { Route as ConsoleMarketRouteImport } from './routes/_console.market'
 import { Route as ConsoleNetworkRouteImport } from './routes/_console.network'
 import { Route as ConsoleNotificationsRouteImport } from './routes/_console.notifications'
+import { Route as ConsoleOrgRouteImport } from './routes/_console.org'
 import { Route as ConsoleServicesRouteImport } from './routes/_console.services'
 import { Route as ConsoleSettingsRouteImport } from './routes/_console.settings'
 import { Route as ConsoleStorageRouteImport } from './routes/_console.storage'
@@ -73,6 +74,11 @@ const ConsoleNetworkRoute = ConsoleNetworkRouteImport.update({
 const ConsoleNotificationsRoute = ConsoleNotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
+  getParentRoute: () => ConsoleRoute,
+} as any)
+const ConsoleOrgRoute = ConsoleOrgRouteImport.update({
+  id: '/org',
+  path: '/org',
   getParentRoute: () => ConsoleRoute,
 } as any)
 const ConsoleServicesRoute = ConsoleServicesRouteImport.update({
@@ -146,6 +152,7 @@ export interface FileRoutesByFullPath {
   '/market': typeof ConsoleMarketRoute
   '/network': typeof ConsoleNetworkRoute
   '/notifications': typeof ConsoleNotificationsRoute
+  '/org': typeof ConsoleOrgRoute
   '/services': typeof ConsoleServicesRoute
   '/settings': typeof ConsoleSettingsRoute
   '/storage': typeof ConsoleStorageRoute
@@ -168,6 +175,7 @@ export interface FileRoutesByTo {
   '/market': typeof ConsoleMarketRoute
   '/network': typeof ConsoleNetworkRoute
   '/notifications': typeof ConsoleNotificationsRoute
+  '/org': typeof ConsoleOrgRoute
   '/services': typeof ConsoleServicesRoute
   '/settings': typeof ConsoleSettingsRoute
   '/storage': typeof ConsoleStorageRoute
@@ -192,6 +200,7 @@ export interface FileRoutesById {
   '/_console/market': typeof ConsoleMarketRoute
   '/_console/network': typeof ConsoleNetworkRoute
   '/_console/notifications': typeof ConsoleNotificationsRoute
+  '/_console/org': typeof ConsoleOrgRoute
   '/_console/services': typeof ConsoleServicesRoute
   '/_console/settings': typeof ConsoleSettingsRoute
   '/_console/storage': typeof ConsoleStorageRoute
@@ -216,6 +225,7 @@ export interface FileRouteTypes {
     | '/market'
     | '/network'
     | '/notifications'
+    | '/org'
     | '/services'
     | '/settings'
     | '/storage'
@@ -238,6 +248,7 @@ export interface FileRouteTypes {
     | '/market'
     | '/network'
     | '/notifications'
+    | '/org'
     | '/services'
     | '/settings'
     | '/storage'
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/_console/market'
     | '/_console/network'
     | '/_console/notifications'
+    | '/_console/org'
     | '/_console/services'
     | '/_console/settings'
     | '/_console/storage'
@@ -348,6 +360,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/notifications'
       preLoaderRoute: typeof ConsoleNotificationsRouteImport
+      parentRoute: typeof ConsoleRoute
+    }
+    '/_console/org': {
+      id: '/_console/org'
+      path: '/org'
+      fullPath: '/org'
+      preLoaderRoute: typeof ConsoleOrgRouteImport
       parentRoute: typeof ConsoleRoute
     }
     '/_console/services': {
@@ -443,6 +462,7 @@ interface ConsoleRouteChildren {
   ConsoleMarketRoute: typeof ConsoleMarketRoute
   ConsoleNetworkRoute: typeof ConsoleNetworkRoute
   ConsoleNotificationsRoute: typeof ConsoleNotificationsRoute
+  ConsoleOrgRoute: typeof ConsoleOrgRoute
   ConsoleServicesRoute: typeof ConsoleServicesRoute
   ConsoleSettingsRoute: typeof ConsoleSettingsRoute
   ConsoleStorageRoute: typeof ConsoleStorageRoute
@@ -460,6 +480,7 @@ const ConsoleRouteChildren: ConsoleRouteChildren = {
   ConsoleMarketRoute: ConsoleMarketRoute,
   ConsoleNetworkRoute: ConsoleNetworkRoute,
   ConsoleNotificationsRoute: ConsoleNotificationsRoute,
+  ConsoleOrgRoute: ConsoleOrgRoute,
   ConsoleServicesRoute: ConsoleServicesRoute,
   ConsoleSettingsRoute: ConsoleSettingsRoute,
   ConsoleStorageRoute: ConsoleStorageRoute,

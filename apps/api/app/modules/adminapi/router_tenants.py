@@ -45,6 +45,7 @@ from app.modules.orchestrator import (
     queries as orchestrator_queries,
     transitions as orchestrator_transitions,
 )
+from app.modules.orgs import service as orgs_service
 
 router = APIRouter(tags=["admin"])
 
@@ -100,6 +101,7 @@ async def admin_list_tenants(
     balances = await billing_service.balances_by_user(session, page_user_ids)
     consumed = await billing_service.consumed_by_user(session, page_user_ids)
     stats = await orchestrator_queries.instance_disk_stats_by_user(session, page_user_ids)
+    orgs = await orgs_service.orgs_of_users(session, page_user_ids)
     mask_realname = not reveal
     realname_hits = 0
     out = []
@@ -121,6 +123,7 @@ async def admin_list_tenants(
                 created_at=u.created_at.isoformat(),
                 kyc_status=kyc_status,
                 kyc_name=kyc_name,
+                org=orgs.get(u.id),
             )
         )
     if realname_hits:

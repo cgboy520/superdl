@@ -35,6 +35,7 @@ import type {
   AdminListInvoicesApiAdminV1InvoicesGetParams,
   AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams,
   AdminListOrdersApiAdminV1OrdersGetParams,
+  AdminListOrgsApiAdminV1OrgsGetParams,
   AdminListRefundsApiAdminV1RefundsGetParams,
   AdminListServicesApiAdminV1ServicesGetParams,
   AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams,
@@ -44,6 +45,7 @@ import type {
   AdminLoginTokenOut,
   AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams,
   AdminOrdersExportApiAdminV1OrdersExportGetParams,
+  AdminOrgDetailOut,
   AdminOut,
   AdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostHeaders,
   AdminPublishAnnouncementApiAdminV1AnnouncementsPostHeaders,
@@ -115,6 +117,7 @@ import type {
   OrderBackfillOut,
   OrderBackfillRequest,
   OrderVerifyOut,
+  OrgUserReason,
   OutboxDiscardRequest,
   OutboxRetryRequest,
   OutboxTaskStatusOut,
@@ -124,6 +127,7 @@ import type {
   PageAdminAlertOut,
   PageAdminInstanceOut,
   PageAdminOrderOut,
+  PageAdminOrgOut,
   PageAdminRefundOut,
   PageAdminServiceOut,
   PageAdminSettlementGapOut,
@@ -139,6 +143,7 @@ import type {
   PolicyUpdateRequest,
   PortPoolStatsOut,
   PrewarmEnqueuedOut,
+  ReasonBody,
   ReconciliationApiAdminV1ReconciliationGetParams,
   ReconciliationExportApiAdminV1ReconciliationExportGetParams,
   ReconciliationOut,
@@ -2659,6 +2664,180 @@ export const adminOrdersExportApiAdminV1OrdersExportGet = async (params?: AdminO
     method: 'GET'
 
 
+  }
+);}
+
+
+export const getAdminListOrgsApiAdminV1OrgsGetUrl = (params?: AdminListOrgsApiAdminV1OrgsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/orgs?${stringifiedParams}` : `/api/admin/v1/orgs`
+}
+
+/**
+ * Organizations, newest first (cursor paged). q = organization uuid, a member's user id or a
+ * name fragment; every search writes an audit row.
+ * @summary Admin List Orgs
+ */
+export const adminListOrgsApiAdminV1OrgsGet = async (params?: AdminListOrgsApiAdminV1OrgsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<PageAdminOrgOut> => {
+
+  return customFetch<PageAdminOrgOut>(getAdminListOrgsApiAdminV1OrgsGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getAdminGetOrgApiAdminV1OrgsUuidGetUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/admin/v1/orgs/${uuid}`
+}
+
+/**
+ * Members (masked handles) and invitations (masked emails).
+ * @summary Admin Get Org
+ */
+export const adminGetOrgApiAdminV1OrgsUuidGet = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrgDetailOut> => {
+
+  return customFetch<AdminOrgDetailOut>(getAdminGetOrgApiAdminV1OrgsUuidGetUrl(uuid),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getAdminDissolveOrgApiAdminV1OrgsUuidDissolvePostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/admin/v1/orgs/${uuid}/dissolve`
+}
+
+/**
+ * End every membership and pending invitation; the organization's gateways are deleted.
+ * @summary Admin Dissolve Org
+ */
+export const adminDissolveOrgApiAdminV1OrgsUuidDissolvePost = async (uuid: string,
+    reasonBody: ReasonBody, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrgDetailOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminOrgDetailOut>(getAdminDissolveOrgApiAdminV1OrgsUuidDissolvePostUrl(uuid),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reasonBody)
+  }
+);}
+
+
+export const getAdminRemoveOrgMemberApiAdminV1OrgsUuidMembersRemovePostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/admin/v1/orgs/${uuid}/members/remove`
+}
+
+/**
+ * Remove a member other than the owner.
+ * @summary Admin Remove Org Member
+ */
+export const adminRemoveOrgMemberApiAdminV1OrgsUuidMembersRemovePost = async (uuid: string,
+    orgUserReason: OrgUserReason, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrgDetailOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminOrgDetailOut>(getAdminRemoveOrgMemberApiAdminV1OrgsUuidMembersRemovePostUrl(uuid),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(orgUserReason)
+  }
+);}
+
+
+export const getAdminTransferOrgApiAdminV1OrgsUuidTransferPostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/admin/v1/orgs/${uuid}/transfer`
+}
+
+/**
+ * Make a member the owner (the previous owner becomes an admin): ownership grants sight of
+ * members' balances, so admin role only.
+ * @summary Admin Transfer Org
+ */
+export const adminTransferOrgApiAdminV1OrgsUuidTransferPost = async (uuid: string,
+    orgUserReason: OrgUserReason, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrgDetailOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<AdminOrgDetailOut>(getAdminTransferOrgApiAdminV1OrgsUuidTransferPostUrl(uuid),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(orgUserReason)
   }
 );}
 

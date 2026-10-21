@@ -7,16 +7,70 @@
 import type {
   AttachmentIn,
   CreateGatewayApiV1NetgwGatewaysPostHeaders,
+  CreateOrgGatewayApiV1OrgNetgwGatewaysPostHeaders,
   GatewayIn,
   GatewayLogsApiV1NetgwGatewaysUuidLogsGetParams,
   GatewayOut,
   InstanceForwardIn,
   InstanceLogsOut,
   IntranetForwardIn,
-  NetgwConfigOut
+  MyAttachmentOut,
+  NetgwConfigOut,
+  OrgGatewayLogsApiV1OrgNetgwGatewaysUuidLogsGetParams,
+  OrgGatewayOut,
+  OrgInstanceOut
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
+
+export const getMyAttachmentsApiV1NetgwAttachmentsGetUrl = () => {
+
+
+
+
+  return `/api/v1/netgw/attachments`
+}
+
+/**
+ * The caller's instances attached to a gateway, personal or organization.
+ * @summary My Attachments
+ */
+export const myAttachmentsApiV1NetgwAttachmentsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<MyAttachmentOut[]> => {
+
+  return customFetch<MyAttachmentOut[]>(getMyAttachmentsApiV1NetgwAttachmentsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getDetachOwnApiV1NetgwAttachmentsInstanceUuidDeleteUrl = (instanceUuid: string,) => {
+
+
+
+
+  return `/api/v1/netgw/attachments/${instanceUuid}`
+}
+
+/**
+ * Detach one of the caller's instances from whatever gateway holds it (always allowed to the
+ * instance's owner, organization gateways included).
+ * @summary Detach Own
+ */
+export const detachOwnApiV1NetgwAttachmentsInstanceUuidDelete = async (instanceUuid: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDetachOwnApiV1NetgwAttachmentsInstanceUuidDeleteUrl(instanceUuid),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
 
 export const getGetConfigApiV1NetgwConfigGetUrl = () => {
 
@@ -347,6 +401,277 @@ export const gatewayLogsApiV1NetgwGatewaysUuidLogsGet = async (uuid: string,
     params?: GatewayLogsApiV1NetgwGatewaysUuidLogsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<InstanceLogsOut> => {
 
   return customFetch<InstanceLogsOut>(getGatewayLogsApiV1NetgwGatewaysUuidLogsGetUrl(uuid,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getListOrgGatewaysApiV1OrgNetgwGatewaysGetUrl = () => {
+
+
+
+
+  return `/api/v1/org/netgw/gateways`
+}
+
+/**
+ * The organization's gateways (owners and admins).
+ * @summary List Org Gateways
+ */
+export const listOrgGatewaysApiV1OrgNetgwGatewaysGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<OrgGatewayOut[]> => {
+
+  return customFetch<OrgGatewayOut[]>(getListOrgGatewaysApiV1OrgNetgwGatewaysGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getCreateOrgGatewayApiV1OrgNetgwGatewaysPostUrl = () => {
+
+
+
+
+  return `/api/v1/org/netgw/gateways`
+}
+
+/**
+ * Create an organization gateway (owners and admins): whole-subnet access is required
+ * (`netgw.orgL3Required`); members' instances are attached by owners and admins.
+ * @summary Create Org Gateway
+ */
+export const createOrgGatewayApiV1OrgNetgwGatewaysPost = async (gatewayIn: GatewayIn,
+    headers?: CreateOrgGatewayApiV1OrgNetgwGatewaysPostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<OrgGatewayOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OrgGatewayOut>(getCreateOrgGatewayApiV1OrgNetgwGatewaysPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
+    body: JSON.stringify(gatewayIn)
+  }
+);}
+
+
+export const getDeleteOrgGatewayApiV1OrgNetgwGatewaysUuidDeleteUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/org/netgw/gateways/${uuid}`
+}
+
+/**
+ * @summary Delete Org Gateway
+ */
+export const deleteOrgGatewayApiV1OrgNetgwGatewaysUuidDelete = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<OrgGatewayOut> => {
+
+  return customFetch<OrgGatewayOut>(getDeleteOrgGatewayApiV1OrgNetgwGatewaysUuidDeleteUrl(uuid),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+export const getGetOrgGatewayApiV1OrgNetgwGatewaysUuidGetUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/org/netgw/gateways/${uuid}`
+}
+
+/**
+ * @summary Get Org Gateway
+ */
+export const getOrgGatewayApiV1OrgNetgwGatewaysUuidGet = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<OrgGatewayOut> => {
+
+  return customFetch<OrgGatewayOut>(getGetOrgGatewayApiV1OrgNetgwGatewaysUuidGetUrl(uuid),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getUpdateOrgGatewayApiV1OrgNetgwGatewaysUuidPutUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/org/netgw/gateways/${uuid}`
+}
+
+/**
+ * @summary Update Org Gateway
+ */
+export const updateOrgGatewayApiV1OrgNetgwGatewaysUuidPut = async (uuid: string,
+    gatewayIn: GatewayIn, options?: Parameters<typeof customFetch>[1]): Promise<OrgGatewayOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OrgGatewayOut>(getUpdateOrgGatewayApiV1OrgNetgwGatewaysUuidPutUrl(uuid),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(gatewayIn)
+  }
+);}
+
+
+export const getAttachOrgInstanceApiV1OrgNetgwGatewaysUuidAttachmentsPostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/org/netgw/gateways/${uuid}/attachments`
+}
+
+/**
+ * Attach a member's dev instance; a non-member's instance is a 404 like a missing one. The
+ * member is notified; the instance gets its tunnel interface on its next start.
+ * @summary Attach Org Instance
+ */
+export const attachOrgInstanceApiV1OrgNetgwGatewaysUuidAttachmentsPost = async (uuid: string,
+    attachmentIn: AttachmentIn, options?: Parameters<typeof customFetch>[1]): Promise<OrgGatewayOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OrgGatewayOut>(getAttachOrgInstanceApiV1OrgNetgwGatewaysUuidAttachmentsPostUrl(uuid),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(attachmentIn)
+  }
+);}
+
+
+export const getDetachOrgInstanceApiV1OrgNetgwGatewaysUuidAttachmentsInstanceUuidDeleteUrl = (uuid: string,
+    instanceUuid: string,) => {
+
+
+
+
+  return `/api/v1/org/netgw/gateways/${uuid}/attachments/${instanceUuid}`
+}
+
+/**
+ * @summary Detach Org Instance
+ */
+export const detachOrgInstanceApiV1OrgNetgwGatewaysUuidAttachmentsInstanceUuidDelete = async (uuid: string,
+    instanceUuid: string, options?: Parameters<typeof customFetch>[1]): Promise<OrgGatewayOut> => {
+
+  return customFetch<OrgGatewayOut>(getDetachOrgInstanceApiV1OrgNetgwGatewaysUuidAttachmentsInstanceUuidDeleteUrl(uuid,instanceUuid),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+export const getOrgGatewayLogsApiV1OrgNetgwGatewaysUuidLogsGetUrl = (uuid: string,
+    params?: OrgGatewayLogsApiV1OrgNetgwGatewaysUuidLogsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/org/netgw/gateways/${uuid}/logs?${stringifiedParams}` : `/api/v1/org/netgw/gateways/${uuid}/logs`
+}
+
+/**
+ * Gateway container log: owners and admins, 20/h per user, not audited.
+ * @summary Org Gateway Logs
+ */
+export const orgGatewayLogsApiV1OrgNetgwGatewaysUuidLogsGet = async (uuid: string,
+    params?: OrgGatewayLogsApiV1OrgNetgwGatewaysUuidLogsGetParams, options?: Parameters<typeof customFetch>[1]): Promise<InstanceLogsOut> => {
+
+  return customFetch<InstanceLogsOut>(getOrgGatewayLogsApiV1OrgNetgwGatewaysUuidLogsGetUrl(uuid,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getOrgInstancesApiV1OrgNetgwInstancesGetUrl = () => {
+
+
+
+
+  return `/api/v1/org/netgw/instances`
+}
+
+/**
+ * Members' unreleased dev instances and whether each can be attached (owners and admins); no
+ * access data.
+ * @summary Org Instances
+ */
+export const orgInstancesApiV1OrgNetgwInstancesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<OrgInstanceOut[]> => {
+
+  return customFetch<OrgInstanceOut[]>(getOrgInstancesApiV1OrgNetgwInstancesGetUrl(),
   {
     ...options,
     method: 'GET'

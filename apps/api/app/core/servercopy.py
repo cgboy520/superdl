@@ -342,6 +342,95 @@ _COPY: dict[str, dict[str, str]] = {
         ),
         "zh-CN": "自动驳回:余额 {balance} 未提现,请先经退款流程提现,到账后重新申请",  # cjk-ok
     },
+    "account.deletion_reject.org_owner": {
+        "en-US": (
+            "Auto-rejected: the account owns an organization with {members} other member(s);"
+            " transfer ownership or dissolve it and apply again"
+        ),
+        "zh-CN": (
+            "自动驳回:该账号是组织的所有者,组织内还有 {members} 名其他成员;"  # cjk-ok
+            "请先转让所有者或解散组织后重新申请"  # cjk-ok
+        ),
+    },
+    "netgw.org_attached.title": {
+        "en-US": 'Instance "{name}" joined an organization network',
+        "zh-CN": "实例「{name}」已接入组织网络",  # cjk-ok
+    },
+    "netgw.org_attached.content": {
+        "en-US": (
+            'An administrator of "{org}" attached instance "{name}" to the gateway "{gateway}".'
+            " It takes effect at the instance's next start; you can detach it at any time on the"
+            " Private network page."
+        ),
+        "zh-CN": (
+            "「{org}」的管理员已将实例「{name}」接入网关「{gateway}」,"  # cjk-ok
+            "实例下次启动后生效;您可随时在「私网连接」页断开。"  # cjk-ok
+        ),
+    },
+    "netgw.org_detached.title": {
+        "en-US": 'Instance "{name}" left an organization network',
+        "zh-CN": "实例「{name}」已断开组织网络",  # cjk-ok
+    },
+    "netgw.org_detached.content": {
+        "en-US": (
+            'An administrator of "{org}" detached instance "{name}" from the gateway "{gateway}".'
+            " The gateway drops it now; its tunnel interface goes with its next restart."
+        ),
+        "zh-CN": (
+            "「{org}」的管理员已将实例「{name}」从网关「{gateway}」断开,"  # cjk-ok
+            "网关立即停止转发,实例的隧道网卡在下次重启后移除。"  # cjk-ok
+        ),
+    },
+    "orgs.invited.title": {
+        "en-US": 'Invitation to join "{org}"',
+        "zh-CN": "邀请您加入「{org}」",  # cjk-ok
+    },
+    "orgs.invited.content": {
+        "en-US": (
+            'You are invited to join the organization "{org}". Review what its administrators can'
+            " see on the Organization page before accepting."
+        ),
+        "zh-CN": (
+            "您被邀请加入组织「{org}」。"  # cjk-ok
+            "接受前请在「组织」页查看其管理员可见的信息。"  # cjk-ok
+        ),
+    },
+    "orgs.removed.title": {
+        "en-US": 'You left "{org}"',
+        "zh-CN": "您已不在「{org}」",  # cjk-ok
+    },
+    "orgs.removed.content": {
+        "en-US": (
+            'You were removed from the organization "{org}". Your account, balance and resources'
+            " are unchanged; your instances were detached from its gateways."
+        ),
+        "zh-CN": (
+            "您已被移出组织「{org}」。账号、余额和资源不受影响,"  # cjk-ok
+            "您的实例已从该组织的网关断开。"  # cjk-ok
+        ),
+    },
+    "orgs.dissolved.title": {
+        "en-US": '"{org}" was dissolved',
+        "zh-CN": "「{org}」已解散",  # cjk-ok
+    },
+    "orgs.dissolved.content": {
+        "en-US": (
+            'The organization "{org}" was dissolved. Your account, balance and resources are'
+            " unchanged."
+        ),
+        "zh-CN": "组织「{org}」已解散。您的账号、余额和资源不受影响。",  # cjk-ok
+    },
+    "orgs.owner_transferred.title": {
+        "en-US": 'You now own "{org}"',
+        "zh-CN": "您已成为「{org}」的所有者",  # cjk-ok
+    },
+    "orgs.owner_transferred.content": {
+        "en-US": (
+            'Ownership of the organization "{org}" was transferred to you; you can now manage'
+            " its members, administrators and settings."
+        ),
+        "zh-CN": "组织「{org}」的所有者已转给您,您现在可以管理其成员、管理员和设置。",  # cjk-ok
+    },
     "billing.invoice_issued.title": {"en-US": "Invoice issued", "zh-CN": "发票已开具"},  # cjk-ok
     "billing.invoice_issued.content": {
         "en-US": (

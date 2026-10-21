@@ -1,6 +1,7 @@
 """Gateway patrol (30 s): tunnel state from Pod readiness, re-apply on a missing Deployment or an
-image other than SUPERDL_NETGW_IMAGE, attachments of released instances dropped, gateways of
-deleted accounts torn down, Deployments without a row deleted."""
+image other than SUPERDL_NETGW_IMAGE, attachments of released instances (and of non-members on
+organization gateways) dropped, personal gateways of deleted accounts and gateways of dissolved
+organizations torn down, Deployments without a row deleted."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,6 +16,7 @@ from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
 from app.modules.netgw import service
 from app.modules.netgw.models import STATUS_DELETING, NetGateway
+from app.modules.orgs import service as orgs_service
 
 logger = get_logger(__name__)
 
@@ -31,7 +33,12 @@ async def _converge(session: AsyncSession, observed: dict[str, NetgwStatus]) -> 
     known = set((await session.scalars(select(NetGateway.uuid))).all())
     orphans = [o for uuid, o in observed.items() if uuid not in known]
     rows = list((await session.scalars(select(NetGateway).with_for_update(skip_locked=True))).all())
-    statuses = await account_service.user_statuses(session, {g.user_id for g in rows})
+    statuses = await account_service.user_statuses(
+        session, {g.user_id for g in rows if g.org_id is None}
+    )
+    org_statuses = await orgs_service.org_statuses(
+        session, {g.org_id for g in rows if g.org_id is not None}
+    )
     pruned = await service.prune_attachments(session, rows)
     if pruned:
         logger.info("netgw_attachments_pruned", count=pruned)
@@ -41,7 +48,11 @@ async def _converge(session: AsyncSession, observed: dict[str, NetgwStatus]) -> 
         obs = observed.get(gw.uuid)
         if gw.status == STATUS_DELETING:
             continue
-        if statuses.get(gw.user_id) == "deleted":
+        if (
+            statuses.get(gw.user_id) == "deleted"
+            if gw.org_id is None
+            else org_statuses.get(gw.org_id) != "active"
+        ):
             gw.status = STATUS_DELETING
             enqueue(session, service.DELETE_TASK, {"gateway_id": gw.id})
             continue
@@ -73,4 +84,4 @@ async def netgw_patrol(sm: async_sessionmaker[AsyncSession]) -> None:
             orphans = await _converge(session, observed)
         for orphan in orphans:
             logger.error("netgw_orphan_reclaimed", gateway_uuid=orphan.uuid)
-            await orch.delete_netgw(orphan.uuid, orphan.tenant_namespace)
+            await orch.delete_netgw(orphan.uuid)

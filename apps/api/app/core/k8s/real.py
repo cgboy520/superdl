@@ -74,10 +74,12 @@ from app.core.k8s.netgw import (
     attach_init_container,
     attach_volume,
     build_attach_secret,
+    build_l3_service,
     build_netgw_deployment,
     build_netgw_netpol,
     build_netgw_secret,
     build_netgw_services,
+    build_netgw_tenant_netpol,
     build_tenant_services,
     service_shape,
 )
@@ -1832,9 +1834,23 @@ class RealOrchestrator:
             lambda: self.net.patch_namespaced_network_policy(name, NETGW_NAMESPACE, policy),
         )
         self._sync_netgw_services_sync(NETGW_NAMESPACE, spec.uuid, build_netgw_services(spec))
-        self._sync_netgw_services_sync(
-            spec.tenant_namespace, spec.uuid, build_tenant_services(spec)
-        )
+        if spec.tenant_namespace is not None:
+            wanted = {spec.tenant_namespace}
+            self._sync_netgw_services_sync(
+                spec.tenant_namespace, spec.uuid, build_tenant_services(spec)
+            )
+        else:
+            wanted = set(spec.l3_namespaces)
+            for ns in spec.l3_namespaces:
+                self._sync_netgw_services_sync(ns, spec.uuid, [build_l3_service(spec, ns)])
+                tenant_policy = build_netgw_tenant_netpol(spec, ns)
+                _create_or_patch(
+                    lambda ns=ns, p=tenant_policy: self.net.create_namespaced_network_policy(ns, p),
+                    lambda ns=ns, p=tenant_policy: self.net.patch_namespaced_network_policy(
+                        name, ns, p
+                    ),
+                )
+        self._sweep_netgw_tenant_sync(spec.uuid, keep=wanted)
         deployment = build_netgw_deployment(spec)
         existing: Any = _ignore(
             lambda: self.apps.read_namespaced_deployment(name, NETGW_NAMESPACE), 404
@@ -1870,10 +1886,26 @@ class RealOrchestrator:
         for svc_name in current.keys() - wanted.keys():
             _ignore(lambda n=svc_name: self.core.delete_namespaced_service(n, namespace), 404)
 
-    async def delete_netgw(self, gateway_uuid: str, tenant_namespace: str) -> None:
-        await self._run(self._delete_netgw_sync, gateway_uuid, tenant_namespace)
+    def _sweep_netgw_tenant_sync(self, gateway_uuid: str, *, keep: set[str]) -> None:
+        """Remove the gateway's objects from tenant namespaces outside `keep`, found through its
+        labelled Services (every such namespace holds one). The NetworkPolicy goes first, so a
+        namespace never keeps an admission rule without the Service that marks it."""
+        current = {
+            s.metadata.namespace
+            for s in self._list_all(
+                self.core.list_service_for_all_namespaces,
+                label_selector=f"{NETGW_LABEL}={gateway_uuid}",
+            )
+        }
+        name = netgw_object_name(gateway_uuid)
+        for ns in sorted(current - keep - {NETGW_NAMESPACE}):
+            _ignore(lambda ns=ns: self.net.delete_namespaced_network_policy(name, ns), 404)
+            self._sync_netgw_services_sync(ns, gateway_uuid, [])
 
-    def _delete_netgw_sync(self, gateway_uuid: str, tenant_namespace: str) -> None:
+    async def delete_netgw(self, gateway_uuid: str) -> None:
+        await self._run(self._delete_netgw_sync, gateway_uuid)
+
+    def _delete_netgw_sync(self, gateway_uuid: str) -> None:
         name = netgw_object_name(gateway_uuid)
         for deleter in (
             lambda: self.apps.delete_namespaced_deployment(
@@ -1884,7 +1916,7 @@ class RealOrchestrator:
         ):
             _ignore(deleter, 404)
         self._sync_netgw_services_sync(NETGW_NAMESPACE, gateway_uuid, [])
-        self._sync_netgw_services_sync(tenant_namespace, gateway_uuid, [])
+        self._sweep_netgw_tenant_sync(gateway_uuid, keep=set())
 
     async def list_netgw(self) -> list[NetgwStatus]:
         return await self._run(self._list_netgw_sync)
@@ -1910,7 +1942,6 @@ class RealOrchestrator:
             out.append(
                 NetgwStatus(
                     uuid=gateway_uuid,
-                    tenant_namespace=labels.get(NETGW_TENANT_LABEL, ""),
                     image=containers[0].image if containers else "",
                     ready=pod is not None and _ready_condition(pod),
                     phase=(pod.status.phase or "Unknown") if pod is not None else "Missing",

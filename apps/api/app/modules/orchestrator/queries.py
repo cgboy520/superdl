@@ -12,6 +12,7 @@ from app.core.money import hourly_cost
 from app.core.pricing import MARKET_SPOT, MARKET_SUBSCRIPTION
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
+from app.modules.orchestrator.schemas import WORKLOAD_DEV
 
 DISK_BILLABLE_STATUSES: tuple[str, ...] = ("active",)
 DISK_ARREARS_CHAIN_STATUSES: tuple[str, ...] = ("active", "grace", "frozen")
@@ -46,6 +47,36 @@ async def get_instance(session: AsyncSession, user_id: int, uuid: str) -> Instan
     return instance
 
 
+async def instance_by_uuid(session: AsyncSession, uuid: str) -> Instance | None:
+    """Any owner; for callers that authorise against the owner themselves (organization
+    gateways)."""
+    return (
+        await session.execute(select(Instance).where(Instance.uuid == uuid))
+    ).scalar_one_or_none()
+
+
+async def dev_instances_of_users(session: AsyncSession, user_ids: Iterable[int]) -> list[Instance]:
+    """Unreleased dev instances of the given users, oldest first."""
+    ids = list(user_ids)
+    if not ids:
+        return []
+    return list(
+        (
+            await session.execute(
+                select(Instance)
+                .where(
+                    Instance.user_id.in_(ids),
+                    Instance.workload_type == WORKLOAD_DEV,
+                    Instance.status.not_in((sm_def.RELEASING, sm_def.RELEASED, sm_def.FAILED)),
+                )
+                .order_by(Instance.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
     """Hourly cost of the user's creating/starting instances, merged in by
     wallet.assert_can_afford."""
@@ -63,6 +94,30 @@ async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
         .all()
     )
     return sum((hourly_cost(price, count) for price, count in rows), Decimal("0.00"))
+
+
+async def running_cost_by_user(
+    session: AsyncSession, user_ids: Iterable[int]
+) -> dict[int, tuple[Decimal, int]]:
+    """user_id → (hourly cost of running non-subscription instances, running instance count);
+    users with nothing running are absent."""
+    ids = list(user_ids)
+    if not ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                Instance.user_id, Instance.market, Instance.price_hourly, Instance.gpu_count
+            ).where(Instance.user_id.in_(ids), Instance.status == sm_def.RUNNING)
+        )
+    ).tuples()
+    out: dict[int, tuple[Decimal, int]] = {}
+    for user_id, market, price, count in rows:
+        burn, running = out.get(user_id, (Decimal("0.00"), 0))
+        if market != MARKET_SUBSCRIPTION:
+            burn += hourly_cost(price, count)
+        out[user_id] = (burn, running + 1)
+    return out
 
 
 async def lock_instance_for_billing(session: AsyncSession, instance_id: int) -> None:

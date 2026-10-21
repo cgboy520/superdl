@@ -13,6 +13,7 @@ from app.modules.netgw import models as netgw_models
 from app.modules.nodes import models as nodes_models
 from app.modules.notify import models as notify_models
 from app.modules.orchestrator import models as orchestrator_models
+from app.modules.orgs import models as orgs_models
 from app.modules.services import models as services_models
 from app.modules.tickets import models as tickets_models
 
@@ -29,6 +30,7 @@ __all__ = [
     "nodes_models",
     "notify_models",
     "orchestrator_models",
+    "orgs_models",
     "outbox",
     "platform_config",
     "ratelimit",

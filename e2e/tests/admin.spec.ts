@@ -1,4 +1,4 @@
-/** 管理端冒烟:首次 MFA 绑定、登录与控制台导航;由 SUPERDL_ADMIN_E2E 门控。 */
+/** 管理端冒烟:首次 MFA 绑定、登录与控制台导航(含租户页的组织 tab 与组织抽屉);由 SUPERDL_ADMIN_E2E 门控。 */
 import { expect, test, type Page } from "@playwright/test";
 
 import { fillTotp } from "./totp";
@@ -33,4 +33,13 @@ test("管理端冒烟:登录页能打开、seed admin 能进控制台", async ({
   await expect(page.getByRole("button", { name: /^登\s*录$/ })).toBeVisible({ timeout: 15_000 });
 
   await loginAndBindMfa(page, SEED_ADMIN.username, SEED_ADMIN.password);
+
+  await page.goto(`${ADMIN}/tenants?tab=orgs`);
+  const orgs = page.getByRole("tabpanel", { name: "组织" });
+  await expect(orgs.getByRole("columnheader", { name: "所有者" })).toBeVisible();
+  const first = orgs.getByRole("row").nth(1);
+  if (await first.getByRole("cell").count()) {
+    await first.click();
+    await expect(page.getByRole("dialog", { name: "组织详情" }).getByText("成员").first()).toBeVisible();
+  }
 });

@@ -44,7 +44,7 @@ regexes = ['''sk_test_0123456789abcdef''', '''whsec_(?:testsecret)?0123456789(?:
 description = "netgw test cases: sample WireGuard keys (random, never deployed) for the agent, API and e2e fixtures"
 condition = "AND"
 regexTarget = "line"
-paths = ['''deploy/netgw/tests/fixtures\.py''', '''apps/api/tests/test_netgw[a-z0-9_]*\.py''', '''e2e/tests/netgw\.spec\.ts''']
+paths = ['''deploy/netgw/tests/fixtures\.py''', '''apps/api/tests/test_netgw[a-z0-9_]*\.py''', '''e2e/tests/(?:netgw|org)\.spec\.ts''']
 regexes = ['''(?:KEY_[A-Z]|PEER_KEY) = "[A-Za-z0-9+/]{43}="''']
 
 [[allowlists]]

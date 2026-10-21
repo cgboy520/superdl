@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.core.platform_config import PlatformConfigGroup, PlatformConfigKind
 from app.core.security import PasswordStr
 from app.modules.billing.schemas import LedgerEntryOut, RechargeOut
+from app.modules.orgs.schemas import OrgRefOut
 
 
 class AdminLoginRequest(BaseModel):
@@ -150,6 +151,7 @@ class TenantOut(BaseModel):
     created_at: str
     kyc_status: str = "unverified"
     kyc_name: str | None = None
+    org: OrgRefOut | None = None
 
 
 class TenantQuotaOut(BaseModel):

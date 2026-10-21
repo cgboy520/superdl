@@ -14,6 +14,7 @@
     "deletionLeftovers": "名下仍有未释放实例 {{instances}} 台、未删除数据盘 {{disks}} 块:请先清空资源后再注销",
     "deletionNotCancellable": "注销申请状态为 {{status}},不可撤销",
     "deletionNotPending": "注销申请状态为 {{status}},不可处理",
+    "deletionOrgOwner": "您是组织所有者,组织内还有 {{members}} 名其他成员:请先转让所有者或解散组织",
     "emailRequiredFirst": "请先绑定邮箱,再解绑手机号",
     "emailTaken": "该邮箱已注册,请直接登录",
     "handleTaken": "该联系方式已绑定其他账号",
@@ -235,7 +236,11 @@
     "serverUrlInvalid": "VPN 服务器地址须为 https://主机[:端口][/路径]",
     "targetOutsideRemote": "目标 {{host}} 不在隧道网段内",
     "unavailable": "本平台未开通私网网关",
-    "wireguardKeyInvalid": "{{field}} 不是有效的 WireGuard 密钥"
+    "wireguardKeyInvalid": "{{field}} 不是有效的 WireGuard 密钥",
+    "orgGatewayQuota": "组织网关已达上限 {{max}} 个",
+    "orgL3Required": "组织网关提供整段互访,请开启",
+    "orgNameTaken": "组织内已有名为 {{name}} 的网关",
+    "orgRemoteNotPrivate": "组织网关只能接入私网网段:{{cidr}} 不在 10.0.0.0/8、172.16.0.0/12、192.168.0.0/16 或 100.64.0.0/10 内"
   },
   "nodes": {
     "alreadyTerminal": "状态 {{status}} 已是终态,无需吊销",
@@ -303,6 +308,26 @@
     "stopNeedsRunning": "仅运行中的实例可以关机",
     "toOnDemandNotSpot": "只有竞价实例可以转按量",
     "vcpuQuota": "CPU 实例的 vCPU 总数将超过上限({{max}} 核),请释放后再创建或联系客服提额"
+  },
+  "orgs": {
+    "alreadyMember": "您已属于一个组织,请先退出",
+    "cannotRemoveOwner": "不能移除组织所有者",
+    "confirmNameMismatch": "输入的名称与组织名称不一致",
+    "consentOutdated": "管理员可见的信息已变更,请重新查看后再接受",
+    "dissolved": "组织已解散",
+    "invitationNotFound": "邀请不存在",
+    "invitationNotPending": "邀请状态为 {{status}}",
+    "invitationQuota": "组织待接受的邀请已达上限 {{max}} 条",
+    "memberNotFound": "成员不存在",
+    "memberQuota": "组织成员已达上限 {{max}} 人",
+    "notFound": "组织不存在",
+    "notMember": "您不在任何组织中",
+    "ownerCannotLeave": "所有者不能直接退出,请先转让所有者或解散组织",
+    "ownerRoleViaTransfer": "更换所有者请使用「转让所有者」",
+    "realNameRequired": "创建组织前需完成实名认证",
+    "roleNotAllowed": "您在组织中的角色无权执行此操作",
+    "transferTargetInvalid": "请选择组织内的其他成员作为新所有者",
+    "useLeave": "要移除自己,请使用「退出组织」"
   },
   "services": {
     "apiKeyInvalid": "访问密钥无效",

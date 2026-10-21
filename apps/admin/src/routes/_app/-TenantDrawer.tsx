@@ -233,6 +233,14 @@ function TenantHeader({ tenant, onChanged }: { tenant: TenantRow; onChanged: () 
           <Tag>{t("tenants.realnameUnverified")}</Tag>
         ),
     },
+    {
+      label: t("tenants.org"),
+      value: tenant.org ? (
+        <Link to="/tenants" search={(prev) => ({ ...prev, tab: "orgs", org: tenant.org?.uuid })}>
+          {t("tenants.orgValue", { name: tenant.org.name, role: t(`orgs.role.${tenant.org.role}`) })}
+        </Link>
+      ) : null,
+    },
     { label: t("tenants.colCreatedAt"), value: formatDateTime(tenant.created_at) },
   ];
   return (

@@ -30,4 +30,15 @@ describe("tenants validateSearch", () => {
     expect(validate({ dstatus: "pending" })).toEqual({ dstatus: "pending" });
     expect(validate({ dstatus: "bogus" })).toEqual({});
   });
+
+  it("organization tab: oq kept when non-empty, ostatus follows active/dissolved, org must be a 32-hex uuid", () => {
+    const org = "0123456789abcdef0123456789abcdef";
+    expect(validate({ tab: "orgs", oq: "acme", ostatus: "dissolved", org })).toEqual({
+      tab: "orgs",
+      oq: "acme",
+      ostatus: "dissolved",
+      org,
+    });
+    expect(validate({ ostatus: "deleted", org: "nope", oq: "" })).toEqual({});
+  });
 });

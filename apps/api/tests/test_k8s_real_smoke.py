@@ -283,7 +283,7 @@ async def test_netgw_converge_and_delete(orch: RealOrchestrator, namespace: str)
     assert _netgw_service_names(orch, NETGW_NAMESPACE, gw) == {name}
     assert _netgw_service_names(orch, namespace, gw) == {"corp"}
 
-    await orch.delete_netgw(gw, namespace)
+    await orch.delete_netgw(gw)
     assert _netgw_service_names(orch, NETGW_NAMESPACE, gw) == set()
     assert _netgw_service_names(orch, namespace, gw) == set()
     for read in (
@@ -293,3 +293,76 @@ async def test_netgw_converge_and_delete(orch: RealOrchestrator, namespace: str)
         with pytest.raises(k8s_client.ApiException) as exc_info:
             read()
         assert exc_info.value.status == 404
+
+
+def _netgw_policy(orch: RealOrchestrator, namespace: str, gateway_uuid: str) -> Any:
+    try:
+        return orch.net.read_namespaced_network_policy(netgw_object_name(gateway_uuid), namespace)
+    except k8s_client.ApiException as exc:
+        if exc.status == 404:
+            return None
+        raise
+
+
+async def test_netgw_org_converges_per_namespace_and_sweeps(
+    orch: RealOrchestrator, namespace: str
+) -> None:
+    """Fails when an organization gateway leaves its admission policy or headless Service in a
+    namespace whose instances were detached (a removed member would stay reachable), or when
+    deletion misses a namespace."""
+    try:
+        await asyncio.to_thread(
+            orch.core.create_namespace,
+            k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NETGW_NAMESPACE)),
+        )
+    except k8s_client.ApiException as exc:
+        if exc.status != 409:
+            raise
+    other = f"tenant-smoke-{uuid.uuid4().hex[:8]}"
+    await orch.ensure_namespace(other)
+    gw = uuid.uuid4().hex
+    name = netgw_object_name(gw)
+    spec = NetgwSpec(
+        uuid=gw,
+        tenant_namespace=None,
+        socks_name="corp",
+        image="registry.invalid/superdl/superdl-netgw@sha256:" + "0" * 64,
+        spec_json='{"version": 1}',
+        egress_ports=(("udp", 51820),),
+        l3=True,
+        l3_namespaces=tuple(sorted((namespace, other))),
+    )
+    try:
+        await orch.apply_netgw(spec)
+        for ns in (namespace, other):
+            assert _netgw_service_names(orch, ns, gw) == {f"{name}-l3"}
+            policy: Any = _netgw_policy(orch, ns, gw)
+            assert policy is not None
+            assert policy.spec.pod_selector.match_labels == {"superdl.io/netgw-l3": gw}
+        assert _netgw_service_names(orch, NETGW_NAMESPACE, gw) == {f"{name}-hub"}
+        dep: Any = orch.apps.read_namespaced_deployment(name, NETGW_NAMESPACE)
+        assert "superdl.io/tenant" not in dep.spec.template.metadata.labels
+
+        await orch.apply_netgw(replace(spec, l3_namespaces=(namespace,)))
+        assert _netgw_policy(orch, other, gw) is None
+        assert _netgw_service_names(orch, other, gw) == set()
+        gw_policy: Any = orch.net.read_namespaced_network_policy(name, NETGW_NAMESPACE)
+        (peer,) = gw_policy.spec.ingress[0]._from
+        assert peer.namespace_selector.match_expressions[0].values == [namespace]
+
+        await orch.apply_netgw(replace(spec, l3_namespaces=()))
+        gw_policy = orch.net.read_namespaced_network_policy(name, NETGW_NAMESPACE)
+        assert not gw_policy.spec.ingress
+        assert _netgw_policy(orch, namespace, gw) is None
+
+        await orch.apply_netgw(spec)
+        await orch.delete_netgw(gw)
+        for ns in (namespace, other):
+            assert _netgw_service_names(orch, ns, gw) == set()
+            assert _netgw_policy(orch, ns, gw) is None
+    finally:
+        try:
+            await asyncio.to_thread(orch.core.delete_namespace, other)
+        except k8s_client.ApiException as exc:
+            if exc.status != 404:
+                raise

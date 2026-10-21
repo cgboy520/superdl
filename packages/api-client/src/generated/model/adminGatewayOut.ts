@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AdminGatewayOutProtocol } from './adminGatewayOutProtocol';
+import type { AdminGatewayOutScope } from './adminGatewayOutScope';
 import type { AdminGatewayOutState } from './adminGatewayOutState';
 import type { DnsOut } from './dnsOut';
 import type { ForwardOut } from './forwardOut';
@@ -22,16 +23,19 @@ export interface AdminGatewayOut {
   l3: L3Out | null;
   local_address: string | null;
   name: string;
+  org_name: string | null;
+  org_uuid: string | null;
   pod_phase: string | null;
   protocol: AdminGatewayOutProtocol;
   remote_cidrs: string[];
-  /** SOCKS5 endpoint for the tenant's instances */
-  socks_url: string;
+  scope: AdminGatewayOutScope;
+  socks_url: string | null;
   state: AdminGatewayOutState;
   tunnel: WireGuardOut | IpsecOut | OpenVpnOut | OpenConnectOut;
   tunnel_changed_at: string | null;
   tunnel_up: boolean;
   updated_at: string;
+  /** owner of a personal gateway, creator of an organization one */
   user_id: number;
   uuid: string;
 }

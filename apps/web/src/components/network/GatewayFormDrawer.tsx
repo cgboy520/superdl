@@ -1,17 +1,19 @@
-/** Create / edit drawer of a private-network gateway: name, tunnelled networks, optional split DNS, the protocol card, then whole-subnet access (L3). Secrets are write-only: on edit an empty secret keeps the stored one. */
+/** Create / edit drawer of a private-network gateway: name, tunnelled networks, optional split DNS, the protocol card, then whole-subnet access (L3). Secrets are write-only: on edit an empty secret keeps the stored one. scope="org" edits an organization gateway: whole-subnet access is always on. */
 
-import type { GatewayIn, GatewayOut } from "@superdl/api-client";
+import type { GatewayIn, GatewayOut, OrgGatewayOut } from "@superdl/api-client";
 import { drawerWidth, idemKeyOf, space } from "@superdl/ui";
 import { OptionTileGroup } from "@superdl/ui/components";
 import { App, Button, Card, Drawer, Input, InputNumber, Segmented, Select, Space, Switch, Typography } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useCreateGateway, useUpdateGateway } from "../../api/mutations";
+import { useCreateGateway, useCreateOrgGateway, useUpdateGateway, useUpdateOrgGateway } from "../../api/mutations";
 import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { Field } from "../Field";
 
 export type GatewayProtocol = GatewayOut["protocol"];
+export type AnyGateway = GatewayOut | OrgGatewayOut;
+export type GatewayScope = "personal" | "org";
 const PROTOCOLS: GatewayProtocol[] = ["wireguard", "ipsec", "openvpn", "openconnect"];
 const FLAVORS = ["anyconnect", "fortinet", "gp", "pulse", "f5", "array"] as const;
 const PROPOSALS = ["compatible", "modern", "default"] as const;
@@ -72,7 +74,7 @@ export const EMPTY: FormState = {
   l3Nat: false,
 };
 
-export function fromGateway(g: GatewayOut): FormState {
+export function fromGateway(g: AnyGateway): FormState {
   const base: FormState = {
     ...EMPTY,
     name: g.name,
@@ -203,20 +205,26 @@ function TagsInput({
 export function GatewayFormDrawer({
   open,
   gateway,
+  scope = "personal",
   onClose,
   onSaved,
 }: {
   open: boolean;
   /** null = create */
-  gateway: GatewayOut | null;
+  gateway: AnyGateway | null;
+  scope?: GatewayScope;
   onClose: () => void;
-  onSaved: (g: GatewayOut, created: boolean) => void;
+  onSaved: (g: AnyGateway, created: boolean) => void;
 }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
-  const initial = useMemo(() => (gateway ? fromGateway(gateway) : EMPTY), [gateway]);
+  const org = scope === "org";
+  const initial = useMemo(
+    () => (gateway ? fromGateway(gateway) : org ? { ...EMPTY, l3: true } : EMPTY),
+    [gateway, org],
+  );
   const [form, setForm] = useState<FormState>(initial);
-  const [seq, setSeq] = useState(0);
+  const [seq, setSeq] = useState(() => Date.now());
   const [lastInitial, setLastInitial] = useState(initial);
   if (lastInitial !== initial) {
     setLastInitial(initial);
@@ -227,25 +235,27 @@ export function GatewayFormDrawer({
   const leave = useLeaveGuard(dirty);
   const editing = gateway !== null;
 
-  const create = useCreateGateway({
-    onSuccess: (g) => {
-      message.success(t("network.created"));
-      setSeq((s) => s + 1);
-      leave.bypass();
-      onSaved(g, true);
-    },
-  });
-  const update = useUpdateGateway({
-    onSuccess: (g) => {
-      message.success(t("network.saved"));
-      leave.bypass();
-      onSaved(g, false);
-    },
-  });
+  const created = (g: AnyGateway) => {
+    message.success(t("network.created"));
+    setSeq((s) => s + 1);
+    leave.bypass();
+    onSaved(g, true);
+  };
+  const saved = (g: AnyGateway) => {
+    message.success(t("network.saved"));
+    leave.bypass();
+    onSaved(g, false);
+  };
+  const create = useCreateGateway({ onSuccess: created });
+  const update = useUpdateGateway({ onSuccess: saved });
+  const createOrg = useCreateOrgGateway({ onSuccess: created });
+  const updateOrg = useUpdateOrgGateway({ onSuccess: saved });
+  const pending = create.isPending || update.isPending || createOrg.isPending || updateOrg.isPending;
   const submit = () => {
     const body = toBody(form);
-    if (gateway) update.mutate({ uuid: gateway.uuid, body });
-    else create.mutate({ body, idempotencyKey: idemKeyOf("netgw", [seq, body.name]) });
+    const idempotencyKey = idemKeyOf(org ? "netgw-org" : "netgw", [seq, body.name]);
+    if (gateway) (org ? updateOrg : update).mutate({ uuid: gateway.uuid, body });
+    else (org ? createOrg : create).mutate({ body, idempotencyKey });
   };
   const close = () => (dirty ? leave.confirmLeave(onClose) : onClose());
   const secretHint = editing ? t("network.form.secretKeep") : undefined;
@@ -451,7 +461,13 @@ export function GatewayFormDrawer({
 
   return (
     <Drawer
-      title={editing ? t("network.editTitle", { name: gateway.name }) : t("network.createTitle")}
+      title={
+        editing
+          ? t("network.editTitle", { name: gateway.name })
+          : org
+            ? t("network.createOrgTitle")
+            : t("network.createTitle")
+      }
       open={open}
       onClose={close}
       size={drawerWidth.lg}
@@ -459,7 +475,7 @@ export function GatewayFormDrawer({
       footer={
         <Space style={{ width: "100%", justifyContent: "flex-end" }}>
           <Button onClick={close}>{t("network.cancel")}</Button>
-          <Button type="primary" loading={create.isPending || update.isPending} onClick={submit}>
+          <Button type="primary" loading={pending} onClick={submit}>
             {editing ? t("network.saveChanges") : t("network.createSubmit")}
           </Button>
         </Space>
@@ -540,7 +556,7 @@ export function GatewayFormDrawer({
           extra={
             <Switch
               checked={form.l3}
-              disabled={l3Locked}
+              disabled={org || l3Locked}
               onChange={(v) => set("l3", v)}
               aria-label={t("network.form.l3Enable")}
             />
@@ -548,7 +564,7 @@ export function GatewayFormDrawer({
         >
           <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
             <Typography.Text type="secondary">
-              {l3Locked ? t("network.form.l3Locked") : t("network.form.l3Hint")}
+              {org ? t("network.form.l3OrgRequired") : l3Locked ? t("network.form.l3Locked") : t("network.form.l3Hint")}
             </Typography.Text>
             {form.l3 && (
               <>

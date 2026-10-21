@@ -15,6 +15,8 @@ import pytest
         "import app.modules.billing.settlement",
         "import app.modules.billing.patrol",
         "import app.modules.orchestrator.queries",
+        "import app.modules.account.deletion",
+        "import app.modules.orgs.service",
         "import app.workers.main",
         "import app.main",
     ],

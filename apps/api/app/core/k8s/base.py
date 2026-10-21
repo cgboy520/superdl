@@ -204,10 +204,13 @@ class NetgwInstanceForward:
 @dataclass(frozen=True)
 class NetgwSpec:
     """K8s parameters of one gateway; spec_json carries secrets and only lands in a Secret.
-    peers_json (L3 peers) sits next to it but outside spec_hash: attaching never rolls the Pod."""
+    peers_json (L3 peers) sits next to it but outside spec_hash: attaching never rolls the Pod.
+    tenant_namespace is the owner's namespace of a personal gateway, None for an organization
+    gateway, whose tenant-side objects live in l3_namespaces (the attached instances' namespaces;
+    outside spec_hash and the Pod labels, so membership changes never roll the Pod)."""
 
     uuid: str
-    tenant_namespace: str
+    tenant_namespace: str | None
     socks_name: str
     image: str
     spec_json: str
@@ -218,6 +221,11 @@ class NetgwSpec:
     image_pull_secret: str | None = None
     l3: bool = False
     peers_json: str = '{"peers":[]}'
+    l3_namespaces: tuple[str, ...] = ()
+
+    @property
+    def org(self) -> bool:
+        return self.tenant_namespace is None
 
     @property
     def spec_hash(self) -> str:
@@ -229,7 +237,6 @@ class NetgwStatus:
     """One gateway Deployment as observed: image of its template, readiness of its Pod."""
 
     uuid: str
-    tenant_namespace: str
     image: str
     ready: bool
     phase: str
@@ -541,12 +548,14 @@ class K8sOrchestrator(Protocol):
 
     async def apply_netgw(self, spec: NetgwSpec) -> None:
         """Converge one gateway: spec Secret, Deployment, NetworkPolicy, SOCKS and forward
-        Services, tenant-namespace ExternalNames and instance Services; objects of the gateway no
-        longer wanted are deleted. Idempotent."""
+        Services, tenant-namespace ExternalNames and instance Services (organization gateways:
+        the L3 headless Service and NetworkPolicy in each attached instance's namespace); objects
+        of the gateway no longer wanted are deleted, in any namespace. Idempotent."""
         ...
 
-    async def delete_netgw(self, gateway_uuid: str, tenant_namespace: str) -> None:
-        """Delete every object of the gateway in both namespaces; missing objects are ignored."""
+    async def delete_netgw(self, gateway_uuid: str) -> None:
+        """Delete every object of the gateway, in the gateway namespace and in every tenant
+        namespace holding one of its Services; missing objects are ignored."""
         ...
 
     async def list_netgw(self) -> list[NetgwStatus]:
