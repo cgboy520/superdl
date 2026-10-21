@@ -228,17 +228,17 @@ function OrgAttachModal({ gateway, open, onClose }: { gateway: AnyGateway; open:
       onClose();
     },
   });
-  const groups = new Map<string, OrgInstanceOut[]>();
-  for (const c of candidates ?? []) groups.set(c.member_label, [...(groups.get(c.member_label) ?? []), c]);
+  const groups = new Map<number, OrgInstanceOut[]>();
+  for (const c of candidates ?? []) groups.set(c.member_id, [...(groups.get(c.member_id) ?? []), c]);
   const suffix = (c: OrgInstanceOut) =>
     c.reason === "kata_tier"
       ? ` · ${t("network.l3.kataUnsupported")}`
       : c.reason === "attached"
         ? ` · ${c.attached_to === gateway.uuid ? t("network.org.attachedHere") : t("network.org.attachedElsewhere")}`
         : "";
-  const options = [...groups.entries()].map(([label, items]) => ({
-    label,
-    title: label,
+  const options = [...groups.values()].map((items) => ({
+    label: items[0]?.member_label ?? "",
+    title: items[0]?.member_label ?? "",
     options: items.map((c) => ({
       value: c.instance_uuid,
       label: `${c.instance_name}${suffix(c)}`,

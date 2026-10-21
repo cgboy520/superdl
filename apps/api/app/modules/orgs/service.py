@@ -260,11 +260,21 @@ async def owned_org_other_members(session: AsyncSession, user_id: int) -> int:
 
 async def drop_deleted_user(session: AsyncSession, user_id: int) -> None:
     """Account deletion (no commit): a member leaves, a sole owner's organization dissolves. The
-    caller has already refused an owner with other members."""
+    role is re-read under the organization lock (a transfer may have landed since the caller's
+    check); an owner with other members is refused."""
     member = await membership_of(session, user_id)
     if member is None:
         return
     org = await _lock_org(session, member.org_id)
+    member = await session.scalar(
+        select(OrgMember)
+        .where(OrgMember.user_id == user_id, OrgMember.org_id == org.id)
+        .execution_options(populate_existing=True)
+    )
+    if member is None:
+        return
+    if member.role == ROLE_OWNER and (others := await _member_count(session, org.id) - 1) > 0:
+        raise conflict(key="account.deletionOrgOwner", params={"members": others})
     if member.role == ROLE_OWNER:
         await _dissolve(session, org)
         logger.info("org_dissolved_by_deletion", org_uuid=org.uuid, user_id=user_id)
@@ -571,7 +581,9 @@ async def _invitation_outs(session: AsyncSession, rows: list[OrgInvitation]) -> 
         InvitationOut.model_validate(
             {
                 "uuid": r.uuid,
-                "email": r.email,
+                "email": r.email
+                if _invitation_status(r) == INVITE_PENDING
+                else mask_handle(r.email),
                 "role": r.role,
                 "remark": r.remark,
                 "status": _invitation_status(r),

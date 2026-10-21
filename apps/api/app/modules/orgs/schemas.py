@@ -115,8 +115,9 @@ class MemberOut(BaseModel):
 
 
 class InvitationOut(BaseModel):
-    """Sent invitation. The email is the one the inviter typed; the list never tells whether an
-    account exists for it."""
+    """Sent invitation. A pending one shows the email the inviter typed (the list never tells
+    whether an account exists for it); once answered, revoked or expired it is masked like any
+    member's."""
 
     uuid: str
     email: str

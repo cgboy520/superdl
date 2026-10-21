@@ -762,16 +762,18 @@ async def get_org_gateway(session: AsyncSession, user_id: int, uuid: str) -> Net
     return await _get_scoped(session, OrgScope(org.id), uuid)
 
 
-def _require_l3(body: GatewayIn) -> None:
+def _check_org_body(body: GatewayIn) -> None:
+    """Whole-subnet access on, tunnelled networks private."""
     if body.l3 is None:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="netgw.orgL3Required")
+    v.check_org_remote(v.parse_remote_cidrs(body.remote_cidrs))
 
 
 async def create_org_gateway(
     session: AsyncSession, user_id: int, body: GatewayIn, idempotency_key: str | None
 ) -> tuple[NetGateway, bool]:
     """Organization gateway (L3 required) under the organization lock; (gateway, created)."""
-    _require_l3(body)
+    _check_org_body(body)
     org = await _org_admin(session, user_id)
     return await _create(session, user_id, OrgScope(org.id), body, idempotency_key)
 
@@ -779,7 +781,7 @@ async def create_org_gateway(
 async def update_org_gateway(
     session: AsyncSession, user_id: int, uuid: str, body: GatewayIn
 ) -> NetGateway:
-    _require_l3(body)
+    _check_org_body(body)
     org = await _org_admin(session, user_id)
     scope = OrgScope(org.id)
     return await _update(session, scope, await _lock_gateway(session, scope, uuid), body)
@@ -953,20 +955,30 @@ async def detach_own(session: AsyncSession, user_id: int, instance_uuid: str) ->
 
 
 async def _drop_members(session: AsyncSession, org_id: int, user_ids: set[int]) -> None:
-    """Members removed (organization row locked by the caller): their attachments on the
-    organization's gateways go in the same transaction."""
+    """Members removed (organization row locked by the caller, so no attachment can appear
+    meanwhile): their attachments on the organization's gateways go in the same transaction; only
+    the gateways holding one are locked."""
+    if not user_ids:
+        return
+    affected = (
+        await session.scalars(
+            select(NetGatewayAttachment.gateway_id)
+            .join(NetGateway, NetGateway.id == NetGatewayAttachment.gateway_id)
+            .where(NetGateway.org_id == org_id, NetGatewayAttachment.user_id.in_(user_ids))
+        )
+    ).all()
+    if not affected:
+        return
     gws = list(
         (
             await session.scalars(
                 select(NetGateway)
-                .where(NetGateway.org_id == org_id, NetGateway.status == STATUS_ACTIVE)
+                .where(NetGateway.id.in_(set(affected)), NetGateway.status == STATUS_ACTIVE)
                 .order_by(NetGateway.id)
                 .with_for_update()
             )
         ).all()
     )
-    if not gws or not user_ids:
-        return
     by_id = {g.id: g for g in gws}
     atts = (
         await session.scalars(

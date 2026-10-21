@@ -226,6 +226,7 @@
     "orgGatewayQuota": "The organization already has the maximum of {{max}} gateways",
     "orgL3Required": "Organization gateways provide whole-subnet access — enable it",
     "orgNameTaken": "The organization already has a gateway named {{name}}",
+    "orgRemoteNotPrivate": "Organization gateways tunnel private networks only: {{cidr}} is not inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or 100.64.0.0/10",
     "peerInsideRemote": "The VPN server {{host}} must not be inside the tunnelled networks",
     "peerNotPublic": "The VPN server {{host}} must have a public address",
     "peerPortBlocked": "Port {{port}} cannot be used to reach the VPN server",

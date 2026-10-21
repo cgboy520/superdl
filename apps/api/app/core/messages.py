@@ -398,6 +398,10 @@ MESSAGES: dict[str, str] = {
     "netgw.orgGatewayQuota": "The organization already has the maximum of {max} gateways",
     "netgw.orgL3Required": "Organization gateways provide whole-subnet access — enable it",
     "netgw.orgNameTaken": "The organization already has a gateway named {name}",
+    "netgw.orgRemoteNotPrivate": (
+        "Organization gateways tunnel private networks only: {cidr} is not inside 10.0.0.0/8, "
+        "172.16.0.0/12, 192.168.0.0/16 or 100.64.0.0/10"
+    ),
     "netgw.openvpnProfileInvalid": "The OpenVPN profile is not accepted: {reason}",
     "netgw.peerInsideRemote": "The VPN server {host} must not be inside the tunnelled networks",
     "netgw.peerNotPublic": "The VPN server {host} must have a public address",

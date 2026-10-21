@@ -140,7 +140,12 @@ function NetworkPage() {
   const personalList = useGateways({ ...poll, enabled: !org });
   const orgList = useOrgGateways({ ...poll, enabled: org });
   const list = org ? orgList : personalList;
-  const [form, setForm] = useState<{ open: boolean; gateway: AnyGateway | null }>({ open: false, gateway: null });
+  /** The scope is fixed when the form opens: a role change meanwhile must not redirect the submit. */
+  const [form, setForm] = useState<{ open: boolean; gateway: AnyGateway | null; scope: GatewayScope }>({
+    open: false,
+    gateway: null,
+    scope: "personal",
+  });
   const [deleteTarget, setDeleteTarget] = useState<AnyGateway | null>(null);
   const deleted = () => {
     message.success(t("network.deleteStarted"));
@@ -169,7 +174,7 @@ function NetworkPage() {
   const personalOf = (g: AnyGateway): GatewayOut | null => ("socks_url" in g ? g : null);
 
   const createButton = (
-    <GatedButton type="primary" reason={createReason} onClick={() => setForm({ open: true, gateway: null })}>
+    <GatedButton type="primary" reason={createReason} onClick={() => setForm({ open: true, gateway: null, scope })}>
       {org ? t("network.org.create") : t("network.create")}
     </GatedButton>
   );
@@ -277,7 +282,7 @@ function NetworkPage() {
                                 key: "edit",
                                 label: t("network.edit"),
                                 reason: deleting ? t("network.deletingReason") : undefined,
-                                onClick: () => setForm({ open: true, gateway: g }),
+                                onClick: () => setForm({ open: true, gateway: g, scope }),
                               },
                               {
                                 key: "delete",
@@ -302,10 +307,10 @@ function NetworkPage() {
       <GatewayFormDrawer
         open={form.open}
         gateway={form.gateway}
-        scope={scope}
-        onClose={() => setForm({ open: false, gateway: null })}
+        scope={form.scope}
+        onClose={() => setForm({ open: false, gateway: null, scope })}
         onSaved={(g, created) => {
-          setForm({ open: false, gateway: null });
+          setForm({ open: false, gateway: null, scope });
           if (created) openDetail(g.uuid);
         }}
       />
@@ -316,7 +321,7 @@ function NetworkPage() {
         socksPort={cfg.data?.socks_port ?? 1080}
         maxForwards={cfg.data?.max_forwards ?? 0}
         onClose={() => openDetail(undefined)}
-        onEdit={(g) => setForm({ open: true, gateway: g })}
+        onEdit={(g) => setForm({ open: true, gateway: g, scope })}
       />
       <TypeConfirmModal
         open={Boolean(deleteTarget)}

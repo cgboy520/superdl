@@ -224,7 +224,7 @@ export function GatewayFormDrawer({
     [gateway, org],
   );
   const [form, setForm] = useState<FormState>(initial);
-  const [seq, setSeq] = useState(0);
+  const [seq, setSeq] = useState(() => Date.now());
   const [lastInitial, setLastInitial] = useState(initial);
   if (lastInitial !== initial) {
     setLastInitial(initial);

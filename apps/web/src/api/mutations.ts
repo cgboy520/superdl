@@ -510,7 +510,7 @@ export const useUpdateMember = (o?: CallerOpts<MemberOut>) =>
   useApiMutation(
     ({ memberId, body }: { memberId: number; body: MemberUpdate }) =>
       updateMemberApiV1OrgMembersMemberIdPatch(memberId, body),
-    { ...o, invalidates: [keys.org.all] },
+    { ...o, invalidates: [keys.org.all, keys.netgw.orgGateways, keys.netgw.orgInstances] },
   );
 export const useRemoveMember = (o?: CallerOpts) =>
   useApiMutation((memberId: number) => removeMemberApiV1OrgMembersMemberIdDelete(memberId), {

@@ -1750,6 +1750,7 @@ export default interface Resources {
       "orgGatewayQuota": "组织网关已达上限 {{max}} 个",
       "orgL3Required": "组织网关提供整段互访,请开启",
       "orgNameTaken": "组织内已有名为 {{name}} 的网关",
+      "orgRemoteNotPrivate": "组织网关只能接入私网网段:{{cidr}} 不在 10.0.0.0/8、172.16.0.0/12、192.168.0.0/16 或 100.64.0.0/10 内",
       "peerInsideRemote": "VPN 服务器 {{host}} 不能位于隧道网段内",
       "peerNotPublic": "VPN 服务器 {{host}} 须为公网地址",
       "peerPortBlocked": "不能通过端口 {{port}} 连接 VPN 服务器",

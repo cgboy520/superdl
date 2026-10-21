@@ -160,6 +160,25 @@ class TestScope:
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "common.idempotencyKeyMismatch"
 
+    async def test_tunnelled_networks_must_be_private(self, client: AsyncClient):
+        """Fails when an organization could route members' traffic for public ranges into its
+        VPN."""
+        owner, _ = await org_user(client, 1)
+        await create_org(client, owner)
+        resp = await client.post(
+            ORG_GW, json=wg_body(l3=L3, remote_cidrs=["13.0.0.0/8"]), headers=owner
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "netgw.orgRemoteNotPrivate"
+        gw = await _org_gateway(client, owner)
+        resp = await client.put(
+            f"{ORG_GW}/{gw['uuid']}",
+            json=wg_body(l3=L3, remote_cidrs=["10.1.0.0/16", "140.82.0.0/16"]),
+            headers=owner,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["message_key"] == "netgw.orgRemoteNotPrivate"
+
     async def test_members_cannot_see_or_manage(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):
@@ -193,6 +212,20 @@ class TestAttach:
                 )
             ).all()
         assert instance in notices
+
+    async def test_apply_ensures_the_member_namespace(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession], fake: Any
+    ):
+        """Fails when an organization gateway apply depends on a member namespace that an
+        early-failed instance never created."""
+        owner, _, member_uid, _, gw, instance = await _setup(client, sm)
+        fake.namespaces.discard(f"tenant-{member_uid}")
+        await _attach(client, owner, gw["uuid"], instance)
+        await drain(sm)
+        assert f"tenant-{member_uid}" in fake.namespaces
+        assert (await _gateway_row(sm, gw["uuid"])).applied_generation == (
+            await _gateway_row(sm, gw["uuid"])
+        ).generation
 
     async def test_non_member_instance_looks_missing(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]

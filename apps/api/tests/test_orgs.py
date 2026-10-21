@@ -13,6 +13,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
+from app.core.errors import AppError
 from app.core.timeutil import now_utc
 from app.modules.account.models import AccountDeletionRequest, User
 from app.modules.notify.models import Notification
@@ -165,6 +166,20 @@ class TestInvitations:
             )
             await session.commit()
         assert (await client.get("/api/v1/org/invitations/received", headers=invitee)).json() == []
+
+    async def test_answered_invitations_mask_the_email(self, client: AsyncClient):
+        """Fails when admins can read a member's full email from the invitation history."""
+        owner, _ = await org_user(client, 1)
+        await create_org(client, owner)
+        await join_org(client, owner, 2)
+        pending = await invite_email(client, owner, org_email(3))
+        listed = {
+            i["uuid"]: i
+            for i in (await client.get("/api/v1/org/invitations", headers=owner)).json()
+        }
+        assert listed[pending["uuid"]]["email"] == org_email(3)
+        accepted = [i for i in listed.values() if i["status"] == "accepted"]
+        assert [i["email"] for i in accepted] == ["o***@test.local"]
 
     async def test_same_email_returns_the_pending_invitation(self, client: AsyncClient):
         owner, _ = await org_user(client, 1)
@@ -471,6 +486,23 @@ class TestAccountDeletion:
         resp = await self._request(client, owner, 1)
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "account.deletionOrgOwner"
+
+    async def test_owner_found_under_the_lock_is_refused(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """Fails when a transfer landing between the deletion pre-check and the removal dissolves
+        an organization with members (or leaves it without an owner)."""
+        owner, _ = await org_user(client, 1)
+        await create_org(client, owner)
+        _, admin_uid, admin_mid = await join_org(client, owner, 2, role="admin")
+        await join_org(client, owner, 3)
+        await client.post("/api/v1/org/transfer", json={"member_id": admin_mid}, headers=owner)
+        async with sm() as session:
+            with pytest.raises(AppError) as exc:
+                await orgs_service.drop_deleted_user(session, admin_uid)
+            assert exc.value.message_key == "account.deletionOrgOwner"
+            await session.rollback()
+            assert await orgs_service.owned_org_other_members(session, admin_uid) == 2
 
     async def test_sole_owner_deletion_dissolves(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]

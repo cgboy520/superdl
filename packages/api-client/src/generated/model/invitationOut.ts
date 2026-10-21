@@ -8,8 +8,9 @@ import type { InvitationOutRole } from './invitationOutRole';
 import type { InvitationOutStatus } from './invitationOutStatus';
 
 /**
- * Sent invitation. The email is the one the inviter typed; the list never tells whether an
- * account exists for it.
+ * Sent invitation. A pending one shows the email the inviter typed (the list never tells
+ * whether an account exists for it); once answered, revoked or expired it is masked like any
+ * member's.
  */
 export interface InvitationOut {
   created_at: string;
