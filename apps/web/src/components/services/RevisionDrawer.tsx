@@ -22,6 +22,7 @@ import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { SshKeyPicker } from "../create/SshKeyPicker";
 import { ContainerFields } from "./ContainerCard";
 import { PublicAccessFields } from "./PublicAccessCard";
+import { specGpuModel } from "../../lib/instanceSpec";
 
 export function RevisionDrawer({
   service,
@@ -147,7 +148,7 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
   const specLine = inst
     ? inst.gpu_count === 0
       ? t("create.summaryCpu", { vcpu: inst.spec.vcpu as number, mem: inst.spec.mem_gb as number })
-      : t("instances.specLine", { model: inst.spec.gpu_model as string, count: inst.gpu_count })
+      : t("instances.specLine", { model: specGpuModel(inst.spec), count: inst.gpu_count })
     : "—";
   const billingKey = inst ? marketLabelKey(inst.market, inst.subscription?.period) : null;
 

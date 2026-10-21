@@ -27,6 +27,7 @@ import { MetricsPanel } from "../components/instance/MetricsPanel";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
 import { useRememberedListSearch } from "../stores/listSearch";
+import { specGpuModel } from "../lib/instanceSpec";
 
 const DETAIL_TABS = ["access", "metrics", "logs", "events", "bills", "settings"] as const;
 
@@ -203,7 +204,7 @@ function InstanceDetail() {
             {
               label: t("instances.labelSpec"),
               value: t("instances.specLine", {
-                model: instance.spec.gpu_model as string,
+                model: specGpuModel(instance.spec),
                 count: instance.gpu_count,
               }),
             },

@@ -81,6 +81,16 @@ describe("buildSkuPayload", () => {
     expect(p.data.vram_gb).toBe(0);
     expect(p.data.max_gpus_per_instance).toBe(0);
     expect(p.data.pool_label).toBe("cpu");
+    expect(p.data.display_model).toBeNull();
+  });
+
+  it("display model: trimmed, blank clears it (null), and an edit can change it", () => {
+    const created = buildSkuPayload({ ...BASE_VALUES, display_model: " GA100-PCIE-64GB " }, "new");
+    if (created?.kind !== "create") throw new Error("expected create");
+    expect(created.data.display_model).toBe("GA100-PCIE-64GB");
+    const cleared = buildSkuPayload({ ...BASE_VALUES, display_model: "  ", reason: "drop" }, { id: 7 } as SkuAdminOut);
+    if (cleared?.kind !== "update") throw new Error("expected update");
+    expect(cleared.data.display_model).toBeNull();
   });
 
   it("edit: no gpu_model (the model cannot change), carries reason; editing=null returns null", () => {

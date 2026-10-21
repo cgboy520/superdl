@@ -8,6 +8,7 @@
 export interface SkuUpdate {
   cuda_max?: string | null;
   disk_gb?: number | null;
+  display_model?: string | null;
   gpu_cores_pct?: number | null;
   max_gpus_per_instance?: number | null;
   mem_gb?: number | null;

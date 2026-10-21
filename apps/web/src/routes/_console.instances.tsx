@@ -46,6 +46,7 @@ import { OnboardingSteps } from "../components/OnboardingSteps";
 import { requireAuth } from "../lib/guard";
 import { useCursorList } from "../lib/useCursorList";
 import { listSearchStore } from "../stores/listSearch";
+import { specGpuModel } from "../lib/instanceSpec";
 
 /** View keys of the status count bar = the ?status= allow-list; running / stopped go straight to the server filter, attention is a client-derived set. */
 const SUMMARY_KEYS = ["running", "stopped", "attention"] as const;
@@ -148,7 +149,7 @@ function SpecCell({ instance }: { instance: InstanceOut }) {
           className="focus-ring"
           style={{ textDecoration: "underline dotted", cursor: "help" }}
         >
-          {instance.spec.gpu_model as string} × {instance.gpu_count}
+          {specGpuModel(instance.spec)} × {instance.gpu_count}
         </Typography.Text>
         <TierTag tier={instance.spec.tier as string} pool={instance.spec.pool_label as string} />
       </Space>

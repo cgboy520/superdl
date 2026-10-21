@@ -1294,6 +1294,9 @@ export default interface Resources {
       "created": "SKU 已创建(默认下架)",
       "cudaMaxLabel": "最高 CUDA 版本",
       "diskLabel": "实例盘 GB",
+      "displayModelHelp": "租户在市场、首页和实例页看到的型号,留空显示 GPU 型号;节点匹配仍按 GPU 型号",
+      "displayModelLabel": "对外显示型号",
+      "displayModelPlaceholder": "选填,如 GA100-PCIE-64GB",
       "edit": "编辑",
       "editTitle": "编辑 SKU · {{name}}",
       "filterModel": "卡型",
@@ -1339,6 +1342,7 @@ export default interface Resources {
       "reasonRequired": "请填写变更原因(2~200 字)",
       "saved": "已保存(变更仅影响新实例)",
       "searchPlaceholder": "搜索 SKU 名称",
+      "shownAs": "显示为 {{model}}",
       "sliceShared": "{{pct}}% 算力 · {{vram}}G 显存",
       "spotEnabledHint": "开启后该规格可按竞价价售卖;竞价实例在容量紧张时会被平台回收",
       "spotEnabledLabel": "竞价档",
@@ -1655,7 +1659,7 @@ export default interface Resources {
       "wechatQueryFailed": "微信查单失败:{{message}}"
     },
     "catalog": {
-      "cpuSkuGpuFieldsMustBeZero": "CPU 规格不带卡:GPU 型号须留空,算力份额/显存/单实例卡数须为 0,且不能填 MIG 切片",
+      "cpuSkuGpuFieldsMustBeZero": "CPU 规格不带卡:GPU 型号与显示型号须留空,算力份额/显存/单实例卡数须为 0,且不能填 MIG 切片",
       "gpuSkuNeedsGpuFields": "GPU 规格必须填 GPU 型号,且算力份额/显存/单实例卡数都不能为 0",
       "imageNotFound": "镜像不存在",
       "imageRefExists": "镜像 image_ref 已存在",

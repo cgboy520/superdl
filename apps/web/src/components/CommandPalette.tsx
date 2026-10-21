@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { useInstances, useServices } from "../api/queries";
 import { CONSOLE_NAV } from "./layout/consoleNav";
+import { specGpuModel } from "../lib/instanceSpec";
 
 export const COMMAND_PALETTE_OPEN_EVENT = "superdl:command-palette-open";
 
@@ -70,7 +71,7 @@ export function CommandPalette() {
               <CloudServerOutlined />
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</span>
               <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                {meta ? t(meta.labelKey) : i.status} · {i.spec.gpu_model as string} × {i.gpu_count}
+                {meta ? t(meta.labelKey) : i.status} · {specGpuModel(i.spec)} × {i.gpu_count}
               </Typography.Text>
             </>
           ),
@@ -93,7 +94,7 @@ export function CommandPalette() {
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</span>
               <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                 {meta ? t(meta.labelKey) : s.status}
-                {inst ? ` · ${inst.spec.gpu_model as string} × ${inst.gpu_count}` : ""}
+                {inst ? ` · ${specGpuModel(inst.spec)} × ${inst.gpu_count}` : ""}
               </Typography.Text>
             </>
           ),

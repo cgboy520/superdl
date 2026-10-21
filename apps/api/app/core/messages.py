@@ -263,8 +263,8 @@ MESSAGES: dict[str, str] = {
     ),
     "billing.wechatQueryFailed": "WeChat Pay order query failed: {message}",
     "catalog.cpuSkuGpuFieldsMustBeZero": (
-        "CPU specs carry no GPU: leave the GPU model empty, set compute share / VRAM / GPUs "
-        "per instance to 0, and leave the MIG profile blank"
+        "CPU specs carry no GPU: leave the GPU model and its display model empty, set compute "
+        "share / VRAM / GPUs per instance to 0, and leave the MIG profile blank"
     ),
     "catalog.gpuSkuNeedsGpuFields": (
         "GPU specs need a GPU model, and compute share / VRAM / GPUs per instance cannot be 0"

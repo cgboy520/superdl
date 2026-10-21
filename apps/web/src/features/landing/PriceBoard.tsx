@@ -42,14 +42,14 @@ function pickRows(skus: readonly SkuMarketOut[]): BoardRow[] {
   for (const sku of skus) {
     if (!sku.gpu_model) continue;
     const variant = skuVariant(sku.tier, sku.pool_label);
-    const key = `${sku.gpu_model}:${variant}`;
+    const key = `${sku.display_model}:${variant}`;
     const available = sku.available_count ?? 0;
     const cur = best.get(key);
     const better =
       cur === undefined ||
       (available > 0 && cur.available === 0) ||
       (available > 0 === cur.available > 0 && compareAmounts(sku.price_hourly, cur.sku.price_hourly) < 0);
-    if (better) best.set(key, { key, sku, model: sku.gpu_model, variant, available });
+    if (better) best.set(key, { key, sku, model: sku.display_model, variant, available });
   }
   return [...best.values()]
     .sort((a, b) => {

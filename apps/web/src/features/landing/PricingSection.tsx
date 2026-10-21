@@ -41,14 +41,14 @@ function groupByModel(skus: readonly SkuMarketOut[]): ModelCard[] {
   for (const sku of skus) {
     if (!sku.gpu_model) continue;
     const variant = skuVariant(sku.tier, sku.pool_label);
-    const tiers = byModel.get(sku.gpu_model) ?? new Map<string, TierRow>();
+    const tiers = byModel.get(sku.display_model) ?? new Map<string, TierRow>();
     const cur = tiers.get(variant);
     if (cur === undefined || compareAmounts(sku.price_hourly, cur.sku.price_hourly) < 0) {
       tiers.set(variant, { sku, variant, available: sku.available_count ?? 0 });
     } else if (cur.available === 0 && (sku.available_count ?? 0) > 0) {
       tiers.set(variant, { sku, variant, available: sku.available_count ?? 0 });
     }
-    byModel.set(sku.gpu_model, tiers);
+    byModel.set(sku.display_model, tiers);
   }
   const cards: ModelCard[] = [];
   for (const [model, tiers] of byModel) {
@@ -105,13 +105,13 @@ function TierRowView({ row }: { row: TierRow }) {
         </Typography.Text>
       </div>
       {available > 0 ? (
-        <Link to="/market" search={{ model: sku.gpu_model, sku: sku.id }} style={{ flex: "0 0 auto" }}>
+        <Link to="/market" search={{ model: sku.display_model, sku: sku.id }} style={{ flex: "0 0 auto" }}>
           <Button type="primary">{t("copy.stockAvailable", { count: available })}</Button>
         </Link>
       ) : (
         <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
           <Typography.Text type="secondary">{t("copy.outOfStock")}</Typography.Text>
-          <Link to="/market" search={{ model: sku.gpu_model }} style={{ fontSize: fontSize.caption }}>
+          <Link to="/market" search={{ model: sku.display_model }} style={{ fontSize: fontSize.caption }}>
             {t("landing.board.otherTiers")}
           </Link>
         </div>

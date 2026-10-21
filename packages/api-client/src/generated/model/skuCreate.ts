@@ -9,6 +9,7 @@ export interface SkuCreate {
   cuda_max?: string | null;
   /** @minimum 10 */
   disk_gb?: number;
+  display_model?: string | null;
   /**
      * @minimum 0
      * @maximum 100

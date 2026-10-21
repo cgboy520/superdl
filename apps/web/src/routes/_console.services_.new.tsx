@@ -440,7 +440,7 @@ function DeployPage() {
                     value: sku
                       ? isCpu
                         ? t("create.summaryCpu", { vcpu: sku.vcpu, mem: sku.mem_gb })
-                        : t("instances.specLine", { model: sku.gpu_model, count: gpuCount })
+                        : t("instances.specLine", { model: sku.display_model, count: gpuCount })
                       : t("services.form.summaryNone"),
                   },
                   {
@@ -498,7 +498,7 @@ function DeployPage() {
               ? isCpu
                 ? t("create.summaryCpu", { vcpu: sku.vcpu, mem: sku.mem_gb })
                 : t("create.summary", {
-                    model: sku.gpu_model,
+                    model: sku.display_model,
                     count: gpuCount,
                     vcpu: sku.vcpu * gpuCount,
                     mem: sku.mem_gb * gpuCount,

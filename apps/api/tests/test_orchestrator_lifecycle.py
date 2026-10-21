@@ -108,6 +108,17 @@ class TestCreateLifecycle:
         ).hexdigest()
         assert qs["sig"][0] == expected_sig
 
+    async def test_snapshot_records_the_display_model(self, client, sm):
+        """The instance spec snapshots what tenants saw (display_model) next to the real
+        gpu_model, which keeps driving the scheduling selector."""
+        headers, user_id, key_id = await create_user_with_key(client)
+        await fund_wallet(sm, user_id)
+        sku_id = await create_test_sku(sm, display_model="GA100-PCIE-24GB")
+        data = await create_instance_api(client, headers, sku_id, key_id)
+        spec = (await get_instance(client, headers, data["uuid"]))["spec"]
+        assert spec["display_model"] == "GA100-PCIE-24GB"
+        assert spec["gpu_model"] == spec["gpu_model_selector"] == "RTX4090"
+
     async def test_insufficient_balance(self, client, sm):
         headers, _user_id, key_id = await create_user_with_key(client)
         sku_id = await create_test_sku(sm)

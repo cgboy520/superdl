@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 from app.core.gpu_adapter import TIER_CPU, TIERS
 from app.core.messages import render_message
@@ -41,11 +41,13 @@ class SiteConfigOut(BaseModel):
 
 
 class SkuMarketOut(BaseModel):
-    """Market card view (user console)."""
+    """Market card view (user console); display_model is the model tenants see, gpu_model when the
+    SKU sets none."""
 
     id: int
     name: str
     gpu_model: str
+    display_model: str
     tier: str
     mig_profile: str | None
     gpu_cores_pct: int
@@ -63,6 +65,11 @@ class SkuMarketOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @field_validator("display_model", mode="before")
+    @classmethod
+    def _shown_model(cls, v: str | None, info: ValidationInfo) -> str:
+        return v or info.data.get("gpu_model", "")
+
 
 class SkuAdminOut(BaseModel):
     """Admin full view (with oversell parameters and pool label)."""
@@ -70,6 +77,7 @@ class SkuAdminOut(BaseModel):
     id: int
     name: str
     gpu_model: str
+    display_model: str | None
     tier: str
     mig_profile: str | None
     gpu_cores_pct: int
@@ -101,14 +109,22 @@ def cpu_spec_error(
     vram_gb: int,
     max_gpus_per_instance: int,
     mig_profile: str | None,
+    display_model: str | None,
 ) -> str | None:
     """Validate the CPU/GPU field combination, returning the error copy key or None.
 
-    CPU requires model, compute, VRAM, max cards and slice empty or zero; GPU requires the first
-    four non-empty and non-zero.
+    CPU requires model, display model, compute, VRAM, max cards and slice empty or zero; GPU
+    requires model, compute, VRAM and max cards non-empty and non-zero.
     """
     if tier == TIER_CPU:
-        if gpu_model or gpu_cores_pct or vram_gb or max_gpus_per_instance or mig_profile:
+        if (
+            gpu_model
+            or display_model
+            or gpu_cores_pct
+            or vram_gb
+            or max_gpus_per_instance
+            or mig_profile
+        ):
             return "catalog.cpuSkuGpuFieldsMustBeZero"
         return None
     if not gpu_model or not gpu_cores_pct or not vram_gb or not max_gpus_per_instance:
@@ -116,9 +132,15 @@ def cpu_spec_error(
     return None
 
 
+def _blank_to_none(v: str | None) -> str | None:
+    v = v.strip() if isinstance(v, str) else v
+    return v or None
+
+
 class SkuCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     gpu_model: str = Field(max_length=32)
+    display_model: str | None = Field(default=None, max_length=32)
     tier: str = Field(pattern=_TIER_PATTERN)
     mig_profile: str | None = None
     gpu_cores_pct: int = Field(default=100, ge=0, le=100)
@@ -143,14 +165,21 @@ class SkuCreate(BaseModel):
             vram_gb=self.vram_gb,
             max_gpus_per_instance=self.max_gpus_per_instance,
             mig_profile=self.mig_profile,
+            display_model=self.display_model,
         )
         if key is not None:
             raise ValueError(render_message(key, None))
         return self
 
+    @field_validator("display_model", mode="before")
+    @classmethod
+    def _display_model(cls, v: str | None) -> str | None:
+        return _blank_to_none(v)
+
 
 class SkuUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
+    display_model: str | None = Field(default=None, max_length=32)
     mig_profile: str | None = None
     gpu_cores_pct: int | None = Field(default=None, ge=0, le=100)
     vram_gb: int | None = Field(default=None, ge=0)
@@ -166,6 +195,11 @@ class SkuUpdate(BaseModel):
     spot_enabled: bool | None = None
     status: str | None = Field(default=None, pattern="^(on|off)$")
     reason: str = Field(min_length=2, max_length=200)
+
+    @field_validator("display_model", mode="before")
+    @classmethod
+    def _display_model(cls, v: str | None) -> str | None:
+        return _blank_to_none(v)
 
 
 class ImageOut(BaseModel):

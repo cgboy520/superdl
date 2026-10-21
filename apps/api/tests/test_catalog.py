@@ -284,6 +284,56 @@ class TestAdminSku:
         assert resp.status_code == 409, resp.text
         assert resp.json()["message_key"] == "catalog.skuBusinessKeyExists"
 
+    async def test_display_model_shown_to_tenants_while_stock_matches_gpu_model(
+        self, client: AsyncClient, sm
+    ):
+        """Tenants see display_model (gpu_model when unset); stock and the listing check still
+        match nodes by gpu_model, and a blank value clears the override."""
+        headers = await admin_headers(sm, client)
+        await seed_node_spec(sm, node_name="gpu-a100", gpu_model="A100-80G", pool_label="kata")
+        body = {**_SKU_BODY, "display_model": "  GA100-PCIE-80GB "}
+        resp = await client.post("/api/admin/v1/skus", json=body, headers=headers)
+        assert resp.status_code == 201, resp.text
+        sku_id = resp.json()["id"]
+        assert resp.json()["display_model"] == "GA100-PCIE-80GB"
+        resp = await client.patch(
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"status": "on", "reason": "list"},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+
+        [item] = [s for s in (await client.get("/api/v1/skus")).json() if s["id"] == sku_id]
+        assert (item["gpu_model"], item["display_model"]) == ("A100", "GA100-PCIE-80GB")
+        assert item["available_count"] > 0
+
+        resp = await client.patch(
+            f"/api/admin/v1/skus/{sku_id}",
+            json={"display_model": " ", "reason": "drop the display model"},
+            headers=headers,
+        )
+        assert resp.json()["display_model"] is None
+        [item] = [s for s in (await client.get("/api/v1/skus")).json() if s["id"] == sku_id]
+        assert item["display_model"] == "A100"
+
+    async def test_cpu_sku_rejects_display_model(self, client: AsyncClient, sm):
+        headers = await admin_headers(sm, client)
+        body = {
+            "name": "CPU · 8C",
+            "gpu_model": "",
+            "display_model": "GA100-PCIE-64GB",
+            "tier": "cpu",
+            "gpu_cores_pct": 0,
+            "vram_gb": 0,
+            "max_gpus_per_instance": 0,
+            "pool_label": "cpu",
+            "vcpu": 8,
+            "mem_gb": 16,
+            "price_hourly": "0.5000",
+        }
+        resp = await client.post("/api/admin/v1/skus", json=body, headers=headers)
+        assert resp.status_code == 422, resp.text
+
     async def test_tier_pool_must_pair(self, client: AsyncClient, sm):
         """Tier and pool must pair."""
         headers = await admin_headers(sm, client)

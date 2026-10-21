@@ -37,6 +37,7 @@ import { RevisionDrawer } from "../components/services/RevisionDrawer";
 import { ServiceActions } from "../components/services/ServiceActions";
 import { SettingsTab } from "../components/services/SettingsTab";
 import { requireAuth } from "../lib/guard";
+import { specGpuModel } from "../lib/instanceSpec";
 
 export const SERVICE_DETAIL_TABS = ["overview", "keys", "metrics", "logs", "history", "settings"] as const;
 export type ServiceDetailTab = (typeof SERVICE_DETAIL_TABS)[number];
@@ -307,9 +308,7 @@ function ServiceDetail() {
             { label: t("services.detail.labelId"), value: service.slug, mono: true, copy: service.slug },
             {
               label: t("services.detail.labelSpec"),
-              value: inst
-                ? t("instances.specLine", { model: inst.spec.gpu_model as string, count: inst.gpu_count })
-                : null,
+              value: inst ? t("instances.specLine", { model: specGpuModel(inst.spec), count: inst.gpu_count }) : null,
             },
             {
               label: t("services.detail.labelBilling"),

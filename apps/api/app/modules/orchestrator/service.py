@@ -182,6 +182,7 @@ def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
         "sku_name": sku.name,
         "base_price_hourly": money_str(sku.price_hourly),
         "gpu_model": sku.gpu_model,
+        "display_model": sku.display_model or sku.gpu_model,
         "tier": sku.tier,
         "mig_profile": sku.mig_profile,
         "gpu_cores_pct": sku.gpu_cores_pct,
@@ -413,7 +414,7 @@ async def _soft_admit_capacity(
             params=(
                 {"pool": sku.pool_label}
                 if sku.tier == TIER_CPU
-                else {"model": sku.gpu_model, "pool": sku.pool_label}
+                else {"model": sku.display_model or sku.gpu_model, "pool": sku.pool_label}
             ),
             http_status=http_status.HTTP_409_CONFLICT,
         )

@@ -131,7 +131,7 @@
     "wechatQueryFailed": "WeChat Pay order query failed: {{message}}"
   },
   "catalog": {
-    "cpuSkuGpuFieldsMustBeZero": "CPU specs carry no GPU: leave the GPU model empty, set compute share / VRAM / GPUs per instance to 0, and leave the MIG profile blank",
+    "cpuSkuGpuFieldsMustBeZero": "CPU specs carry no GPU: leave the GPU model and its display model empty, set compute share / VRAM / GPUs per instance to 0, and leave the MIG profile blank",
     "gpuSkuNeedsGpuFields": "GPU specs need a GPU model, and compute share / VRAM / GPUs per instance cannot be 0",
     "imageNotFound": "Image not found",
     "imageRefExists": "This image_ref already exists",
