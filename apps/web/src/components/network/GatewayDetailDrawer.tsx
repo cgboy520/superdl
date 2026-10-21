@@ -1,6 +1,6 @@
-/** Gateway detail drawer: connection facts (what to configure on the tenant side), how instances use it, forwards (add / delete) and the gateway log. */
+/** Gateway detail drawer: connection facts (what to configure on the tenant side), how instances use it, forwards (add / delete), whole-subnet attachments (L3) and the gateway log. */
 
-import type { ForwardOut, GatewayOut } from "@superdl/api-client";
+import type { AttachmentOut, ForwardOut, GatewayOut } from "@superdl/api-client";
 import { drawerWidth, formatDateTime, netgwStateMap, space } from "@superdl/ui";
 import { CopyField, GatedButton, KeyValue, Mono, StatusTag, useConfirm } from "@superdl/ui/components";
 import {
@@ -20,7 +20,7 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useAddForward, useDeleteForward } from "../../api/mutations";
+import { useAddForward, useAttachInstance, useDeleteForward, useDetachInstance } from "../../api/mutations";
 import { useGatewayLogs, useInstances } from "../../api/queries";
 import { Field } from "../Field";
 
@@ -150,6 +150,63 @@ function AddForwardModal({ gateway, open, onClose }: { gateway: GatewayOut; open
   );
 }
 
+/** Kata (VM-isolated) instances have no attach path; the server refuses them too. */
+function attachable(i: { status: string; workload_type: string; gpu_count: number; spec: object }): boolean {
+  const pool = (i.spec as { pool_label?: string }).pool_label;
+  return (
+    i.workload_type === "dev" &&
+    i.status !== "released" &&
+    i.status !== "releasing" &&
+    !(pool === "kata" && i.gpu_count > 0)
+  );
+}
+
+function AttachModal({ gateway, open, onClose }: { gateway: GatewayOut; open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { message } = App.useApp();
+  const { data: instances } = useInstances({ enabled: open });
+  const [instanceUuid, setInstanceUuid] = useState<string>();
+  const attach = useAttachInstance({
+    onSuccess: () => {
+      message.success(t("network.l3.attached"));
+      setInstanceUuid(undefined);
+      onClose();
+    },
+  });
+  const taken = new Set(gateway.l3?.attachments.map((a) => a.instance_uuid));
+  const options = (instances ?? [])
+    .filter((i) => i.workload_type === "dev" && i.status !== "released" && !taken.has(i.uuid))
+    .map((i) => ({
+      value: i.uuid,
+      label: attachable(i) ? i.name : `${i.name} · ${t("network.l3.kataUnsupported")}`,
+      disabled: !attachable(i),
+    }));
+  return (
+    <Modal
+      title={t("network.l3.attachTitle")}
+      open={open}
+      onCancel={onClose}
+      onOk={() => instanceUuid && attach.mutate({ uuid: gateway.uuid, instanceUuid })}
+      okText={t("network.l3.attachSubmit")}
+      okButtonProps={{ disabled: instanceUuid === undefined }}
+      confirmLoading={attach.isPending}
+    >
+      <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+        <Typography.Text type="secondary">{t("network.l3.attachHint")}</Typography.Text>
+        <Field label={t("network.l3.instance")} required>
+          <Select
+            value={instanceUuid}
+            onChange={setInstanceUuid}
+            placeholder={t("network.forward.instancePlaceholder")}
+            options={options}
+            aria-label={t("network.l3.instance")}
+          />
+        </Field>
+      </Space>
+    </Modal>
+  );
+}
+
 function LogsModal({ gateway, open, onClose }: { gateway: GatewayOut; open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const { data, isFetching, refetch } = useGatewayLogs(gateway.uuid, { tail_lines: 300 }, { enabled: open });
@@ -200,8 +257,10 @@ export function GatewayDetailDrawer({
   const confirm = useConfirm();
   const { message } = App.useApp();
   const [adding, setAdding] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const del = useDeleteForward({ onSuccess: () => message.success(t("network.forward.deleted")) });
+  const detach = useDetachInstance({ onSuccess: () => message.success(t("network.l3.detached")) });
   if (!gateway) return <Drawer open={false} />;
   const g = gateway;
   const deleting = g.state === "deleting";
@@ -337,8 +396,90 @@ export function GatewayDetailDrawer({
             ]}
           />
         </Card>
+        {g.l3 && (
+          <Card
+            size="small"
+            title={t("network.l3.title", { n: g.l3.attachments.length, max: g.l3.max_attachments })}
+            extra={
+              <GatedButton
+                size="small"
+                type="primary"
+                reason={
+                  deleting
+                    ? t("network.deletingReason")
+                    : g.l3.attachments.length >= g.l3.max_attachments
+                      ? t("network.l3.full")
+                      : undefined
+                }
+                onClick={() => setAttaching(true)}
+              >
+                {t("network.l3.attach")}
+              </GatedButton>
+            }
+          >
+            <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+              <KeyValue
+                columns={1}
+                items={[
+                  { label: t("network.l3.cidr"), value: g.l3.cidr, mono: true },
+                  { label: t("network.l3.mode"), value: g.l3.nat ? t("network.l3.nat") : t("network.l3.routed") },
+                  { label: t("network.l3.hub"), value: g.l3.address, copy: g.l3.address, mono: true },
+                ]}
+              />
+              <Typography.Text type="secondary">
+                {g.l3.nat ? t("network.l3.natHint") : t(`network.l3.routedPeer.${g.protocol}`, { cidr: g.l3.cidr })}
+                {" · "}
+                {t("network.l3.hubHint")}
+              </Typography.Text>
+              <Table<AttachmentOut>
+                rowKey="instance_uuid"
+                size="small"
+                pagination={false}
+                scroll={{ x: 520 }}
+                dataSource={g.l3.attachments}
+                locale={{ emptyText: t("network.l3.empty") }}
+                columns={[
+                  { title: t("network.l3.colInstance"), render: (_, a) => a.instance_name },
+                  { title: t("network.l3.colAddress"), render: (_, a) => <CopyField value={a.address} mono /> },
+                  {
+                    title: t("network.l3.colState"),
+                    render: (_, a) =>
+                      a.pending_restart ? (
+                        <Typography.Text type="warning">{t("network.l3.pendingRestart")}</Typography.Text>
+                      ) : (
+                        <Typography.Text type="secondary">{t("network.l3.applied")}</Typography.Text>
+                      ),
+                  },
+                  {
+                    title: t("network.col.actions"),
+                    render: (_, a) => (
+                      <GatedButton
+                        size="small"
+                        danger
+                        reason={deleting ? t("network.deletingReason") : undefined}
+                        onClick={() =>
+                          confirm({
+                            title: t("network.l3.detachTitle", { name: a.instance_name }),
+                            consequences: [t("network.l3.detachConsequence", { address: a.address })],
+                            okText: t("network.l3.detachOk"),
+                            cancelText: t("network.cancel"),
+                            danger: true,
+                            onOk: () => detach.mutate({ uuid: g.uuid, instanceUuid: a.instance_uuid }),
+                          })
+                        }
+                      >
+                        {t("network.l3.detach")}
+                      </GatedButton>
+                    ),
+                  },
+                ]}
+              />
+            </Space>
+          </Card>
+        )}
       </Space>
       <AddForwardModal gateway={g} open={adding} onClose={() => setAdding(false)} />
+      <AttachModal gateway={g} open={attaching} onClose={() => setAttaching(false)} />
       <LogsModal gateway={g} open={logsOpen} onClose={() => setLogsOpen(false)} />
     </Drawer>
   );

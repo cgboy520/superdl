@@ -542,6 +542,7 @@
     "colCreated": "创建时间",
     "colForwards": "映射",
     "colGateway": "网关",
+    "colL3": "子网互通",
     "colPeer": "对端",
     "colProtocol": "协议",
     "colRemote": "隧道网段",
@@ -550,6 +551,8 @@
     "deleteConfirm": "删除租户 #{{user}} 的网关 {{name}}?隧道立即断开,该网关的映射一并删除,租户会看到网关消失。",
     "deleteTitle": "删除私网网关",
     "empty": "还没有私网网关",
+    "l3Routed": "路由",
+    "l3Summary": "{{mode}} · 已接入 {{n}} 个实例",
     "protocol": {
       "ipsec": "IPsec",
       "openconnect": "SSL VPN",

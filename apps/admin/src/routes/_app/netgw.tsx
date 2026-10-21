@@ -79,6 +79,21 @@ function NetgwPage() {
     },
     { title: t("netgw.colPeer"), render: (_, g) => <Mono>{peerOf(g)}</Mono> },
     { title: t("netgw.colRemote"), render: (_, g) => <Mono>{g.remote_cidrs.join(", ")}</Mono> },
+    {
+      title: t("netgw.colL3"),
+      width: 170,
+      render: (_, g) =>
+        g.l3 ? (
+          <Space orientation="vertical" size={0}>
+            <Mono>{g.l3.cidr}</Mono>
+            <Typography.Text type="secondary">
+              {t("netgw.l3Summary", { mode: g.l3.nat ? "NAT" : t("netgw.l3Routed"), n: g.l3.attachments.length })}
+            </Typography.Text>
+          </Space>
+        ) : (
+          "—"
+        ),
+    },
     { title: t("netgw.colForwards"), width: 80, align: "right", render: (_, g) => g.forwards.length },
     {
       title: t("netgw.colChecked"),
@@ -144,7 +159,7 @@ function NetgwPage() {
             rowKey="uuid"
             loading={q.isLoading}
             pagination={false}
-            scroll={{ x: 1300 }}
+            scroll={{ x: 1470 }}
             dataSource={q.data ?? []}
             columns={columns}
           />

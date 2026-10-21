@@ -24,6 +24,7 @@ export default defineConfig({
       "network.proposal*",
       "network.flavor.*",
       "network.forward.kind.*",
+      "network.l3.routedPeer.*",
     ],
     ignoreNamespaces: ["shared", "errors"],
     primaryLanguage: "zh-CN",

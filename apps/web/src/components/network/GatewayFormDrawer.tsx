@@ -1,9 +1,9 @@
-/** Create / edit drawer of a private-network gateway: name, tunnelled networks, optional split DNS, then the protocol card. Secrets are write-only: on edit an empty secret keeps the stored one. */
+/** Create / edit drawer of a private-network gateway: name, tunnelled networks, optional split DNS, the protocol card, then whole-subnet access (L3). Secrets are write-only: on edit an empty secret keeps the stored one. */
 
 import type { GatewayIn, GatewayOut } from "@superdl/api-client";
 import { drawerWidth, idemKeyOf, space } from "@superdl/ui";
 import { OptionTileGroup } from "@superdl/ui/components";
-import { App, Button, Card, Drawer, Input, InputNumber, Segmented, Select, Space, Typography } from "antd";
+import { App, Button, Card, Drawer, Input, InputNumber, Segmented, Select, Space, Switch, Typography } from "antd";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -39,6 +39,9 @@ export interface FormState {
   server: string;
   servercert: string;
   authgroup: string;
+  l3: boolean;
+  l3Cidr: string;
+  l3Nat: boolean;
 }
 
 export const EMPTY: FormState = {
@@ -64,6 +67,9 @@ export const EMPTY: FormState = {
   server: "",
   servercert: "",
   authgroup: "",
+  l3: false,
+  l3Cidr: "",
+  l3Nat: false,
 };
 
 export function fromGateway(g: GatewayOut): FormState {
@@ -75,6 +81,9 @@ export function fromGateway(g: GatewayOut): FormState {
     local: g.local_address ?? "",
     dnsServers: g.dns?.servers ?? [],
     dnsDomains: g.dns?.domains ?? [],
+    l3: g.l3 != null,
+    l3Cidr: g.l3?.cidr ?? "",
+    l3Nat: g.l3?.nat ?? false,
   };
   const tn = g.tunnel;
   switch (tn.protocol) {
@@ -112,6 +121,7 @@ export function toBody(f: FormState): GatewayIn {
     remote_cidrs: f.remote,
     local_address: f.protocol === "wireguard" || f.protocol === "ipsec" ? opt(f.local) : null,
     dns,
+    l3: f.l3 ? { cidr: f.l3Cidr.trim(), nat: f.protocol === "openconnect" || f.l3Nat } : null,
   };
   switch (f.protocol) {
     case "wireguard":
@@ -240,6 +250,8 @@ export function GatewayFormDrawer({
   const close = () => (dirty ? leave.confirmLeave(onClose) : onClose());
   const secretHint = editing ? t("network.form.secretKeep") : undefined;
   const needsLocal = form.protocol === "wireguard" || form.protocol === "ipsec";
+  const natOnly = form.protocol === "openconnect";
+  const l3Locked = (gateway?.l3?.attachments.length ?? 0) > 0;
 
   const protocolCard = () => {
     switch (form.protocol) {
@@ -520,6 +532,58 @@ export function GatewayFormDrawer({
               />
             )}
             {protocolCard()}
+          </Space>
+        </Card>
+        <Card
+          size="small"
+          title={t("network.form.sectionL3")}
+          extra={
+            <Switch
+              checked={form.l3}
+              disabled={l3Locked}
+              onChange={(v) => set("l3", v)}
+              aria-label={t("network.form.l3Enable")}
+            />
+          }
+        >
+          <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+            <Typography.Text type="secondary">
+              {l3Locked ? t("network.form.l3Locked") : t("network.form.l3Hint")}
+            </Typography.Text>
+            {form.l3 && (
+              <>
+                <Field label={t("network.form.l3Cidr")} required hint={t("network.form.l3CidrHint")}>
+                  <Input
+                    value={form.l3Cidr}
+                    disabled={l3Locked}
+                    onChange={(e) => set("l3Cidr", e.target.value)}
+                    placeholder="192.168.250.0/24"
+                    aria-label={t("network.form.l3Cidr")}
+                  />
+                </Field>
+                <Field
+                  label={t("network.form.l3Mode")}
+                  hint={
+                    natOnly
+                      ? t("network.form.l3NatOnly")
+                      : form.l3Nat
+                        ? t("network.form.l3NatHint")
+                        : t("network.form.l3RoutedHint")
+                  }
+                >
+                  <div>
+                    <Segmented<"routed" | "nat">
+                      value={natOnly || form.l3Nat ? "nat" : "routed"}
+                      onChange={(v) => set("l3Nat", v === "nat")}
+                      options={[
+                        { value: "routed", label: t("network.l3.routed"), disabled: natOnly },
+                        { value: "nat", label: t("network.l3.nat") },
+                      ]}
+                    />
+                  </div>
+                </Field>
+              </>
+            )}
           </Space>
         </Card>
       </Space>

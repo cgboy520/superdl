@@ -19,6 +19,7 @@ describe("toBody", () => {
       remote_cidrs: ["10.1.0.0/16"],
       local_address: "10.250.0.2",
       dns: null,
+      l3: null,
       tunnel: {
         protocol: "wireguard",
         endpoint: "vpn.example.com:51820",
@@ -43,6 +44,16 @@ describe("toBody", () => {
     expect(oc.tunnel).toMatchObject({ protocol: "openconnect", password: null });
   });
 
+  it("sends whole-subnet access only when enabled, NAT forced for SSL VPN", () => {
+    expect(toBody({ ...EMPTY, l3Cidr: "192.168.250.0/24" }).l3).toBeNull();
+    expect(toBody({ ...EMPTY, l3: true, l3Cidr: " 192.168.250.0/24 " }).l3).toEqual({
+      cidr: "192.168.250.0/24",
+      nat: false,
+    });
+    const oc = toBody({ ...EMPTY, protocol: "openconnect", l3: true, l3Cidr: "192.168.250.0/24", l3Nat: false });
+    expect(oc.l3).toEqual({ cidr: "192.168.250.0/24", nat: true });
+  });
+
   it("sends DNS only when servers or domains are given", () => {
     const body = toBody({ ...EMPTY, dnsServers: ["10.1.0.53"], dnsDomains: ["corp.example"] });
     expect(body.dns).toEqual({ servers: ["10.1.0.53"], domains: ["corp.example"] });
@@ -57,6 +68,7 @@ describe("fromGateway", () => {
       remote_cidrs: ["10.2.0.0/16"],
       local_address: "10.250.0.9",
       dns: null,
+      l3: { cidr: "192.168.250.0/24", nat: true, address: "192.168.250.1", max_attachments: 250, attachments: [] },
       tunnel: { protocol: "ipsec", version: 1, peer: "9.9.9.9", local_id: "a", remote_id: null, proposals: "modern" },
     } as unknown as GatewayOut;
     const f = fromGateway(g);
@@ -67,6 +79,9 @@ describe("fromGateway", () => {
       remoteId: "",
       proposals: "modern",
       psk: "",
+      l3: true,
+      l3Cidr: "192.168.250.0/24",
+      l3Nat: true,
     });
     expect(toBody(f).tunnel).toMatchObject({
       protocol: "ipsec",

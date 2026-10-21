@@ -12,9 +12,11 @@ import {
   createDeletionRequestApiV1MeDeletionRequestPost,
   createDiskApiV1DisksPost,
   addForwardApiV1NetgwGatewaysUuidForwardsPost,
+  attachInstanceApiV1NetgwGatewaysUuidAttachmentsPost,
   createGatewayApiV1NetgwGatewaysPost,
   deleteForwardApiV1NetgwGatewaysUuidForwardsForwardIdDelete,
   deleteGatewayApiV1NetgwGatewaysUuidDelete,
+  detachInstanceApiV1NetgwGatewaysUuidAttachmentsInstanceUuidDelete,
   updateGatewayApiV1NetgwGatewaysUuidPut,
   createInstanceApiV1InstancesPost,
   createInvoiceApiV1BillingInvoicesPost,
@@ -370,6 +372,18 @@ export const useDeleteForward = (o?: CallerOpts<GatewayOut>) =>
   useApiMutation(
     ({ uuid, forwardId }: { uuid: string; forwardId: number }) =>
       deleteForwardApiV1NetgwGatewaysUuidForwardsForwardIdDelete(uuid, forwardId),
+    { ...o, invalidates: [keys.netgw.gateways] },
+  );
+export const useAttachInstance = (o?: CallerOpts<GatewayOut>) =>
+  useApiMutation(
+    ({ uuid, instanceUuid }: { uuid: string; instanceUuid: string }) =>
+      attachInstanceApiV1NetgwGatewaysUuidAttachmentsPost(uuid, { instance_uuid: instanceUuid }),
+    { ...o, invalidates: [keys.netgw.gateways] },
+  );
+export const useDetachInstance = (o?: CallerOpts<GatewayOut>) =>
+  useApiMutation(
+    ({ uuid, instanceUuid }: { uuid: string; instanceUuid: string }) =>
+      detachInstanceApiV1NetgwGatewaysUuidAttachmentsInstanceUuidDelete(uuid, instanceUuid),
     { ...o, invalidates: [keys.netgw.gateways] },
   );
 
