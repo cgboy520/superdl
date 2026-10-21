@@ -35,6 +35,7 @@ import { ServiceStatusBadge, TierTag } from "../components/common";
 import { ServiceActions } from "../components/services/ServiceActions";
 import { requireAuth } from "../lib/guard";
 import { useCursorList } from "../lib/useCursorList";
+import { specGpuModel } from "../lib/instanceSpec";
 
 export interface ServicesSearch {
   q?: string;
@@ -258,7 +259,7 @@ function ServicesPage() {
               return (
                 <Space>
                   <span>
-                    {inst.spec.gpu_model as string} × {inst.gpu_count}
+                    {specGpuModel(inst.spec)} × {inst.gpu_count}
                   </span>
                   <TierTag tier={inst.spec.tier as string} pool={inst.spec.pool_label as string} />
                 </Space>

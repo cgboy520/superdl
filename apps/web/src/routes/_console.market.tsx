@@ -282,7 +282,7 @@ function MarketPage() {
               ? isCpu
                 ? t("market.summaryCpu", { vcpu: selected.vcpu, mem: selected.mem_gb, disk: selected.disk_gb })
                 : t("market.summary", {
-                    model: selected.gpu_model,
+                    model: selected.display_model,
                     count: qty,
                     vcpu: selected.vcpu * qty,
                     mem: selected.mem_gb * qty,

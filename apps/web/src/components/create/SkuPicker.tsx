@@ -41,7 +41,7 @@ function matches(s: SkuMarketOut, f: SkuFilters, qty: number): boolean {
     return (!f.vcpu || s.vcpu === f.vcpu) && (!f.mem || s.mem_gb === f.mem);
   }
   return (
-    (!f.model || s.gpu_model === f.model) &&
+    (!f.model || s.display_model === f.model) &&
     (!f.tier || skuVariant(s.tier, s.pool_label) === f.tier) &&
     (!f.vram || s.vram_gb === f.vram) &&
     s.max_gpus_per_instance >= qty

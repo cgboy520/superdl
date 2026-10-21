@@ -34,12 +34,16 @@ function formatSkuGpu(s: SkuMarketOut, t: TFunction<readonly ["web", "shared"]>)
     return t("sku.gpuCpuNone", { vcpu: s.vcpu, mem: s.mem_gb });
   }
   if (variant === "shared_mig") {
-    return t("sku.gpuMig", { model: s.gpu_model, vram: s.vram_gb, profile: s.mig_profile ?? t("sku.sliceFallback") });
+    return t("sku.gpuMig", {
+      model: s.display_model,
+      vram: s.vram_gb,
+      profile: s.mig_profile ?? t("sku.sliceFallback"),
+    });
   }
   if (variant === "shared_hami") {
-    return t("sku.gpuShared", { model: s.gpu_model, vram: s.vram_gb, pct: s.gpu_cores_pct });
+    return t("sku.gpuShared", { model: s.display_model, vram: s.vram_gb, pct: s.gpu_cores_pct });
   }
-  return t("sku.gpuDedicated", { model: s.gpu_model, vram: s.vram_gb });
+  return t("sku.gpuDedicated", { model: s.display_model, vram: s.vram_gb });
 }
 
 /** SKU table columns: spec, stock and price; the total is shown when several cards are selected. */

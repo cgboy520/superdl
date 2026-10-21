@@ -14,6 +14,7 @@ export interface SkuAdminOut {
   created_at: string;
   cuda_max: string | null;
   disk_gb: number;
+  display_model: string | null;
   gpu_cores_pct: number;
   gpu_model: string;
   id: number;

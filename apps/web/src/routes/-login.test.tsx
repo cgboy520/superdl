@@ -68,6 +68,7 @@ function makeSku(over: Partial<SkuMarketOut>): SkuMarketOut {
     spot_enabled: false,
     vcpu: 32,
     vram_gb: 80,
+    display_model: over.gpu_model ?? "H100 SXM",
     ...over,
   };
 }

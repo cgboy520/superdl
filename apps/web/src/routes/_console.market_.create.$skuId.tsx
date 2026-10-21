@@ -427,7 +427,7 @@ function CreatePage() {
                     {isCpu
                       ? t("market.summaryCpu", { vcpu: skuNN.vcpu, mem: skuNN.mem_gb, disk: skuNN.disk_gb })
                       : t("market.summary", {
-                          model: skuNN.gpu_model,
+                          model: skuNN.display_model,
                           count: gpuCount,
                           vcpu: skuNN.vcpu * gpuCount,
                           mem: skuNN.mem_gb * gpuCount,
@@ -660,7 +660,7 @@ function CreatePage() {
             isCpu
               ? t("create.summaryCpu", { vcpu: skuNN.vcpu, mem: skuNN.mem_gb })
               : t("create.summary", {
-                  model: skuNN.gpu_model,
+                  model: skuNN.display_model,
                   count: gpuCount,
                   vcpu: skuNN.vcpu * gpuCount,
                   mem: skuNN.mem_gb * gpuCount,

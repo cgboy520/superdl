@@ -319,6 +319,16 @@ export function SkuDrawerForm({
                 <Input placeholder={t("skus.gpuModelPlaceholder")} disabled={clusterPick !== null} />
               </Form.Item>
             )}
+            {!isCpuVariant && (
+              <Form.Item
+                name="display_model"
+                label={t("skus.displayModelLabel")}
+                extra={t("skus.displayModelHelp")}
+                rules={[{ max: 32 }]}
+              >
+                <Input placeholder={t("skus.displayModelPlaceholder")} allowClear />
+              </Form.Item>
+            )}
             <Form.Item
               name="variant"
               label={t("skus.colTier")}

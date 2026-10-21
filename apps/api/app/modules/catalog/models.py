@@ -29,6 +29,7 @@ class Sku(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(64))
     gpu_model: Mapped[str] = mapped_column(String(32), index=True)
+    display_model: Mapped[str | None] = mapped_column(String(32))
     tier: Mapped[str] = mapped_column(String(16), index=True)
     mig_profile: Mapped[str | None] = mapped_column(String(32))
     gpu_cores_pct: Mapped[int] = mapped_column(default=100)

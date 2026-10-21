@@ -24,6 +24,8 @@ export function useWatchSkuField<K extends keyof SkuFormValues>(
 export interface SkuFormValues {
   name: string;
   gpu_model: string;
+  /** Model tenants see; empty shows gpu_model (node matching always uses gpu_model) */
+  display_model?: string | null;
   /** The form only picks the display tier; tier and pool_label are derived on submit, tier is not a form field. */
   variant: SkuVariant;
   mig_profile?: string | null;
@@ -61,6 +63,7 @@ export const ALL_VARIANTS = Object.keys(VARIANT_SPEC) as SkuVariant[];
 /** GPU fields zeroed when submitting a CPU spec (mirrors the backend catalog.cpu_spec_error); oversell pinned to 1. */
 export const CPU_ZERO_FIELDS = {
   gpu_model: "",
+  display_model: null,
   mig_profile: null,
   gpu_cores_pct: 0,
   vram_gb: 0,
@@ -95,6 +98,7 @@ export function buildSkuPayload(
       ? CPU_ZERO_FIELDS
       : {
           gpu_model: values.gpu_model,
+          display_model: values.display_model?.trim() || null,
           mig_profile: values.mig_profile ?? null,
           gpu_cores_pct: values.gpu_cores_pct,
           vram_gb: values.vram_gb,

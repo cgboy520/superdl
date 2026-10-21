@@ -306,6 +306,7 @@ async def admin_update_sku(
         vram_gb=sku.vram_gb,
         max_gpus_per_instance=sku.max_gpus_per_instance,
         mig_profile=sku.mig_profile,
+        display_model=sku.display_model,
     )
     if cpu_key is not None:
         raise AppError(ErrorCode.VALIDATION_ERROR, key=cpu_key)

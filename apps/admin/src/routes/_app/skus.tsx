@@ -2,11 +2,11 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { App, Button, Card, Input, Select, Table, Tag } from "antd";
+import { App, Button, Card, Input, Select, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { controlWidth, layout, skuTierMap, skuVariant, type SkuVariant } from "@superdl/ui";
+import { controlWidth, layout, skuTierMap, skuVariant, space, type SkuVariant } from "@superdl/ui";
 import {
   EmptyState,
   FilterBar,
@@ -180,7 +180,19 @@ function SkusPage() {
           pagination={false}
           columns={[
             { title: t("skus.colName"), dataIndex: "name", fixed: "left", width: 200 },
-            { title: t("skus.colGpuModel"), dataIndex: "gpu_model" },
+            {
+              title: t("skus.colGpuModel"),
+              dataIndex: "gpu_model",
+              render: (_, r) =>
+                r.display_model ? (
+                  <Space size={space.xs} wrap>
+                    {r.gpu_model}
+                    <Typography.Text type="secondary">{t("skus.shownAs", { model: r.display_model })}</Typography.Text>
+                  </Space>
+                ) : (
+                  r.gpu_model
+                ),
+            },
             {
               title: t("skus.colTier"),
               render: (_, r) => {

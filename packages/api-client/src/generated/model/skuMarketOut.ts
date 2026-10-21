@@ -6,12 +6,14 @@
  */
 
 /**
- * Market card view (user console).
+ * Market card view (user console); display_model is the model tenants see, gpu_model when the
+ * SKU sets none.
  */
 export interface SkuMarketOut {
   available_count?: number;
   cuda_max: string | null;
   disk_gb: number;
+  display_model: string;
   gpu_cores_pct: number;
   gpu_model: string;
   id: number;

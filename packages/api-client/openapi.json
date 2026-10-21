@@ -11225,6 +11225,17 @@
             "title": "Disk Gb",
             "type": "integer"
           },
+          "display_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Model"
+          },
           "gpu_cores_pct": {
             "title": "Gpu Cores Pct",
             "type": "integer"
@@ -11312,6 +11323,7 @@
           "id",
           "name",
           "gpu_model",
+          "display_model",
           "tier",
           "mig_profile",
           "gpu_cores_pct",
@@ -11350,6 +11362,18 @@
             "minimum": 10.0,
             "title": "Disk Gb",
             "type": "integer"
+          },
+          "display_model": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Model"
           },
           "gpu_cores_pct": {
             "default": 100,
@@ -11493,7 +11517,7 @@
         "type": "object"
       },
       "SkuMarketOut": {
-        "description": "Market card view (user console).",
+        "description": "Market card view (user console); display_model is the model tenants see, gpu_model when the\nSKU sets none.",
         "properties": {
           "available_count": {
             "default": 0,
@@ -11514,6 +11538,10 @@
           "disk_gb": {
             "title": "Disk Gb",
             "type": "integer"
+          },
+          "display_model": {
+            "title": "Display Model",
+            "type": "string"
           },
           "gpu_cores_pct": {
             "title": "Gpu Cores Pct",
@@ -11583,6 +11611,7 @@
           "id",
           "name",
           "gpu_model",
+          "display_model",
           "tier",
           "mig_profile",
           "gpu_cores_pct",
@@ -11624,6 +11653,18 @@
               }
             ],
             "title": "Disk Gb"
+          },
+          "display_model": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Model"
           },
           "gpu_cores_pct": {
             "anyOf": [

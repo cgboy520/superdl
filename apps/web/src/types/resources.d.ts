@@ -133,7 +133,7 @@ export default interface Resources {
       "wechatQueryFailed": "微信查单失败:{{message}}"
     },
     "catalog": {
-      "cpuSkuGpuFieldsMustBeZero": "CPU 规格不带卡:GPU 型号须留空,算力份额/显存/单实例卡数须为 0,且不能填 MIG 切片",
+      "cpuSkuGpuFieldsMustBeZero": "CPU 规格不带卡:GPU 型号与显示型号须留空,算力份额/显存/单实例卡数须为 0,且不能填 MIG 切片",
       "gpuSkuNeedsGpuFields": "GPU 规格必须填 GPU 型号,且算力份额/显存/单实例卡数都不能为 0",
       "imageNotFound": "镜像不存在",
       "imageRefExists": "镜像 image_ref 已存在",
