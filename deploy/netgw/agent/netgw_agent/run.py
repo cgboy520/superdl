@@ -2,6 +2,8 @@
 lives here; renderers stay pure."""
 
 import asyncio
+import hashlib
+import json
 import os
 import socket
 import stat
@@ -13,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from netgw_agent import render
-from netgw_agent.spec import Spec
+from netgw_agent.spec import L3, Peer, Spec, SpecError, parse_peers
 
 CHARON = "/usr/lib/strongswan/charon"
 CHARON_VICI = "/run/charon.vici"
@@ -173,6 +175,10 @@ class Driver:
     def route_target(self) -> tuple[str, str, str | None] | None:
         raise NotImplementedError
 
+    def tunnel_device(self) -> str | None:
+        """Interface carrying remote_cidrs; None = the uplink under xfrm policies (IPsec)."""
+        return render.TUN_DEVICE
+
     def maintain(self, up: bool) -> None:
         pass
 
@@ -205,6 +211,9 @@ class WireGuard(Driver):
 
     def route_target(self) -> tuple[str, str, str | None]:
         return render.WG_DEVICE, str(self.spec.local_address), None
+
+    def tunnel_device(self) -> str | None:
+        return render.WG_DEVICE
 
     def maintain(self, up: bool) -> None:
         """Re-resolve a DNS endpoint while the handshake is stale (dynamic peer addresses)."""
@@ -271,6 +280,9 @@ class Ipsec(Driver):
     def route_target(self) -> tuple[str, str, str | None]:
         dev, via = default_route()
         return dev, str(self.spec.local_address), via
+
+    def tunnel_device(self) -> str | None:
+        return None
 
 
 def _openvpn_state() -> str:
@@ -348,9 +360,90 @@ def ensure_routes(spec: Spec, target: tuple[str, str, str | None]) -> None:
     )
 
 
+def apply_firewall(spec: Spec, tunnel_dev: str | None) -> None:
+    sh(
+        ["nft", "-f", "-"],
+        stdin=render.nft_ruleset(spec, uplink=default_route()[0], tunnel_dev=tunnel_dev),
+    )
+
+
+def resolve(host: str) -> str | None:
+    try:
+        infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_DGRAM)
+    except OSError:
+        return None
+    return str(infos[0][4][0]) if infos else None
+
+
+class Hub:
+    """L3 hub: hub0 (WireGuard) with one peer per attached instance. Peers come from peers.json,
+    which the platform rewrites without restarting the gateway; endpoints come from the Pods' DNS
+    names and are re-resolved every tick, so a restarted instance is found again by name."""
+
+    def __init__(self, l3: L3, peers_path: str) -> None:
+        self.l3 = l3
+        self.path = peers_path
+        self.peers: tuple[Peer, ...] = ()
+        self._digest = ""
+
+    def prepare(self) -> None:
+        dev = render.HUB_DEVICE
+        if sh(["ip", "link", "show", "dev", dev], check=False) == "":
+            sh(["ip", "link", "add", dev, "type", "wireguard"])
+        sh(
+            ["wg", "set", dev, "private-key", "/dev/stdin", "listen-port", str(render.HUB_PORT)],
+            stdin=self.l3.private_key,
+        )
+        sh(["ip", "address", "replace", f"{self.l3.address}/{self.l3.cidr.prefixlen}", "dev", dev])
+        mtu = link_mtu() - render.WG_OVERHEAD
+        sh(["ip", "link", "set", dev, "mtu", str(mtu), "up"])
+
+    def _reload(self) -> None:
+        try:
+            with open(self.path, "rb") as f:
+                data = f.read()
+        except FileNotFoundError:
+            data = b'{"peers": []}'
+        digest = hashlib.sha256(data).hexdigest()
+        if digest == self._digest:
+            return
+        try:
+            self.peers = parse_peers(json.loads(data), self.l3)
+        except (ValueError, SpecError) as exc:
+            log(f"hub: peers.json rejected ({exc}); keeping {len(self.peers)} peers")
+            return
+        self._digest = digest
+        log(f"hub: {len(self.peers)} peers")
+
+    def _current(self) -> dict[str, tuple[str, str]]:
+        """public key → (endpoint, allowed ips) as the kernel has them."""
+        out: dict[str, tuple[str, str]] = {}
+        for line in sh(["wg", "show", render.HUB_DEVICE, "dump"]).splitlines()[1:]:
+            cols = line.split("\t")
+            if len(cols) >= 4:
+                out[cols[0]] = (cols[2], cols[3])
+        return out
+
+    def sync(self) -> None:
+        self._reload()
+        current = self._current()
+        wanted = {p.public_key for p in self.peers}
+        for key in current.keys() - wanted:
+            sh(["wg", "set", render.HUB_DEVICE, "peer", key, "remove"])
+        for peer in self.peers:
+            ip = resolve(peer.host)
+            have = current.get(peer.public_key)
+            endpoint = f"{ip}:{render.HUB_PORT}" if ip else None
+            if (
+                have is not None
+                and have[1] == f"{peer.address}/32"
+                and (endpoint is None or have[0] == endpoint)
+            ):
+                continue
+            sh(render.hub_peer_args(peer, ip))
+
+
 def dnsmasq_proc(spec: Spec) -> Proc:
     path = f"{render.RUN_DIR}/dnsmasq.conf"
     write_file(path, render.dnsmasq_conf(spec), 0o644)
-    return Proc(
-        "dnsmasq", ["dnsmasq", "--no-daemon", "--log-facility=-", f"--conf-file={path}"]
-    )
+    return Proc("dnsmasq", ["dnsmasq", "--no-daemon", "--log-facility=-", f"--conf-file={path}"])

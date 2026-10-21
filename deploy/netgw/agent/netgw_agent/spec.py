@@ -18,8 +18,11 @@ IPSEC_PROPOSALS = ("default", "compatible", "modern")
 SOCKS_PORT = 1080
 HEALTH_PORT = 9101
 RESERVED_PORTS = frozenset({53, SOCKS_PORT, HEALTH_PORT})
+HUB_PORT = 51820
 MAX_CIDRS = 16
 MAX_FORWARDS = 64
+MAX_PEERS = 256
+L3_PREFIX_RANGE = (16, 29)
 FORBIDDEN_NETS = tuple(
     ipaddress.ip_network(n)
     for n in ("0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/4", "240.0.0.0/4")
@@ -49,6 +52,26 @@ class Forward:
 
 
 @dataclass(frozen=True)
+class L3:
+    """Whole-subnet access: instances attach from `cidr` to the hub (WireGuard on `address`, the
+    first host); the hub forwards them to remote_cidrs, routed or masqueraded (`nat`)."""
+
+    cidr: ipaddress.IPv4Network
+    address: ipaddress.IPv4Address
+    nat: bool
+    private_key: str
+
+
+@dataclass(frozen=True)
+class Peer:
+    """One attached instance: its hub key, its address in l3.cidr, the DNS name of its Pod."""
+
+    public_key: str
+    address: ipaddress.IPv4Address
+    host: str
+
+
+@dataclass(frozen=True)
 class Spec:
     gateway: str
     protocol: str
@@ -61,6 +84,7 @@ class Spec:
     forwards: tuple[Forward, ...]
     reverse: tuple[Forward, ...]
     params: dict[str, Any]
+    l3: L3 | None = None
 
 
 def _req(obj: dict[str, Any], key: str, kind: type) -> Any:
@@ -76,7 +100,7 @@ def _port(value: Any, key: str) -> int:
     return value
 
 
-def _ipv4(value: Any, key: str) -> ipaddress.IPv4Address:
+def ipv4(value: Any, key: str) -> ipaddress.IPv4Address:
     try:
         return ipaddress.IPv4Address(value)
     except (ipaddress.AddressValueError, ValueError):
@@ -103,7 +127,7 @@ def _endpoint(value: Any, key: str) -> tuple[str, int]:
     return _host(host, key), _port(int(port), key)
 
 
-def _wg_key(value: Any, key: str) -> str:
+def wg_key(value: Any, key: str) -> str:
     try:
         raw = base64.b64decode(value, validate=True) if isinstance(value, str) else b""
     except binascii.Error:
@@ -113,7 +137,7 @@ def _wg_key(value: Any, key: str) -> str:
     return value
 
 
-def _networks(values: Any, key: str, *, limit: int) -> tuple[ipaddress.IPv4Network, ...]:
+def networks(values: Any, key: str, *, limit: int) -> tuple[ipaddress.IPv4Network, ...]:
     if not isinstance(values, list) or not values or len(values) > limit:
         raise SpecError(f"{key}: expected 1-{limit} networks")
     out: list[ipaddress.IPv4Network] = []
@@ -146,10 +170,10 @@ def _forwards(values: Any, key: str) -> tuple[Forward, ...]:
 
 
 def _check_wireguard(p: dict[str, Any]) -> None:
-    _wg_key(p.get("private_key"), "wireguard.private_key")
-    _wg_key(p.get("peer_public_key"), "wireguard.peer_public_key")
+    wg_key(p.get("private_key"), "wireguard.private_key")
+    wg_key(p.get("peer_public_key"), "wireguard.peer_public_key")
     if p.get("preshared_key") is not None:
-        _wg_key(p["preshared_key"], "wireguard.preshared_key")
+        wg_key(p["preshared_key"], "wireguard.preshared_key")
     _endpoint(p.get("endpoint"), "wireguard.endpoint")
     mtu = p.get("mtu", 1420)
     if not isinstance(mtu, int) or not 1280 <= mtu <= 1500:
@@ -223,8 +247,8 @@ def _check_overlaps(
 def _dns(raw: Any, remote: tuple[ipaddress.IPv4Network, ...]) -> tuple[Any, ...]:
     if not isinstance(raw, dict):
         raise SpecError("dns: expected an object")
-    upstream = _ipv4(raw.get("upstream"), "dns.upstream")
-    servers = tuple(_ipv4(s, "dns.servers") for s in raw.get("servers") or [])
+    upstream = ipv4(raw.get("upstream"), "dns.upstream")
+    servers = tuple(ipv4(s, "dns.servers") for s in raw.get("servers") or [])
     domains = tuple(_host(d, "dns.domains") for d in raw.get("domains") or [])
     if len(servers) > 3 or len(domains) > 8:
         raise SpecError("dns: at most 3 servers and 8 domains")
@@ -233,6 +257,66 @@ def _dns(raw: Any, remote: tuple[ipaddress.IPv4Network, ...]) -> tuple[Any, ...]
     if any(not any(s in n for n in remote) for s in servers):
         raise SpecError("dns.servers: must be inside remote_cidrs")
     return upstream, servers, domains
+
+
+def _l3(
+    raw: Any,
+    protocol: str,
+    taken: tuple[ipaddress.IPv4Network, ...],
+    local: ipaddress.IPv4Address | None,
+) -> L3 | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise SpecError("l3: expected an object")
+    try:
+        cidr = ipaddress.IPv4Network(raw.get("cidr"))
+    except (ipaddress.AddressValueError, ipaddress.NetmaskValueError, ValueError, TypeError):
+        raise SpecError("l3.cidr: not an IPv4 network") from None
+    low, high = L3_PREFIX_RANGE
+    if not low <= cidr.prefixlen <= high:
+        raise SpecError(f"l3.cidr: prefix must be /{low}-/{high}")
+    for bad in (*FORBIDDEN_NETS, *taken):
+        if cidr.overlaps(bad):
+            raise SpecError(f"l3.cidr: {cidr} overlaps {bad}")
+    if local is not None and local in cidr:
+        raise SpecError("l3.cidr: contains local_address")
+    address = ipv4(raw.get("address"), "l3.address")
+    if address != next(cidr.hosts()):
+        raise SpecError("l3.address: must be the first host of l3.cidr")
+    nat = raw.get("nat")
+    if not isinstance(nat, bool):
+        raise SpecError("l3.nat: expected a boolean")
+    if protocol == "openconnect" and not nat:
+        raise SpecError("l3.nat: openconnect servers assign one address, nat is required")
+    return L3(cidr, address, nat, wg_key(raw.get("private_key"), "l3.private_key"))
+
+
+def parse_peers(raw: Any, l3: L3) -> tuple[Peer, ...]:
+    """peers.json: {"peers": [{"public_key", "address", "host"}]}; addresses unique inside
+    l3.cidr, never the hub address."""
+    items = raw.get("peers") if isinstance(raw, dict) else None
+    if not isinstance(items, list) or len(items) > MAX_PEERS:
+        raise SpecError(f"peers: expected at most {MAX_PEERS} entries")
+    out: list[Peer] = []
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise SpecError(f"peers[{i}]: expected an object")
+        key = wg_key(item.get("public_key"), f"peers[{i}].public_key")
+        address = ipv4(item.get("address"), f"peers[{i}].address")
+        if address not in l3.cidr or address in (
+            l3.address,
+            l3.cidr.network_address,
+            l3.cidr.broadcast_address,
+        ):
+            raise SpecError(f"peers[{i}].address: not an instance address of l3.cidr")
+        host = item.get("host")
+        if not isinstance(host, str) or not is_host(host.removesuffix(".")):
+            raise SpecError(f"peers[{i}].host: not a host name")
+        out.append(Peer(key, address, host))
+    if len({p.address for p in out}) != len(out) or len({p.public_key for p in out}) != len(out):
+        raise SpecError("peers: duplicate address or key")
+    return tuple(out)
 
 
 def parse(raw: dict[str, Any]) -> Spec:
@@ -244,11 +328,11 @@ def parse(raw: dict[str, Any]) -> Spec:
     protocol = raw.get("protocol")
     if protocol not in PROTOCOLS:
         raise SpecError("protocol: unknown protocol")
-    remote = _networks(raw.get("remote_cidrs"), "remote_cidrs", limit=MAX_CIDRS)
-    cluster = _networks(raw.get("cluster_cidrs"), "cluster_cidrs", limit=4)
+    remote = networks(raw.get("remote_cidrs"), "remote_cidrs", limit=MAX_CIDRS)
+    cluster = networks(raw.get("cluster_cidrs"), "cluster_cidrs", limit=4)
     _check_overlaps(remote, cluster)
     local = raw.get("local_address")
-    local_addr = None if local is None else _ipv4(local, "local_address")
+    local_addr = None if local is None else ipv4(local, "local_address")
     if protocol in ("wireguard", "ipsec") and local_addr is None:
         raise SpecError(f"local_address: required for {protocol}")
     if local_addr is not None and any(local_addr in n for n in (*FORBIDDEN_NETS, *cluster)):
@@ -260,6 +344,7 @@ def parse(raw: dict[str, Any]) -> Spec:
         raise SpecError("forwards and reverse share a listen port")
     params = _req(raw, protocol, dict)
     _CHECKS[protocol](params)
+    l3 = _l3(raw.get("l3"), protocol, (*remote, *cluster), local_addr)
     return Spec(
         gateway=gateway,
         protocol=protocol,
@@ -272,6 +357,7 @@ def parse(raw: dict[str, Any]) -> Spec:
         forwards=forwards,
         reverse=reverse,
         params=params,
+        l3=l3,
     )
 
 

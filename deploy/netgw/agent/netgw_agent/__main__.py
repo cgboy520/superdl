@@ -1,8 +1,9 @@
-"""netgw agent entry: `python3 -m netgw_agent [--check] [SPEC]` (default /etc/netgw/spec.json).
+"""netgw agent entry: `python3 -m netgw_agent [--check] [SPEC]` (default /etc/netgw/spec.json;
+L3 peers in peers.json next to it).
 
-Order: resolver → tunnel (prepare retried until it succeeds, then daemons) → relays and SOCKS →
-health endpoint; every 5 s readiness is re-evaluated and routes re-asserted. SIGTERM stops the
-daemons and exits 0.
+Order: resolver → tunnel, firewall and L3 hub (prepare retried until it succeeds, then daemons) →
+relays and SOCKS → health endpoint; every 5 s readiness is re-evaluated, routes re-asserted and
+hub peers synced. SIGTERM stops the daemons and exits 0.
 """
 
 import argparse
@@ -18,11 +19,20 @@ from netgw_agent.spec import Spec, SpecError, load
 TICK_SECONDS = 5.0
 
 
-async def _prepare(driver: run.Driver, stop: asyncio.Event) -> bool:
+def _setup(spec: Spec, driver: run.Driver, hub: run.Hub | None) -> None:
+    run.apply_firewall(spec, driver.tunnel_device())
+    driver.prepare()
+    if hub is not None:
+        hub.prepare()
+
+
+async def _prepare(
+    spec: Spec, driver: run.Driver, hub: run.Hub | None, stop: asyncio.Event
+) -> bool:
     delay = 2.0
     while not stop.is_set():
         try:
-            await asyncio.to_thread(driver.prepare)
+            await asyncio.to_thread(_setup, spec, driver, hub)
             return True
         except (OSError, run.CommandError, TimeoutError) as exc:
             run.log(f"prepare failed ({exc}); retrying in {delay:.0f}s")
@@ -33,7 +43,9 @@ async def _prepare(driver: run.Driver, stop: asyncio.Event) -> bool:
     return False
 
 
-def _tick(spec: Spec, driver: run.Driver, sup: run.Supervisor, state: relay.State) -> None:
+def _tick(
+    spec: Spec, driver: run.Driver, hub: run.Hub | None, sup: run.Supervisor, state: relay.State
+) -> None:
     up = driver.healthy(sup)
     if up != state.tunnel_up:
         run.log(f"tunnel {'up' if up else 'down'}")
@@ -45,9 +57,14 @@ def _tick(spec: Spec, driver: run.Driver, sup: run.Supervisor, state: relay.Stat
         except run.CommandError as exc:
             run.log(f"routes: {exc}")
     driver.maintain(up)
+    if hub is not None:
+        try:
+            hub.sync()
+        except run.CommandError as exc:
+            run.log(f"hub: {exc}")
 
 
-async def amain(spec: Spec) -> int:
+async def amain(spec: Spec, peers_path: str) -> int:
     os.makedirs(render.RUN_DIR, mode=0o700, exist_ok=True)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -58,14 +75,15 @@ async def amain(spec: Spec) -> int:
     state = relay.State()
     servers = [await status.start(state)]
     driver = run.DRIVERS[spec.protocol](spec)
-    run.log(f"gateway {spec.gateway} protocol {spec.protocol}")
-    if await _prepare(driver, stop):
+    hub = run.Hub(spec.l3, peers_path) if spec.l3 is not None else None
+    run.log(f"gateway {spec.gateway} protocol {spec.protocol} l3 {spec.l3 is not None}")
+    if await _prepare(spec, driver, hub, stop):
         for proc in driver.processes():
             sup.start(proc)
         servers += await relay.start(spec, state)
     while not stop.is_set():
         try:
-            await asyncio.to_thread(_tick, spec, driver, sup, state)
+            await asyncio.to_thread(_tick, spec, driver, hub, sup, state)
         except (OSError, run.CommandError, TimeoutError) as exc:
             run.log(f"tick: {exc}")
         with contextlib.suppress(TimeoutError):
@@ -90,7 +108,7 @@ def main() -> int:
     if args.check:
         print("netgw: spec ok", file=sys.stderr)
         return 0
-    return asyncio.run(amain(spec))
+    return asyncio.run(amain(spec, os.path.join(os.path.dirname(args.spec), "peers.json")))
 
 
 if __name__ == "__main__":
