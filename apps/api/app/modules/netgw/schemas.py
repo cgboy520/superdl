@@ -180,6 +180,10 @@ class AttachmentOut(BaseModel):
         "the gateway's remote networks: they apply on its next start"
     )
     created_at: datetime
+    member_id: int | None = Field(
+        default=None, description="organization gateways: the member owning the instance"
+    )
+    member_label: str | None = None
 
 
 class L3Out(BaseModel):
@@ -190,7 +194,7 @@ class L3Out(BaseModel):
     attachments: list[AttachmentOut]
 
 
-class GatewayOut(BaseModel):
+class GatewayBaseOut(BaseModel):
     uuid: str
     name: str
     protocol: Protocol
@@ -203,21 +207,66 @@ class GatewayOut(BaseModel):
     dns: DnsOut | None
     l3: L3Out | None
     tunnel: TunnelOut
-    socks_url: str = Field(description="SOCKS5 endpoint for the tenant's instances")
-    forwards: list[ForwardOut]
     created_at: datetime
     updated_at: datetime
 
 
-class AdminGatewayOut(GatewayOut):
-    user_id: int
+class GatewayOut(GatewayBaseOut):
+    """A personal gateway."""
+
+    socks_url: str = Field(description="SOCKS5 endpoint for the tenant's instances")
+    forwards: list[ForwardOut]
+
+
+class OrgGatewayOut(GatewayBaseOut):
+    """An organization gateway: whole-subnet access only; attachments carry their member."""
+
+    created_by: str = Field(description="masked email of the member who created it")
+
+
+class AdminGatewayOut(GatewayBaseOut):
+    socks_url: str | None
+    forwards: list[ForwardOut]
+    user_id: int = Field(description="owner of a personal gateway, creator of an organization one")
     pod_phase: str | None
+    scope: Literal["personal", "org"]
+    org_uuid: str | None
+    org_name: str | None
+
+
+class MyAttachmentOut(BaseModel):
+    """One of the caller's instances attached to a gateway (personal or organization)."""
+
+    gateway_uuid: str
+    gateway_name: str
+    scope: Literal["personal", "org"]
+    instance_uuid: str
+    instance_name: str
+    address: str
+    pending_restart: bool
+    created_at: datetime
+
+
+class OrgInstanceOut(BaseModel):
+    """A member's unreleased dev instance as an attachment candidate. reason: kata_tier (no attach
+    path), attached (already on a gateway; attached_to is set when that gateway is this
+    organization's)."""
+
+    instance_uuid: str
+    instance_name: str
+    status: str
+    member_id: int
+    member_label: str
+    attachable: bool
+    reason: Literal["kata_tier", "attached"] | None
+    attached_to: str | None
 
 
 class NetgwConfigOut(BaseModel):
     enabled: bool
     egress_ips: list[str]
     max_gateways: int
+    max_org_gateways: int
     max_forwards: int
     bandwidth_mbps: int
     socks_port: int

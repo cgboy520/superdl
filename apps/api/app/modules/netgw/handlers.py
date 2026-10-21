@@ -27,14 +27,16 @@ async def _lock(session: AsyncSession, gateway_id: int) -> NetGateway | None:
 @outbox_handler(service.APPLY_TASK, retry=_RETRY)
 async def handle_apply(session: AsyncSession, task: OutboxTask) -> None:
     """Render the current row (not the one at enqueue time) and converge it; a later generation
-    is applied by its own task, so recording max(applied, rendered) is enough."""
+    is applied by its own task, so recording max(applied, rendered) is enough. An organization
+    gateway touches no namespace of its own: attached instances' namespaces exist already."""
     gw = await _lock(session, task.payload["gateway_id"])
     if gw is None or gw.status == STATUS_DELETING:
         return
     generation = gw.generation
     orch = get_orchestrator()
     inp = await service.render_input(session, gw, dns_upstream=await orch.cluster_dns_ip())
-    await orch.ensure_namespace(inp.tenant_namespace)
+    if inp.tenant_namespace is not None:
+        await orch.ensure_namespace(inp.tenant_namespace)
     pull_secret = await ensure_registry_pull_secret(session, NETGW_NAMESPACE)
     await orch.apply_netgw(replace(k8s_spec(inp), image_pull_secret=pull_secret))
     gw.applied_generation = max(gw.applied_generation, generation)
@@ -47,7 +49,7 @@ async def handle_delete(session: AsyncSession, task: OutboxTask) -> None:
     gw = await _lock(session, task.payload["gateway_id"])
     if gw is None:
         return
-    await get_orchestrator().delete_netgw(gw.uuid, service.tenant_namespace(gw.user_id))
+    await get_orchestrator().delete_netgw(gw.uuid)
     await session.delete(gw)
     await session.commit()
     logger.info("netgw_deleted", gateway_uuid=gw.uuid)

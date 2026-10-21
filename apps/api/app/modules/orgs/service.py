@@ -215,6 +215,23 @@ async def member_labels(
     return {m.user_id: MemberLabel(m.id, _label(m.remark, emails.get(m.user_id))) for m in members}
 
 
+async def org_id_by_uuid(session: AsyncSession, uuid: str) -> int | None:
+    return await session.scalar(select(Organization.id).where(Organization.uuid == uuid))
+
+
+async def org_refs(session: AsyncSession, org_ids: Iterable[int]) -> dict[int, tuple[str, str]]:
+    """org_id → (uuid, name); unknown ids are absent."""
+    ids = list(set(org_ids))
+    if not ids:
+        return {}
+    rows = await session.execute(
+        select(Organization.id, Organization.uuid, Organization.name).where(
+            Organization.id.in_(ids)
+        )
+    )
+    return {oid: (uuid, name) for oid, uuid, name in rows.tuples()}
+
+
 async def orgs_of_users(session: AsyncSession, user_ids: Iterable[int]) -> dict[int, OrgRefOut]:
     """user_id → organization reference (admin tenant rows); users outside one are absent."""
     ids = list(set(user_ids))

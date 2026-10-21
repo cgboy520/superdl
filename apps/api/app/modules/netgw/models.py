@@ -27,19 +27,37 @@ KIND_INSTANCE = "instance"
 
 
 class NetGateway(Base):
+    """org_id null: a personal gateway of user_id; set: an organization gateway (whole-subnet
+    access required), user_id is only its creator. Names are unique per owner scope."""
+
     __tablename__ = "net_gateways"
     __table_args__ = (
         CheckConstraint(
             "protocol IN ('wireguard', 'ipsec', 'openvpn', 'openconnect')", name="protocol"
         ),
         CheckConstraint("status IN ('active', 'deleting')", name="status"),
-        UniqueConstraint("user_id", "name"),
+        CheckConstraint("org_id IS NULL OR jsonb_typeof(config -> 'l3') = 'object'", name="org_l3"),
+        Index(
+            "uq_net_gateways_user_id_name",
+            "user_id",
+            "name",
+            unique=True,
+            postgresql_where=text("org_id IS NULL"),
+        ),
+        Index(
+            "uq_net_gateways_org_id_name",
+            "org_id",
+            "name",
+            unique=True,
+            postgresql_where=text("org_id IS NOT NULL"),
+        ),
         UniqueConstraint("user_id", "idempotency_key"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     uuid: Mapped[str] = mapped_column(String(32), unique=True)
     user_id: Mapped[int] = mapped_column(index=True)
+    org_id: Mapped[int | None] = mapped_column(index=True)
     name: Mapped[str] = mapped_column(String(40))
     protocol: Mapped[str] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16), default=STATUS_ACTIVE, index=True)
@@ -96,7 +114,7 @@ class NetGatewayForward(Base):
 class NetGatewayAttachment(Base):
     """An instance attached to a gateway's L3 hub: its address in the gateway's L3 range and its
     hub key pair (private half AES-GCM encrypted, AAD bound to the instance uuid). One gateway per
-    instance."""
+    instance; user_id is the instance's owner (a member on an organization gateway)."""
 
     __tablename__ = "net_gateway_attachments"
     __table_args__ = (UniqueConstraint("gateway_id", "address"),)

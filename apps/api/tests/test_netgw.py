@@ -145,7 +145,7 @@ class TestLifecycle:
         assert resp.status_code == 202
         assert resp.json()["state"] == "deleting"
         await drain(sm)
-        assert fake.netgw_deleted[-1] == (gw["uuid"], f"tenant-{user_id}")
+        assert fake.netgw_deleted[-1] == gw["uuid"]
         resp = await client.get(f"/api/v1/netgw/gateways/{gw['uuid']}", headers=headers)
         assert resp.status_code == 404
 
@@ -498,7 +498,7 @@ class TestPatrol:
         )
         await netgw_patrol(sm)
         assert orphan not in fake.netgw
-        assert fake.netgw_deleted[-1] == (orphan, "tenant-99")
+        assert fake.netgw_deleted[-1] == orphan
 
     async def test_deleted_account_tears_down(self, client, sm, fake):
         headers, user_id = await _user(client)

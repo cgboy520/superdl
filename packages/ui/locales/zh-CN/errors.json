@@ -236,7 +236,10 @@
     "serverUrlInvalid": "VPN 服务器地址须为 https://主机[:端口][/路径]",
     "targetOutsideRemote": "目标 {{host}} 不在隧道网段内",
     "unavailable": "本平台未开通私网网关",
-    "wireguardKeyInvalid": "{{field}} 不是有效的 WireGuard 密钥"
+    "wireguardKeyInvalid": "{{field}} 不是有效的 WireGuard 密钥",
+    "orgGatewayQuota": "组织网关已达上限 {{max}} 个",
+    "orgL3Required": "组织网关提供整段互访,请开启",
+    "orgNameTaken": "组织内已有名为 {{name}} 的网关"
   },
   "nodes": {
     "alreadyTerminal": "状态 {{status}} 已是终态,无需吊销",

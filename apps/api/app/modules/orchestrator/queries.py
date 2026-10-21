@@ -12,6 +12,7 @@ from app.core.money import hourly_cost
 from app.core.pricing import MARKET_SPOT, MARKET_SUBSCRIPTION
 from app.modules.orchestrator import statemachine as sm_def
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
+from app.modules.orchestrator.schemas import WORKLOAD_DEV
 
 DISK_BILLABLE_STATUSES: tuple[str, ...] = ("active",)
 DISK_ARREARS_CHAIN_STATUSES: tuple[str, ...] = ("active", "grace", "frozen")
@@ -44,6 +45,36 @@ async def get_instance(session: AsyncSession, user_id: int, uuid: str) -> Instan
     if instance is None:
         raise not_found(key="orchestrator.instanceNotFound")
     return instance
+
+
+async def instance_by_uuid(session: AsyncSession, uuid: str) -> Instance | None:
+    """Any owner; for callers that authorise against the owner themselves (organization
+    gateways)."""
+    return (
+        await session.execute(select(Instance).where(Instance.uuid == uuid))
+    ).scalar_one_or_none()
+
+
+async def dev_instances_of_users(session: AsyncSession, user_ids: Iterable[int]) -> list[Instance]:
+    """Unreleased dev instances of the given users, oldest first."""
+    ids = list(user_ids)
+    if not ids:
+        return []
+    return list(
+        (
+            await session.execute(
+                select(Instance)
+                .where(
+                    Instance.user_id.in_(ids),
+                    Instance.workload_type == WORKLOAD_DEV,
+                    Instance.status.not_in((sm_def.RELEASING, sm_def.RELEASED, sm_def.FAILED)),
+                )
+                .order_by(Instance.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
 
 async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:

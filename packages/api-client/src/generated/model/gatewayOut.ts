@@ -14,6 +14,9 @@ import type { OpenConnectOut } from './openConnectOut';
 import type { OpenVpnOut } from './openVpnOut';
 import type { WireGuardOut } from './wireGuardOut';
 
+/**
+ * A personal gateway.
+ */
 export interface GatewayOut {
   checked_at: string | null;
   created_at: string;

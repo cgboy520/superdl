@@ -1,5 +1,6 @@
 """Gateway row → agent spec (deploy/netgw spec v1), L3 peers and K8s parameters. Pure: the caller
-supplies decrypted secrets, forwards, attachments, instance uuids and the cluster DNS address."""
+supplies decrypted secrets, forwards, attachments, instance uuids and namespaces and the cluster DNS
+address. tenant_namespace is None for an organization gateway."""
 
 import json
 from dataclasses import dataclass, field
@@ -32,9 +33,16 @@ class RenderInput:
     secrets: dict[str, Any]
     forwards: list[NetGatewayForward]
     instance_uuids: dict[int, str]
-    tenant_namespace: str
+    tenant_namespace: str | None
     dns_upstream: str
     attachments: list[NetGatewayAttachment] = field(default_factory=list)
+    instance_namespaces: dict[int, str] = field(default_factory=dict)
+
+    def namespace_of(self, instance_id: int) -> str:
+        """The instance's own namespace (a personal gateway's instances are all in its owner's)."""
+        ns = self.instance_namespaces.get(instance_id) or self.tenant_namespace
+        assert ns is not None
+        return ns
 
 
 def cluster_cidrs() -> list[str]:
@@ -116,7 +124,7 @@ def peers(inp: RenderInput) -> dict[str, Any]:
                 "public_key": a.public_key,
                 "address": a.address,
                 "host": netgw_peer_host(
-                    inp.instance_uuids[a.instance_id], gw.uuid, inp.tenant_namespace
+                    inp.instance_uuids[a.instance_id], gw.uuid, inp.namespace_of(a.instance_id)
                 ),
             }
             for a in sorted(inp.attachments, key=lambda a: a.id)
@@ -131,7 +139,7 @@ def agent_spec(inp: RenderInput) -> dict[str, Any]:
     reverse = [
         {
             "port": f.port,
-            "host": netgw_instance_forward_host(gw.uuid, f.id, inp.tenant_namespace),
+            "host": netgw_instance_forward_host(gw.uuid, f.id, inp.namespace_of(f.instance_id)),
             "target_port": f.target_port,
         }
         for f in sorted(inp.forwards, key=lambda f: f.id)
@@ -157,6 +165,21 @@ def agent_spec(inp: RenderInput) -> dict[str, Any]:
         "reverse": reverse,
         gw.protocol: _protocol_params(gw, inp.secrets),
     }
+
+
+def _l3_namespaces(inp: RenderInput) -> tuple[str, ...]:
+    """Organization gateways: the namespaces of the attached instances, sorted."""
+    if inp.tenant_namespace is not None or inp.gateway.config.get("l3") is None:
+        return ()
+    return tuple(
+        sorted(
+            {
+                inp.namespace_of(a.instance_id)
+                for a in inp.attachments
+                if a.instance_id in inp.instance_uuids
+            }
+        )
+    )
 
 
 def k8s_spec(inp: RenderInput) -> NetgwSpec:
@@ -185,4 +208,5 @@ def k8s_spec(inp: RenderInput) -> NetgwSpec:
         bandwidth_mbps=s.netgw_bandwidth_mbps,
         l3=gw.config.get("l3") is not None,
         peers_json=json.dumps(peers(inp), sort_keys=True, separators=(",", ":")),
+        l3_namespaces=_l3_namespaces(inp),
     )

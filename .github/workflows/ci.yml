@@ -190,6 +190,8 @@ jobs:
             # shellcheck disable=SC2086
             need superdl-tenant-mgr $pair -n superdl-netgw
           done
+          need superdl-tenant-mgr list services --all-namespaces
+          need superdl-tenant-mgr delete networkpolicies -n tenant-probe
 
           need superdl-api get pods --subresource=log
           for sa in superdl-worker superdl-tenant-mgr superdl-node-mgr superdl-prewarm superdl-disk-ops; do

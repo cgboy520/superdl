@@ -10,6 +10,9 @@ export interface AttachmentOut {
   created_at: string;
   instance_name: string;
   instance_uuid: string;
+  /** organization gateways: the member owning the instance */
+  member_id?: number | null;
+  member_label?: string | null;
   /** the running instance started before this attachment or the last change of the gateway's remote networks: they apply on its next start */
   pending_restart: boolean;
 }

@@ -612,6 +612,28 @@
             "title": "Name",
             "type": "string"
           },
+          "org_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Name"
+          },
+          "org_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Uuid"
+          },
           "pod_phase": {
             "anyOf": [
               {
@@ -640,10 +662,24 @@
             "title": "Remote Cidrs",
             "type": "array"
           },
-          "socks_url": {
-            "description": "SOCKS5 endpoint for the tenant's instances",
-            "title": "Socks Url",
+          "scope": {
+            "enum": [
+              "personal",
+              "org"
+            ],
+            "title": "Scope",
             "type": "string"
+          },
+          "socks_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Socks Url"
           },
           "state": {
             "enum": [
@@ -703,6 +739,7 @@
             "type": "string"
           },
           "user_id": {
+            "description": "owner of a personal gateway, creator of an organization one",
             "title": "User Id",
             "type": "integer"
           },
@@ -724,12 +761,15 @@
           "dns",
           "l3",
           "tunnel",
-          "socks_url",
-          "forwards",
           "created_at",
           "updated_at",
+          "socks_url",
+          "forwards",
           "user_id",
-          "pod_phase"
+          "pod_phase",
+          "scope",
+          "org_uuid",
+          "org_name"
         ],
         "title": "AdminGatewayOut",
         "type": "object"
@@ -2457,6 +2497,29 @@
             "title": "Instance Uuid",
             "type": "string"
           },
+          "member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "organization gateways: the member owning the instance",
+            "title": "Member Id"
+          },
+          "member_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Member Label"
+          },
           "pending_restart": {
             "description": "the running instance started before this attachment or the last change of the gateway's remote networks: they apply on its next start",
             "title": "Pending Restart",
@@ -3991,6 +4054,7 @@
         "type": "object"
       },
       "GatewayOut": {
+        "description": "A personal gateway.",
         "properties": {
           "checked_at": {
             "anyOf": [
@@ -4148,10 +4212,10 @@
           "dns",
           "l3",
           "tunnel",
-          "socks_url",
-          "forwards",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "socks_url",
+          "forwards"
         ],
         "title": "GatewayOut",
         "type": "object"
@@ -6512,6 +6576,60 @@
         "title": "MfaTicketRequest",
         "type": "object"
       },
+      "MyAttachmentOut": {
+        "description": "One of the caller's instances attached to a gateway (personal or organization).",
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "gateway_name": {
+            "title": "Gateway Name",
+            "type": "string"
+          },
+          "gateway_uuid": {
+            "title": "Gateway Uuid",
+            "type": "string"
+          },
+          "instance_name": {
+            "title": "Instance Name",
+            "type": "string"
+          },
+          "instance_uuid": {
+            "title": "Instance Uuid",
+            "type": "string"
+          },
+          "pending_restart": {
+            "title": "Pending Restart",
+            "type": "boolean"
+          },
+          "scope": {
+            "enum": [
+              "personal",
+              "org"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gateway_uuid",
+          "gateway_name",
+          "scope",
+          "instance_uuid",
+          "instance_name",
+          "address",
+          "pending_restart",
+          "created_at"
+        ],
+        "title": "MyAttachmentOut",
+        "type": "object"
+      },
       "MyOrgOut": {
         "description": "org is null outside an organization; received_invitations counts the pending ones.",
         "properties": {
@@ -6611,6 +6729,10 @@
             "title": "Max Gateways",
             "type": "integer"
           },
+          "max_org_gateways": {
+            "title": "Max Org Gateways",
+            "type": "integer"
+          },
           "socks_port": {
             "title": "Socks Port",
             "type": "integer"
@@ -6620,6 +6742,7 @@
           "enabled",
           "egress_ips",
           "max_gateways",
+          "max_org_gateways",
           "max_forwards",
           "bandwidth_mbps",
           "socks_port"
@@ -7625,6 +7748,232 @@
           "totals"
         ],
         "title": "OrgFinanceOut",
+        "type": "object"
+      },
+      "OrgGatewayOut": {
+        "description": "An organization gateway: whole-subnet access only; attachments carry their member.",
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "description": "masked email of the member who created it",
+            "title": "Created By",
+            "type": "string"
+          },
+          "dns": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DnsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "l3": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/L3Out"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "local_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Address"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "protocol": {
+            "enum": [
+              "wireguard",
+              "ipsec",
+              "openvpn",
+              "openconnect"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "remote_cidrs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Remote Cidrs",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "applying",
+              "connected",
+              "disconnected",
+              "deleting"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "tunnel": {
+            "discriminator": {
+              "mapping": {
+                "ipsec": "#/components/schemas/IpsecOut",
+                "openconnect": "#/components/schemas/OpenConnectOut",
+                "openvpn": "#/components/schemas/OpenVpnOut",
+                "wireguard": "#/components/schemas/WireGuardOut"
+              },
+              "propertyName": "protocol"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WireGuardOut"
+              },
+              {
+                "$ref": "#/components/schemas/IpsecOut"
+              },
+              {
+                "$ref": "#/components/schemas/OpenVpnOut"
+              },
+              {
+                "$ref": "#/components/schemas/OpenConnectOut"
+              }
+            ],
+            "title": "Tunnel"
+          },
+          "tunnel_changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tunnel Changed At"
+          },
+          "tunnel_up": {
+            "title": "Tunnel Up",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "protocol",
+          "state",
+          "tunnel_up",
+          "tunnel_changed_at",
+          "checked_at",
+          "remote_cidrs",
+          "local_address",
+          "dns",
+          "l3",
+          "tunnel",
+          "created_at",
+          "updated_at",
+          "created_by"
+        ],
+        "title": "OrgGatewayOut",
+        "type": "object"
+      },
+      "OrgInstanceOut": {
+        "description": "A member's unreleased dev instance as an attachment candidate. reason: kata_tier (no attach\npath), attached (already on a gateway; attached_to is set when that gateway is this\norganization's).",
+        "properties": {
+          "attachable": {
+            "title": "Attachable",
+            "type": "boolean"
+          },
+          "attached_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attached To"
+          },
+          "instance_name": {
+            "title": "Instance Name",
+            "type": "string"
+          },
+          "instance_uuid": {
+            "title": "Instance Uuid",
+            "type": "string"
+          },
+          "member_id": {
+            "title": "Member Id",
+            "type": "integer"
+          },
+          "member_label": {
+            "title": "Member Label",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kata_tier",
+                  "attached"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instance_uuid",
+          "instance_name",
+          "status",
+          "member_id",
+          "member_label",
+          "attachable",
+          "reason",
+          "attached_to"
+        ],
+        "title": "OrgInstanceOut",
         "type": "object"
       },
       "OrgOut": {
@@ -16104,7 +16453,7 @@
     },
     "/api/admin/v1/netgw/gateways": {
       "get": {
-        "description": "Every tenant's gateways (newest first, at most 500); secrets never included.",
+        "description": "Every tenant's gateways, personal and organization (newest first, at most 500); user_id is\nthe owner or the creator, org_uuid narrows to one organization; secrets never included.",
         "operationId": "admin_list_gateways_api_admin_v1_netgw_gateways_get",
         "parameters": [
           {
@@ -16121,6 +16470,22 @@
                 }
               ],
               "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "org_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Org Uuid"
             }
           }
         ],
@@ -22370,6 +22735,78 @@
         ]
       }
     },
+    "/api/v1/netgw/attachments": {
+      "get": {
+        "description": "The caller's instances attached to a gateway, personal or organization.",
+        "operationId": "my_attachments_api_v1_netgw_attachments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MyAttachmentOut"
+                  },
+                  "title": "Response My Attachments Api V1 Netgw Attachments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "My Attachments",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/netgw/attachments/{instance_uuid}": {
+      "delete": {
+        "description": "Detach one of the caller's instances from whatever gateway holds it (always allowed to the\ninstance's owner, organization gateways included).",
+        "operationId": "detach_own_api_v1_netgw_attachments__instance_uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_uuid",
+            "required": true,
+            "schema": {
+              "title": "Instance Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Detach Own",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
     "/api/v1/netgw/config": {
       "get": {
         "description": "Whether gateways are offered here, limits, and the platform egress addresses to allow on\nthe tenant side.",
@@ -23880,6 +24317,453 @@
         "summary": "Update Member",
         "tags": [
           "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/gateways": {
+      "get": {
+        "description": "The organization's gateways (owners and admins).",
+        "operationId": "list_org_gateways_api_v1_org_netgw_gateways_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgGatewayOut"
+                  },
+                  "title": "Response List Org Gateways Api V1 Org Netgw Gateways Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Org Gateways",
+        "tags": [
+          "netgw"
+        ]
+      },
+      "post": {
+        "description": "Create an organization gateway (owners and admins): whole-subnet access is required\n(`netgw.orgL3Required`); members' instances are attached by owners and admins.",
+        "operationId": "create_org_gateway_api_v1_org_netgw_gateways_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Org Gateway",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/gateways/{uuid}": {
+      "delete": {
+        "operationId": "delete_org_gateway_api_v1_org_netgw_gateways__uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Org Gateway",
+        "tags": [
+          "netgw"
+        ]
+      },
+      "get": {
+        "operationId": "get_org_gateway_api_v1_org_netgw_gateways__uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Org Gateway",
+        "tags": [
+          "netgw"
+        ]
+      },
+      "put": {
+        "operationId": "update_org_gateway_api_v1_org_netgw_gateways__uuid__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Org Gateway",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/gateways/{uuid}/attachments": {
+      "post": {
+        "description": "Attach a member's dev instance; a non-member's instance is a 404 like a missing one. The\nmember is notified; the instance gets its tunnel interface on its next start.",
+        "operationId": "attach_org_instance_api_v1_org_netgw_gateways__uuid__attachments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachmentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Attach Org Instance",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/gateways/{uuid}/attachments/{instance_uuid}": {
+      "delete": {
+        "operationId": "detach_org_instance_api_v1_org_netgw_gateways__uuid__attachments__instance_uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "instance_uuid",
+            "required": true,
+            "schema": {
+              "title": "Instance Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgGatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Detach Org Instance",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/gateways/{uuid}/logs": {
+      "get": {
+        "description": "Gateway container log: owners and admins, 20/h per user, not audited.",
+        "operationId": "org_gateway_logs_api_v1_org_netgw_gateways__uuid__logs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tail_lines",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Tail Lines",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceLogsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Org Gateway Logs",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/org/netgw/instances": {
+      "get": {
+        "description": "Members' unreleased dev instances and whether each can be attached (owners and admins); no\naccess data.",
+        "operationId": "org_instances_api_v1_org_netgw_instances_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgInstanceOut"
+                  },
+                  "title": "Response Org Instances Api V1 Org Netgw Instances Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Org Instances",
+        "tags": [
+          "netgw"
         ]
       }
     },

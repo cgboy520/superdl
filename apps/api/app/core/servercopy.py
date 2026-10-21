@@ -352,6 +352,35 @@ _COPY: dict[str, dict[str, str]] = {
             "请先转让所有者或解散组织后重新申请"  # cjk-ok
         ),
     },
+    "netgw.org_attached.title": {
+        "en-US": 'Instance "{name}" joined an organization network',
+        "zh-CN": "实例「{name}」已接入组织网络",  # cjk-ok
+    },
+    "netgw.org_attached.content": {
+        "en-US": (
+            'An administrator of "{org}" attached instance "{name}" to the gateway "{gateway}".'
+            " It takes effect at the instance's next start; you can detach it at any time on the"
+            " Private network page."
+        ),
+        "zh-CN": (
+            "「{org}」的管理员已将实例「{name}」接入网关「{gateway}」,"  # cjk-ok
+            "实例下次启动后生效;您可随时在「私网连接」页断开。"  # cjk-ok
+        ),
+    },
+    "netgw.org_detached.title": {
+        "en-US": 'Instance "{name}" left an organization network',
+        "zh-CN": "实例「{name}」已断开组织网络",  # cjk-ok
+    },
+    "netgw.org_detached.content": {
+        "en-US": (
+            'An administrator of "{org}" detached instance "{name}" from the gateway "{gateway}".'
+            " The gateway drops it now; its tunnel interface goes with its next restart."
+        ),
+        "zh-CN": (
+            "「{org}」的管理员已将实例「{name}」从网关「{gateway}」断开,"  # cjk-ok
+            "网关立即停止转发,实例的隧道网卡在下次重启后移除。"  # cjk-ok
+        ),
+    },
     "orgs.invited.title": {
         "en-US": 'Invitation to join "{org}"',
         "zh-CN": "邀请您加入「{org}」",  # cjk-ok

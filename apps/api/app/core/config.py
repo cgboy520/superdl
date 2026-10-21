@@ -215,6 +215,7 @@ class Settings(BaseSettings):
 
     netgw_image: str = ""
     netgw_max_per_user: int = Field(default=2, ge=0, le=20)
+    netgw_max_per_org: int = Field(default=4, ge=0, le=20)
     netgw_max_forwards: int = Field(default=16, ge=1, le=64)
     netgw_bandwidth_mbps: int = Field(default=100, ge=0, le=10000)
     netgw_egress_ips: str = ""
