@@ -11,6 +11,13 @@ import {
   createApiKeyApiV1ServicesSlugApiKeysPost,
   createDeletionRequestApiV1MeDeletionRequestPost,
   createDiskApiV1DisksPost,
+  addForwardApiV1NetgwGatewaysUuidForwardsPost,
+  attachInstanceApiV1NetgwGatewaysUuidAttachmentsPost,
+  createGatewayApiV1NetgwGatewaysPost,
+  deleteForwardApiV1NetgwGatewaysUuidForwardsForwardIdDelete,
+  deleteGatewayApiV1NetgwGatewaysUuidDelete,
+  detachInstanceApiV1NetgwGatewaysUuidAttachmentsInstanceUuidDelete,
+  updateGatewayApiV1NetgwGatewaysUuidPut,
   createInstanceApiV1InstancesPost,
   createInvoiceApiV1BillingInvoicesPost,
   createRechargeApiV1WalletRechargesPost,
@@ -54,6 +61,10 @@ import type {
   DeletionRequestCreate,
   DiskCreate,
   DiskExpand,
+  GatewayIn,
+  GatewayOut,
+  InstanceForwardIn,
+  IntranetForwardIn,
   HandleCodeRequest,
   HandleConfirmRequest,
   InstanceCreate,
@@ -333,6 +344,48 @@ export const useDeleteDisk = (o?: { onSuccess?: () => void }) =>
     ...o,
     invalidates: [keys.disks, keys.wallet, keys.instances.all, keys.services.all],
   });
+
+/** Private-network gateways: creation carries an idempotency key; every write returns the gateway with its forwards. */
+export const useCreateGateway = (o?: CallerOpts<GatewayOut>) =>
+  useApiMutation(
+    ({ body, idempotencyKey }: { body: GatewayIn; idempotencyKey: string }) =>
+      createGatewayApiV1NetgwGatewaysPost(body, { "Idempotency-Key": idempotencyKey }),
+    { ...o, invalidates: [keys.netgw.gateways] },
+  );
+export const useUpdateGateway = (o?: CallerOpts<GatewayOut>) =>
+  useApiMutation(
+    ({ uuid, body }: { uuid: string; body: GatewayIn }) => updateGatewayApiV1NetgwGatewaysUuidPut(uuid, body),
+    { ...o, invalidates: [keys.netgw.gateways] },
+  );
+export const useDeleteGateway = (o?: CallerOpts<GatewayOut>) =>
+  useApiMutation((uuid: string) => deleteGatewayApiV1NetgwGatewaysUuidDelete(uuid), {
+    ...o,
+    invalidates: [keys.netgw.gateways],
+  });
+export const useAddForward = (o?: CallerOpts<GatewayOut>) =>
+  useApiMutation(
+    ({ uuid, body }: { uuid: string; body: IntranetForwardIn | InstanceForwardIn }) =>
+      addForwardApiV1NetgwGatewaysUuidForwardsPost(uuid, body),
+    { ...o, invalidates: [keys.netgw.gateways] },
+  );
+export const useDeleteForward = (o?: CallerOpts<GatewayOut>) =>
+  useApiMutation(
+    ({ uuid, forwardId }: { uuid: string; forwardId: number }) =>
+      deleteForwardApiV1NetgwGatewaysUuidForwardsForwardIdDelete(uuid, forwardId),
+    { ...o, invalidates: [keys.netgw.gateways] },
+  );
+export const useAttachInstance = (o?: CallerOpts<GatewayOut>) =>
+  useApiMutation(
+    ({ uuid, instanceUuid }: { uuid: string; instanceUuid: string }) =>
+      attachInstanceApiV1NetgwGatewaysUuidAttachmentsPost(uuid, { instance_uuid: instanceUuid }),
+    { ...o, invalidates: [keys.netgw.gateways] },
+  );
+export const useDetachInstance = (o?: CallerOpts<GatewayOut>) =>
+  useApiMutation(
+    ({ uuid, instanceUuid }: { uuid: string; instanceUuid: string }) =>
+      detachInstanceApiV1NetgwGatewaysUuidAttachmentsInstanceUuidDelete(uuid, instanceUuid),
+    { ...o, invalidates: [keys.netgw.gateways] },
+  );
 
 export const useAddSshKey = (o?: { onSuccess?: (key: SshKeyOut) => void }) =>
   useApiMutation((body: { name: string; public_key: string }) => addSshKeyApiV1SshKeysPost(body), {

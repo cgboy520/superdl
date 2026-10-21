@@ -8,6 +8,7 @@ from app.modules.adminapi import (
     router_catalog,
     router_finance,
     router_legal,
+    router_netgw,
     router_nodes,
     router_ops,
     router_tenants,
@@ -23,3 +24,4 @@ router.include_router(router_nodes.router)
 router.include_router(router_finance.router)
 router.include_router(router_tenants.router)
 router.include_router(router_legal.router)
+router.include_router(router_netgw.router)

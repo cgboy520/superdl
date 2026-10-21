@@ -11,6 +11,20 @@ metadata:
     pod-security.kubernetes.io/warn: restricted
     pod-security.kubernetes.io/warn-version: latest
 ---
+# Private-network gateways (docs/reference/netgw.md). PSA privileged because the gateway Pods need
+# NET_ADMIN; the real limits are admission policy 4 (superdl-global-pod-guard: digest-pinned image,
+# NET_ADMIN / NET_BIND_SERVICE / MKNOD only, no token, own Secret only) and the per-gateway
+# NetworkPolicy. Deliberately without superdl.io/managed: tenant baseline rules do not apply here.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: superdl-netgw
+  labels:
+    app.kubernetes.io/part-of: superdl
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/audit-version: latest
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -35,6 +49,14 @@ data:
   SUPERDL_WEB_BASE_URL: "https://console.superdl.example.com"
   SUPERDL_JUPYTER_DOMAIN_SUFFIX: "app.superdl.example.com"
   SUPERDL_SERVICE_DOMAIN_SUFFIX: "svc.superdl.example.com"
+  # Private-network gateways: empty image = feature off. Set the digest-pinned image built from
+  # deploy/netgw, label the gateway nodes node-restriction.kubernetes.io/superdl-netgw=true and list
+  # their public egress addresses (shown to tenants for their firewall allow-lists).
+  SUPERDL_NETGW_IMAGE: ""
+  SUPERDL_NETGW_EGRESS_IPS: ""
+  # Pod and Service ranges of the cluster (tunnelled networks must not overlap them).
+  SUPERDL_TENANT_POD_CIDR: "10.42.0.0/16"
+  SUPERDL_TENANT_SERVICE_CIDR: "10.43.0.0/16"
   SUPERDL_CORS_ORIGINS: '["https://console.superdl.example.com","https://admin.superdl.example.com"]'
   SUPERDL_ADMIN_HOST: "admin.superdl.example.com"
   SUPERDL_REGISTRY_HOST: "harbor.superdl.example.com"

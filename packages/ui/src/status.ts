@@ -415,6 +415,18 @@ export const diskStatusMap = {
   deleted: { labelKey: "shared:status.disk.deleted", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<DiskStatus, StatusMeta>;
 
+/** Private-network gateway state (matches GatewayOut.state exactly); applying / deleting poll transiently. */
+export type NetgwState = "applying" | "connected" | "disconnected" | "deleting";
+
+export const netgwStateMap = {
+  applying: { labelKey: "shared:status.netgw.applying", color: statusColors.blue, badge: "processing" },
+  connected: { labelKey: "shared:status.netgw.connected", color: statusColors.green, badge: "success" },
+  disconnected: { labelKey: "shared:status.netgw.disconnected", color: statusColors.orange, badge: "warning" },
+  deleting: { labelKey: "shared:status.netgw.deleting", color: statusColors.gray, badge: "default" },
+} as const satisfies Record<NetgwState, StatusMeta>;
+
+export const isTransientNetgwState = (s: string): boolean => s === "applying" || s === "deleting";
+
 /** Announcement status (matches announcements.status exactly) */
 export type AnnouncementStatus = "published" | "revoked";
 
@@ -533,6 +545,7 @@ export const ALL_STATUS_MAPS = [
   ticketStatusMap,
   deletionStatusMap,
   diskStatusMap,
+  netgwStateMap,
   announcementStatusMap,
   orderStatusMap,
   adjustmentStatusMap,

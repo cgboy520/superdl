@@ -12,6 +12,7 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.currencies import SUPPORTED_CURRENCIES
+from app.core.registry import is_valid_image_ref
 
 _DEV_JWT_SECRET = "dev-secret-change-me"
 
@@ -22,6 +23,7 @@ _URL_PATTERN = (
     r"(/[A-Za-z0-9._~/-]*)?"
 )
 _URL_RE = re.compile(rf"^{_URL_PATTERN}$")
+_NETGW_IMAGE_RE = re.compile(r"[^@\s]+/superdl-netgw@sha256:[0-9a-f]{64}")
 _HOSTNAME_RE = re.compile(
     r"^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
     r"(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*(:\d{1,5})?$"
@@ -193,6 +195,7 @@ class Settings(BaseSettings):
 
     k8s_backend: Literal["fake", "real"] = "fake"
     tenant_pod_cidr: str = "10.42.0.0/16"
+    tenant_service_cidr: str = "10.43.0.0/16"
     shared_tier_allowed_pools: str = "mig,hami"
     hami_use_gputype: bool = False
     k8s_namespace_prefix: str = "tenant-"
@@ -209,6 +212,12 @@ class Settings(BaseSettings):
     jupyter_host_prefix: str = ""
     jupyter_url_port: int = 443
     service_domain_suffix: str = "svc.superdl.example.com"
+
+    netgw_image: str = ""
+    netgw_max_per_user: int = Field(default=2, ge=0, le=20)
+    netgw_max_forwards: int = Field(default=16, ge=1, le=64)
+    netgw_bandwidth_mbps: int = Field(default=100, ge=0, le=10000)
+    netgw_egress_ips: str = ""
 
     alertmanager_token: str | None = None
     grafana_url: str = ""
@@ -305,6 +314,7 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"tenant_pod_cidr is not a valid network: {self.tenant_pod_cidr}"
                 ) from exc
+        self._validate_netgw()
         for name in ("config_encryption_key", "config_encryption_key_previous"):
             raw = getattr(self, name)
             if raw is not None:
@@ -319,6 +329,26 @@ class Settings(BaseSettings):
                 " must carry the OLD key; identical keys mean no rotation happened"
             )
         return self
+
+    def _validate_netgw(self) -> None:
+        """Service CIDR, gateway image shape and the displayed egress addresses."""
+        try:
+            ipaddress.IPv4Network(self.tenant_service_cidr, strict=False)
+        except ValueError as exc:
+            raise ValueError(
+                f"tenant_service_cidr is not a valid IPv4 network: {self.tenant_service_cidr}"
+            ) from exc
+        if self.netgw_image and not is_valid_image_ref(self.netgw_image):
+            raise ValueError(f"netgw_image is not a valid image reference: {self.netgw_image}")
+        for ip in self.parsed_netgw_egress_ips():
+            try:
+                ipaddress.IPv4Address(ip)
+            except ValueError as exc:
+                raise ValueError(f"netgw_egress_ips has an invalid IPv4 address: {ip}") from exc
+
+    def parsed_netgw_egress_ips(self) -> tuple[str, ...]:
+        """Public egress addresses of the gateway nodes, shown to tenants for their allow-lists."""
+        return tuple(p.strip() for p in self.netgw_egress_ips.split(",") if p.strip())
 
     def _validate_deployment_identity(self) -> None:
         """Currency must be in the supported table; the billing timezone must be an IANA zone."""
@@ -456,6 +486,11 @@ class Settings(BaseSettings):
             out.append(
                 "public_base_url must start with https://"
                 " (the install script and enrollment tokens use it)"
+            )
+        if self.netgw_image and not _NETGW_IMAGE_RE.fullmatch(self.netgw_image):
+            out.append(
+                "netgw_image must be <registry>/<project>/superdl-netgw@sha256:<digest> in prod"
+                " (admission policy 4 admits no other gateway image)"
             )
         return out
 

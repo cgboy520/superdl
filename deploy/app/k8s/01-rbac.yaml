@@ -162,6 +162,35 @@ subjects:
     name: superdl-api
     namespace: superdl
 ---
+# Private-network gateways: tenant-mgr converges gateway Deployments and their spec Secrets in
+# superdl-netgw only (Services / NetworkPolicies / Pods come from the superdl-tenant-mgr ClusterRole).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: superdl-netgw
+  namespace: superdl-netgw
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: superdl-netgw
+  namespace: superdl-netgw
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: superdl-netgw
+subjects:
+  - kind: ServiceAccount
+    name: superdl-tenant-mgr
+    namespace: superdl
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

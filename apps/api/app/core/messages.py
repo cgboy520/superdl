@@ -348,6 +348,68 @@ MESSAGES: dict[str, str] = {
         "Metrics are temporarily unavailable; billing is unaffected (it relies on the "
         "instance event log)"
     ),
+    "netgw.cidrForbidden": "Network {cidr} overlaps a reserved range ({range})",
+    "netgw.cidrInvalid": "{cidr} is not an IPv4 network",
+    "netgw.cidrOverlap": "Network {cidr} overlaps {other}",
+    "netgw.cidrTooWide": "Network {cidr} is too wide — use a prefix of /{min} or longer",
+    "netgw.credentialInvalid": "{field} must be 1–256 printable characters without spaces",
+    "netgw.dnsIncomplete": "Enter both DNS servers and domains, or neither",
+    "netgw.dnsServerOutside": "DNS server {server} must be inside the tunnelled networks",
+    "netgw.endpointInvalid": "Endpoint {endpoint} must be host:port",
+    "netgw.forwardNotFound": "Forward not found",
+    "netgw.forwardQuota": "This gateway already has the maximum of {max} forwards",
+    "netgw.gatewayDeleting": "The gateway is being deleted",
+    "netgw.gatewayQuota": "You already have the maximum of {max} gateways",
+    "netgw.hostInvalid": "{host} is not a valid host name or IPv4 address",
+    "netgw.identityInvalid": "{field} contains characters that are not allowed",
+    "netgw.attachmentNotFound": "This instance is not attached to the gateway",
+    "netgw.instanceAttached": "This instance is already attached to another gateway",
+    "netgw.instanceNotEligible": "Only unreleased dev instances can be exposed through a gateway",
+    "netgw.l3CidrContainsLocal": "Instance network {cidr} contains the gateway's tunnel address",
+    "netgw.l3CidrInvalid": "{cidr} is not an IPv4 network",
+    "netgw.l3CidrNotPrivate": (
+        "Instance network {cidr} must be inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or "
+        "100.64.0.0/10"
+    ),
+    "netgw.l3CidrOverlapsRemote": "Instance network {cidr} overlaps the tunnelled network {other}",
+    "netgw.l3CidrSize": "Instance network {cidr} must have a prefix between /{min} and /{max}",
+    "netgw.l3Disabled": "Whole-subnet access is not enabled on this gateway",
+    "netgw.l3Full": "The instance network of this gateway has no free address left",
+    "netgw.l3InUse": (
+        "Detach all instances before turning off whole-subnet access or changing its network"
+    ),
+    "netgw.l3InstanceUnsupported": (
+        "Whole-subnet access is not available for instances on dedicated (VM-isolated) GPUs"
+    ),
+    "netgw.l3NatRequired": "SSL VPN gateways support whole-subnet access with NAT only",
+    "netgw.localAddressForbidden": "Tunnel address {address} is inside a reserved range",
+    "netgw.localAddressNotAllowed": (
+        "This protocol takes its tunnel address from the server — leave it empty"
+    ),
+    "netgw.localAddressRequired": "Enter the gateway's tunnel address",
+    "netgw.logsUnavailable": "Gateway logs are temporarily unavailable, please try again later",
+    "netgw.nameReserved": "The name {name} is reserved",
+    "netgw.nameTaken": "The name {name} is already used by one of your gateways or forwards",
+    "netgw.notFound": "Gateway not found",
+    "netgw.openvpnProfileInvalid": "The OpenVPN profile is not accepted: {reason}",
+    "netgw.peerInsideRemote": "The VPN server {host} must not be inside the tunnelled networks",
+    "netgw.peerNotPublic": "The VPN server {host} must have a public address",
+    "netgw.peerPortBlocked": "Port {port} cannot be used to reach the VPN server",
+    "netgw.portReserved": "Port {port} is reserved by the gateway",
+    "netgw.portTaken": "Port {port} is already used by another forward of this gateway",
+    "netgw.protocolImmutable": "The protocol of a gateway cannot be changed — create a new gateway",
+    "netgw.pskInvalid": (
+        "The pre-shared key must be 16–128 printable characters without quotes or backslashes"
+    ),
+    "netgw.realNameRequired": (
+        "Identity verification is required before connecting a private network"
+    ),
+    "netgw.secretRequired": "{field} is required",
+    "netgw.serverCertInvalid": "The server certificate pin must look like sha256:… or pin-sha256:…",
+    "netgw.serverUrlInvalid": "The VPN server must be an https://host[:port][/path] address",
+    "netgw.targetOutsideRemote": "Target {host} is outside the tunnelled networks",
+    "netgw.unavailable": "Private-network gateways are not available on this platform",
+    "netgw.wireguardKeyInvalid": "{field} is not a WireGuard key",
     "nodes.alreadyTerminal": "Status {status} is already terminal — no need to revoke",
     "nodes.clusterNotConfigured": (
         "Cluster access not configured: a super admin must enter the RKE2 server address and "

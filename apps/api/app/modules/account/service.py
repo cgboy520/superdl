@@ -1,4 +1,5 @@
 import secrets
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -589,6 +590,15 @@ async def is_active_user(session: AsyncSession, user_id: int) -> bool:
     """Ownership check: user_id exists and is active."""
     status = await session.scalar(select(User.status).where(User.id == user_id))
     return status == "active"
+
+
+async def user_statuses(session: AsyncSession, user_ids: Iterable[int]) -> dict[int, str]:
+    """user_id → status; unknown ids are absent."""
+    ids = list(user_ids)
+    if not ids:
+        return {}
+    rows = await session.execute(select(User.id, User.status).where(User.id.in_(ids)))
+    return dict(rows.tuples().all())
 
 
 async def require_real_name_if_required(session: AsyncSession, user: User, *, key: str) -> None:

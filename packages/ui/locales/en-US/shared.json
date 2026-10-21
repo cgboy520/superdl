@@ -120,6 +120,12 @@
       "frozen": "Frozen",
       "grace": "Grace period"
     },
+    "netgw": {
+      "applying": "Applying",
+      "connected": "Connected",
+      "deleting": "Deleting",
+      "disconnected": "Not connected"
+    },
     "deletion": {
       "cancelled": "Cancelled",
       "completed": "Deleted",

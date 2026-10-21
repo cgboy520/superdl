@@ -525,6 +525,7 @@
     "groupOverview": "总览",
     "groupResources": "资源",
     "images": "镜像与预热",
+    "netgw": "私网网关",
     "nodes": "节点与 GPU",
     "overview": "运营总览",
     "platform": "平台配置",
@@ -533,6 +534,32 @@
     "skus": "SKU 与定价",
     "tenants": "租户与实例",
     "tickets": "工单"
+  },
+  "netgw": {
+    "alreadyDeleting": "网关正在删除",
+    "colActions": "操作",
+    "colChecked": "最近巡检",
+    "colCreated": "创建时间",
+    "colForwards": "映射",
+    "colGateway": "网关",
+    "colL3": "子网互通",
+    "colPeer": "对端",
+    "colProtocol": "协议",
+    "colRemote": "隧道网段",
+    "colState": "状态",
+    "delete": "删除网关",
+    "deleteConfirm": "删除租户 #{{user}} 的网关 {{name}}?隧道立即断开,该网关的映射一并删除,租户会看到网关消失。",
+    "deleteTitle": "删除私网网关",
+    "empty": "还没有私网网关",
+    "l3Routed": "路由",
+    "l3Summary": "{{mode}} · 已接入 {{n}} 个实例",
+    "protocol": {
+      "ipsec": "IPsec",
+      "openconnect": "SSL VPN",
+      "openvpn": "OpenVPN",
+      "wireguard": "WireGuard"
+    },
+    "tenantFilter": "租户 #{{id}} · 清除"
   },
   "nodes": {
     "actionCordon": "停止调度",

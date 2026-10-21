@@ -15,6 +15,7 @@ from app.modules.billing.settlement import settle_daily_disks, settle_due_hours
 from app.modules.billing.subscriptions import subscription_patrol
 from app.modules.catalog.prewarm import prewarm_patrol
 from app.modules.metering.service import aggregate_previous_hour
+from app.modules.netgw.patrol import netgw_patrol
 from app.modules.nodes.patrol import node_spec_patrol
 from app.modules.nodes.reconciler import reconcile_enrollments_once
 from app.modules.orchestrator.reconciler import reconcile_once
@@ -65,6 +66,9 @@ JOBS: tuple[ScheduledJob, ...] = (
     ScheduledJob("outbox_metrics", report_pending_metrics, CORE, 60, _interval(seconds=60)),
     ScheduledJob(
         "reconciler", reconcile_once, TENANT_MGR, 30, _interval(seconds=30), max_instances=1
+    ),
+    ScheduledJob(
+        "netgw_patrol", netgw_patrol, TENANT_MGR, 30, _interval(seconds=30), max_instances=1
     ),
     ScheduledJob(
         "hourly_settlement",

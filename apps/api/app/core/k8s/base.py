@@ -2,6 +2,7 @@
 use Fake, production uses Real; business code must never
 import the kubernetes client directly."""
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, Protocol
@@ -20,6 +21,47 @@ GATEWAY_API_GROUP = "gateway.networking.k8s.io"
 GATEWAY_API_VERSION = "v1"
 HTTPROUTE_PLURAL = "httproutes"
 GATEWAY_PLURAL = "gateways"
+
+# Tenant egress: never these destinations, never these TCP ports (shared by the tenant and the
+# gateway NetworkPolicies and by the gateway peer checks).
+PRIVATE_CIDRS = [
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "169.254.0.0/16",
+    "100.64.0.0/10",
+    "198.18.0.0/15",
+]
+EGRESS_BLOCKED_TCP_PORTS = (
+    23,
+    25,
+    135,
+    139,
+    445,
+    465,
+    587,
+    3306,
+    3389,
+    5432,
+    6379,
+    9200,
+    11211,
+    27017,
+)
+
+NETGW_NAMESPACE = "superdl-netgw"
+NETGW_LABEL = "superdl.io/netgw"
+NETGW_TENANT_LABEL = "superdl.io/tenant"
+# Kubelets cannot set node-restriction.kubernetes.io/ labels: a tenant node cannot attract gateways.
+NETGW_NODE_LABEL = "node-restriction.kubernetes.io/superdl-netgw"
+NETGW_CONTAINER = "gateway"
+NETGW_SOCKS_PORT = 1080
+NETGW_HEALTH_PORT = 9101
+# L3: attached instance Pods carry this label (value = gateway uuid) and the attach init container.
+NETGW_L3_LABEL = "superdl.io/netgw-l3"
+NETGW_ATTACH_CONTAINER = "netgw-attach"
+NETGW_HUB_PORT = 51820
+CLUSTER_DOMAIN = "cluster.local"
 
 
 def jupyter_service_name(instance_name: str) -> str:
@@ -43,10 +85,63 @@ def data_disk_pvc_name(disk_uuid: str) -> str:
     return f"disk-{disk_uuid}"
 
 
+def netgw_object_name(gateway_uuid: str) -> str:
+    """Deployment / Secret / NetworkPolicy / SOCKS Service of one gateway (gateway namespace)."""
+    return f"netgw-{gateway_uuid}"
+
+
+def netgw_forward_service_name(gateway_uuid: str, forward_id: int) -> str:
+    """Per-forward ClusterIP Service: intranet forwards in the gateway namespace, instance forwards
+    in the tenant namespace."""
+    return f"netgw-{gateway_uuid}-{forward_id}"
+
+
+def netgw_instance_forward_host(gateway_uuid: str, forward_id: int, tenant_namespace: str) -> str:
+    """Absolute cluster name the gateway's reverse relay dials for one instance forward."""
+    name = netgw_forward_service_name(gateway_uuid, forward_id)
+    return f"{name}.{tenant_namespace}.svc.{CLUSTER_DOMAIN}."
+
+
+def netgw_hub_service_name(gateway_uuid: str) -> str:
+    """Headless Service of the gateway's L3 hub (gateway namespace); instances dial it by name."""
+    return f"netgw-{gateway_uuid}-hub"
+
+
+def netgw_l3_service_name(gateway_uuid: str) -> str:
+    """Headless Service selecting the attached instance Pods (tenant namespace); also their
+    spec.subdomain, so each Pod resolves as <instance>.<this>.<namespace>.svc."""
+    return f"netgw-{gateway_uuid}-l3"
+
+
+def netgw_attach_secret_name(instance_name: str) -> str:
+    """Per-instance Secret with attach.json, mounted only into the attach init container."""
+    return f"netgw-attach-{instance_name}"
+
+
+def netgw_hub_host(gateway_uuid: str) -> str:
+    return f"{netgw_hub_service_name(gateway_uuid)}.{NETGW_NAMESPACE}.svc.{CLUSTER_DOMAIN}."
+
+
+def netgw_peer_host(instance_name: str, gateway_uuid: str, tenant_namespace: str) -> str:
+    """DNS name of one attached instance Pod, re-resolved by the hub every tick."""
+    service = netgw_l3_service_name(gateway_uuid)
+    return f"{instance_name}.{service}.{tenant_namespace}.svc.{CLUSTER_DOMAIN}."
+
+
 def instance_env_secret_name(instance_name: str) -> str:
     """Name of the per-instance Secret for sensitive env (JUPYTER_TOKEN etc.), deleted with the
     instance."""
     return f"jupyter-{instance_name}"
+
+
+@dataclass(frozen=True)
+class NetgwAttach:
+    """Instance side of an L3 attachment: init container image and attach.json (carries the
+    instance's hub private key, so it only lands in a Secret)."""
+
+    gateway_uuid: str
+    image: str
+    config_json: str
 
 
 @dataclass(frozen=True)
@@ -82,6 +177,62 @@ class InstancePodSpec:
     health_path: str | None = None
     with_ssh: bool = True
     startup_failure_threshold: int = 90
+    netgw: NetgwAttach | None = None
+
+
+@dataclass(frozen=True)
+class NetgwIntranetForward:
+    """Instances reach `<name>:<port>` (ExternalName in the tenant namespace → per-forward Service
+    in the gateway namespace → gateway listen_port)."""
+
+    forward_id: int
+    name: str
+    port: int
+    listen_port: int
+
+
+@dataclass(frozen=True)
+class NetgwInstanceForward:
+    """Tenant-namespace ClusterIP Service selecting one instance Pod on `port`; the gateway relays
+    the tunnel side to it."""
+
+    forward_id: int
+    instance_name: str
+    port: int
+
+
+@dataclass(frozen=True)
+class NetgwSpec:
+    """K8s parameters of one gateway; spec_json carries secrets and only lands in a Secret.
+    peers_json (L3 peers) sits next to it but outside spec_hash: attaching never rolls the Pod."""
+
+    uuid: str
+    tenant_namespace: str
+    socks_name: str
+    image: str
+    spec_json: str
+    egress_ports: tuple[tuple[str, int], ...]
+    intranet: tuple[NetgwIntranetForward, ...] = ()
+    instance: tuple[NetgwInstanceForward, ...] = ()
+    bandwidth_mbps: int = 0
+    image_pull_secret: str | None = None
+    l3: bool = False
+    peers_json: str = '{"peers":[]}'
+
+    @property
+    def spec_hash(self) -> str:
+        return hashlib.sha256(self.spec_json.encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class NetgwStatus:
+    """One gateway Deployment as observed: image of its template, readiness of its Pod."""
+
+    uuid: str
+    tenant_namespace: str
+    image: str
+    ready: bool
+    phase: str
 
 
 class NodePortTaken(Exception):
@@ -384,6 +535,29 @@ class K8sOrchestrator(Protocol):
         (a control-plane action, see the nodes module runbook)."""
         ...
 
+    async def cluster_dns_ip(self) -> str:
+        """ClusterIP of the cluster DNS Service (kube-system/kube-dns)."""
+        ...
+
+    async def apply_netgw(self, spec: NetgwSpec) -> None:
+        """Converge one gateway: spec Secret, Deployment, NetworkPolicy, SOCKS and forward
+        Services, tenant-namespace ExternalNames and instance Services; objects of the gateway no
+        longer wanted are deleted. Idempotent."""
+        ...
+
+    async def delete_netgw(self, gateway_uuid: str, tenant_namespace: str) -> None:
+        """Delete every object of the gateway in both namespaces; missing objects are ignored."""
+        ...
+
+    async def list_netgw(self) -> list[NetgwStatus]:
+        """Every gateway Deployment in the gateway namespace with its Pod readiness."""
+        ...
+
+    async def read_netgw_logs(self, gateway_uuid: str, *, tail_lines: int) -> str:
+        """Last tail_lines lines of the gateway container log; empty when no Pod exists. Allowed on
+        the request path, the caller must authenticate and rate-limit."""
+        ...
+
 
 GPU_MODEL_NODE_LABEL = "superdl.io/gpu-model"
 # The pool label lives under the node-restriction.kubernetes.io/ prefix: the kubelet cannot set it,
@@ -402,6 +576,7 @@ INFRA_ROLE_LABELS = (
 GPU_WORKLOAD_CONFIG_LABEL = "nvidia.com/gpu.workload.config"
 GPU_DEPLOY_DEVICE_PLUGIN_LABEL = "nvidia.com/gpu.deploy.device-plugin"
 MANAGED_LABEL = "superdl.io/managed"
+INSTANCE_LABEL = "superdl.io/instance"
 JOB_NAME_LABEL = "batch.kubernetes.io/job-name"
 
 

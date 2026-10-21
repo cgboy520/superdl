@@ -1,0 +1,15 @@
+#!/bin/sh
+# openconnect --script hook: bring the tunnel device up with its IPv4 address only; routes and DNS
+# stay with the netgw agent (server-pushed routes and resolvers are ignored).
+set -eu
+
+case "${reason:-}" in
+  pre-init)
+    [ -c /dev/net/tun ]
+    ;;
+  connect | reconnect)
+    ip link set dev "$TUNDEV" up mtu "${INTERNAL_IP4_MTU:-1400}"
+    ip -4 address replace "$INTERNAL_IP4_ADDRESS/32" dev "$TUNDEV"
+    ;;
+  *) ;;
+esac

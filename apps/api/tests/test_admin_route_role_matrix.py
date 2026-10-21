@@ -73,6 +73,8 @@ MATRIX: dict[str, str | frozenset[str]] = {
     "POST /api/admin/v1/invoices/{invoice_id}/issue": _FIN,
     "POST /api/admin/v1/invoices/{invoice_id}/reject": _FIN,
     "GET /api/admin/v1/legal-docs": _ANY_READ,
+    "GET /api/admin/v1/netgw/gateways": _ANY_READ,
+    "POST /api/admin/v1/netgw/gateways/{uuid}/delete": _OPS,
     "PUT /api/admin/v1/legal-docs/versions/{version_id}": _ADMIN_ONLY,
     "POST /api/admin/v1/legal-docs/versions/{version_id}/archive": _ADMIN_ONLY,
     "POST /api/admin/v1/legal-docs/versions/{version_id}/publish": _ADMIN_ONLY,

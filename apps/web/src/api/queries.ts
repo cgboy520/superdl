@@ -19,6 +19,9 @@ import {
   getWalletApiV1WalletGet,
   instancesMetricsSummaryApiV1MetricsInstancesGet,
   listDisksApiV1DisksGet,
+  getConfigApiV1NetgwConfigGet,
+  gatewayLogsApiV1NetgwGatewaysUuidLogsGet,
+  listGatewaysApiV1NetgwGatewaysGet,
   listHourlyBillsApiV1BillsHourlyGet,
   listImagesApiV1ImagesGet,
   listExpiringInstancesApiV1InstancesExpiringGet,
@@ -44,6 +47,8 @@ import {
 import type {
   ApiError,
   ApiKeyOut,
+  GatewayLogsApiV1NetgwGatewaysUuidLogsGetParams,
+  GatewayOut,
   GetInstanceLogsApiV1InstancesUuidLogsGetParams,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
   GetServiceLogsApiV1ServicesSlugLogsGetParams,
@@ -133,6 +138,21 @@ export const useImages = () => useQuery({ queryKey: keys.images, queryFn: () => 
 export const useSshKeys = () => useQuery({ queryKey: keys.sshKeys, queryFn: () => listSshKeysApiV1SshKeysGet() });
 export const useDisks = (opts?: QueryOpts) =>
   useQuery({ queryKey: keys.disks, queryFn: () => listDisksApiV1DisksGet(), ...opts });
+/** Private-network gateways: availability / limits / egress addresses, then the gateway list (with forwards). */
+export const useNetgwConfig = () =>
+  useQuery({ queryKey: keys.netgw.config, queryFn: () => getConfigApiV1NetgwConfigGet() });
+export const useGateways = (opts?: QueryOpts<GatewayOut[]>) =>
+  useQuery({ queryKey: keys.netgw.gateways, queryFn: () => listGatewaysApiV1NetgwGatewaysGet(), ...opts });
+export const useGatewayLogs = (
+  uuid: string,
+  params: GatewayLogsApiV1NetgwGatewaysUuidLogsGetParams,
+  opts?: QueryOpts<InstanceLogsOut>,
+) =>
+  useQuery({
+    queryKey: keys.netgw.logs(uuid, params),
+    queryFn: () => gatewayLogsApiV1NetgwGatewaysUuidLogsGet(uuid, params),
+    ...opts,
+  });
 /** Lightweight whole-table view (first 100; dashboard counts / storage page / support link selection); the list page uses useInstancePages. */
 export const useInstances = (opts?: QueryOpts<PageInstanceOut>) =>
   useQuery<PageInstanceOut, ApiError, InstanceOut[]>({

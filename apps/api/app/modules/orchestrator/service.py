@@ -31,7 +31,7 @@ from app.core.idempotency import (
     request_fingerprint,
 )
 from app.core.k8s import InstancePodSpec, get_orchestrator
-from app.core.k8s.base import STARTUP_PROBE_PERIOD_SECONDS, data_disk_pvc_name
+from app.core.k8s.base import STARTUP_PROBE_PERIOD_SECONDS, NetgwAttach, data_disk_pvc_name
 from app.core.logging import get_logger
 from app.core.money import hourly_cost, money_str
 from app.core.outbox import enqueue
@@ -52,6 +52,7 @@ from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.catalog import service as catalog_service
+from app.modules.netgw import service as netgw_service
 from app.modules.nodes import service as nodes_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import (
@@ -1264,11 +1265,13 @@ def build_pod_spec(
     distro: str | None = None,
     data_disk_pvc: str | None = None,
     image_pull_secret: str | None = None,
+    netgw: NetgwAttach | None = None,
 ) -> InstancePodSpec:
     """Build the Pod spec. data_disk_pvc is computed by the caller from the disk uuid
     (data_disk_pvc_name);
     image_pull_secret is the pull-credential Secret name in that ns; the service form reads the
-    snapshot columns of the instance row only.
+    snapshot columns of the instance row only. netgw (an L3 attachment) only lands on
+    user-namespaced dev Pods.
     """
     settings = get_settings()
     gpu_req = spec_to_gpu_request(
@@ -1324,6 +1327,7 @@ def build_pod_spec(
         health_path=instance.health_path if is_service else None,
         with_ssh=instance.with_ssh,
         startup_failure_threshold=startup_failure_threshold(settings.creating_timeout_seconds),
+        netgw=netgw if gpu_req.host_users is False and not is_service else None,
     )
 
 
@@ -1336,8 +1340,8 @@ def startup_failure_threshold(creating_timeout_seconds: int) -> int:
 async def build_pod_spec_with_cluster(
     session: AsyncSession, instance: Instance, *, image_pull_secret: str | None = None
 ) -> InstancePodSpec:
-    """For outbox handlers: with the cluster distribution context and the data-disk subPath (read
-    from the disk record)."""
+    """For outbox handlers: with the cluster distribution context, the data-disk subPath (read
+    from the disk record) and the instance's L3 attachment."""
     row = await nodes_service.get_cluster_status(session)
     disk_pvc: str | None = None
     if instance.data_disk_id is not None:
@@ -1350,6 +1354,7 @@ async def build_pod_spec_with_cluster(
         distro=row.distro if row else None,
         data_disk_pvc=disk_pvc,
         image_pull_secret=image_pull_secret,
+        netgw=await netgw_service.instance_attach(session, instance),
     )
 
 

@@ -1,0 +1,9 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "PL"]
+ignore = ["PLR2004", "PLR0913", "PLR0911", "PLC0415"]
+
+[lint.isort]
+known-first-party = ["netgw_agent", "fixtures"]

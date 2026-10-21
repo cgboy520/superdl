@@ -10,6 +10,8 @@ from kubernetes import client as k8s_client
 
 from app.core.k8s.base import (
     INFRA_NODE_LABEL,
+    NETGW_NAMESPACE,
+    NETGW_TENANT_LABEL,
     POOL_NODE_LABEL,
     InstancePodSpec,
     NodePortTaken,
@@ -74,8 +76,8 @@ class TestTenantNetpol:
         spec: Any = policy.spec
         assert set(spec.policy_types) == {"Ingress", "Egress"}
 
-        assert len(spec.ingress) == 2
-        gateway, ssh = spec.ingress
+        assert len(spec.ingress) == 3
+        gateway, ssh, netgw_in = spec.ingress
         assert gateway.ports is None
         assert gateway._from[0].pod_selector is None
         assert gateway._from[0].namespace_selector.match_labels == {
@@ -86,16 +88,23 @@ class TestTenantNetpol:
         assert ssh._from[0].ip_block.cidr == "0.0.0.0/0"
         assert ssh._from[0].ip_block._except == ["10.42.0.0/16"]
 
-        assert len(spec.egress) == 3
+        assert len(spec.egress) == 4
         dns = spec.egress[0].to[0]
         assert dns.namespace_selector.match_labels == {"kubernetes.io/metadata.name": "kube-system"}
         assert dns.pod_selector.match_labels == {"k8s-app": "kube-dns"}
-        for rule in spec.egress[1:]:
+        for rule in spec.egress[1:3]:
             ip_block = rule.to[0].ip_block
             assert ip_block.cidr == "0.0.0.0/0"
             assert set(ip_block._except) == set(PRIVATE_CIDRS)
         udp_ports = spec.egress[2].ports
         assert {(p.protocol, p.port) for p in udp_ports} == {("UDP", 53), ("UDP", 443)}
+        netgw_out = spec.egress[3]
+        for peer in (netgw_in._from[0], netgw_out.to[0]):
+            assert peer.namespace_selector.match_labels == {
+                "kubernetes.io/metadata.name": NETGW_NAMESPACE
+            }
+            assert peer.pod_selector.match_labels == {NETGW_TENANT_LABEL: "tenant-x"}
+        assert netgw_in.ports is None and netgw_out.ports is None
 
     def test_ssh_ingress_except_is_pod_cidr_only(self):
         """Only the Pod range is excluded, not the whole private space."""

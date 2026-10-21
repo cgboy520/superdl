@@ -113,6 +113,12 @@
       "frozen": "已冻结",
       "grace": "宽限期"
     },
+    "netgw": {
+      "applying": "配置中",
+      "connected": "已连接",
+      "deleting": "删除中",
+      "disconnected": "未连接"
+    },
     "deletion": {
       "cancelled": "已撤销",
       "completed": "已注销",

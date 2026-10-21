@@ -151,6 +151,7 @@ jobs:
       - name: Apply the production RBAC and statically assert each SA's verb surface
         run: |
           kubectl create namespace superdl
+          kubectl create namespace superdl-netgw
           kubectl apply -f deploy/app/k8s/01-rbac.yaml
 
           need() {
@@ -179,9 +180,15 @@ jobs:
           for pair in "delete namespaces" "patch nodes" "delete nodes" "list secrets" "get secrets" \
                       "create roles" "patch roles" "escalate roles" "bind roles" \
                       "escalate clusterroles" "bind clusterroles" \
-                      "bind clusterroles/cluster-admin" "bind clusterroles/superdl-tenant-mgr"; do
+                      "bind clusterroles/cluster-admin" "bind clusterroles/superdl-tenant-mgr" \
+                      "create deployments.apps"; do
             # shellcheck disable=SC2086
             deny superdl-tenant-mgr $pair
+          done
+          for pair in "create deployments.apps" "update deployments.apps" "delete deployments.apps" \
+                      "create secrets" "patch secrets" "delete secrets"; do
+            # shellcheck disable=SC2086
+            need superdl-tenant-mgr $pair -n superdl-netgw
           done
 
           need superdl-api get pods --subresource=log
@@ -388,6 +395,35 @@ jobs:
                   - secretRef: {name: superdl-db-migrate}
           EOF
 
+          deny_check "a gateway Pod adds SYS_ADMIN" \
+            system:serviceaccount:kube-system:replicaset-controller <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata: {name: netgw-sysadmin, namespace: superdl-netgw}
+          spec:
+            automountServiceAccountToken: false
+            containers:
+              - name: gateway
+                image: registry.invalid/superdl/superdl-netgw@sha256:0000000000000000000000000000000000000000000000000000000000000000
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities: {drop: [ALL], add: [NET_ADMIN, SYS_ADMIN]}
+          EOF
+          deny_check "a gateway Pod runs an image that is not the digest-pinned gateway image" \
+            system:serviceaccount:kube-system:replicaset-controller <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata: {name: netgw-other-image, namespace: superdl-netgw}
+          spec:
+            automountServiceAccountToken: false
+            containers:
+              - name: gateway
+                image: busybox:1.36
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities: {drop: [ALL], add: [NET_ADMIN]}
+          EOF
+
           deny_delete() {
             local what="$1" as="$2" node="$3" out
             if out=$(kubectl --as="$as" delete node "$node" --dry-run=server 2>&1); then
@@ -423,13 +459,13 @@ jobs:
           fi
           echo "  ✓ allowed: node-mgr decommissions a GPU worker node"
           kubectl delete node vap-probe-infra vap-probe-gpu
-      - name: "Admission policies: every platform-generated object is admitted (dry-run)"
+      - name: "Admission policies: every platform-generated object is admitted, every deny-* variant refused (dry-run)"
         working-directory: apps/api
         run: |
           uv sync --frozen
           kubectl create namespace tenant-probe
           kubectl label namespace tenant-probe superdl.io/managed=true \
-            pod-security.kubernetes.io/enforce=baseline pod-security.kubernetes.io/audit=restricted \
+            pod-security.kubernetes.io/enforce=privileged pod-security.kubernetes.io/audit=restricted \
             pod-security.kubernetes.io/warn=restricted
           kubectl label namespace superdl pod-security.kubernetes.io/enforce=restricted --overwrite
           kubectl apply -f - <<'EOF'
@@ -446,12 +482,19 @@ jobs:
           uv run python scripts/render_admission_probes.py /tmp/admission-probes
           fail=0
           for f in /tmp/admission-probes/*.yaml; do
+            name="$(basename "$f" .yaml)"
             as_user="$(cat "${f%.yaml}.as")"
             if out=$(kubectl create --dry-run=server -f "$f" ${as_user:+--as="$as_user"} 2>&1); then
-              echo "  ✓ admitted: $(basename "$f" .yaml)"
+              case "$name" in
+                deny-*) echo "::error::tenant Pod baseline let through ${name} (--as=${as_user})"; fail=1 ;;
+                *) echo "  ✓ admitted: ${name}" ;;
+              esac
             else
-              echo "::error::platform-generated object refused by admission: $(basename "$f" .yaml) (--as=${as_user:-<admin>}): ${out}"
-              fail=1
+              case "$name:$out" in
+                deny-*ValidatingAdmissionPolicy*) echo "  ✓ denied: ${name}" ;;
+                deny-*) echo "::error::${name} was refused but not by the admission policy: ${out}"; fail=1 ;;
+                *) echo "::error::platform-generated object refused by admission: ${name} (--as=${as_user:-<admin>}): ${out}"; fail=1 ;;
+              esac
             fi
           done
           kubectl delete namespace tenant-probe --wait=false

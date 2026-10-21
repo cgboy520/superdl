@@ -1,6 +1,8 @@
 /** Data access layer: TanStack Query hooks over the fetchers generated in @superdl/api-client. */
 
 import {
+  adminDeleteGatewayApiAdminV1NetgwGatewaysUuidDeletePost,
+  adminListGatewaysApiAdminV1NetgwGatewaysGet,
   adminAckAlertApiAdminV1AlertsAlertIdAckPost,
   adminAlertsApiAdminV1AlertsGet,
   adminAlertsUnreadCountApiAdminV1AlertsUnreadCountGet,
@@ -174,6 +176,7 @@ import type {
   RefundPayout,
   RefundReview,
   AdminForceStopRequest,
+  AdminGatewayDelete,
   AdminLoginRequest,
   SettlementGapResolve,
   SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams,
@@ -199,6 +202,7 @@ export { isApiError } from "@superdl/api-client";
 export type {
   EnrollmentCommandOut,
   NodeSwitchPoolOut,
+  AdminGatewayOut,
   AdminInstanceOut,
   AdminServiceOut,
   NodeMetricsOut,
@@ -264,6 +268,7 @@ export const adminKeys = {
   alerts: ["admin", "alerts"],
   tickets: { all: ["admin", "tickets"], detail: (id: number | null) => ["admin", "ticket", id] },
   services: ["admin", "services"],
+  netgw: ["admin", "netgw"],
   nodes: ["admin", "nodes"],
   enrollments: ["admin", "node-enrollments"],
   skus: ["admin", "skus"],
@@ -803,6 +808,18 @@ export const useDeleteImage = adminMutation((v: { imageId: number; data: ImageDe
 
 export const usePrewarmImage = adminMutation((v: { imageId: number }) =>
   adminPrewarmImageApiAdminV1ImagesImageIdPrewarmPost(v.imageId),
+);
+
+/** Private-network gateways of every tenant (newest 500), optionally one tenant's. */
+export function useAdminGateways(userId?: number, opts?: { refetchInterval?: number | false }) {
+  return useKeyedQuery(
+    [...adminKeys.netgw, userId ?? null],
+    () => adminListGatewaysApiAdminV1NetgwGatewaysGet(userId ? { user_id: userId } : undefined),
+    opts,
+  );
+}
+export const useAdminDeleteGateway = adminMutation((v: { uuid: string; data: AdminGatewayDelete }) =>
+  adminDeleteGatewayApiAdminV1NetgwGatewaysUuidDeletePost(v.uuid, v.data),
 );
 
 export const useForceStop = adminMutation((v: { uuid: string; data: AdminForceStopRequest }) =>
