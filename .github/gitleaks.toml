@@ -40,6 +40,20 @@ regexTarget = "line"
 paths = ['''apps/api/tests/test_payment_(?:stripe|registry)\.py''']
 regexes = ['''sk_test_0123456789abcdef''', '''whsec_(?:testsecret)?0123456789(?:abcdef)?''']
 
+[[allowlists]]
+description = "netgw test cases: sample WireGuard keys (random, never deployed) for the agent, API and e2e fixtures"
+condition = "AND"
+regexTarget = "line"
+paths = ['''deploy/netgw/tests/fixtures\.py''', '''apps/api/tests/test_netgw[a-z0-9_]*\.py''', '''e2e/tests/netgw\.spec\.ts''']
+regexes = ['''(?:KEY_[A-Z]|PEER_KEY) = "[A-Za-z0-9+/]{43}="''']
+
+[[allowlists]]
+description = "error catalog keys passed as key=\"module.messageKey\" (i18n identifiers, not credentials)"
+condition = "AND"
+regexTarget = "line"
+paths = ['''apps/api/app/.+\.py''']
+regexes = ['''key="[a-z]+\.[a-z][A-Za-z0-9]+"''']
+
 # Retired wording: the runbook curl example once carried a placeholder password in -u.
 [[allowlists]]
 description = "historical commits of the image-prewarm runbook curl placeholder password"
