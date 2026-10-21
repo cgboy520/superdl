@@ -148,6 +148,23 @@ async def instances_by_ids(session: AsyncSession, instance_ids: Iterable[int]) -
     return list((await session.execute(select(Instance).where(Instance.id.in_(ids)))).scalars())
 
 
+async def last_pod_builds(session: AsyncSession, instance_ids: Iterable[int]) -> dict[int, Any]:
+    """When each instance last entered creating / starting: its current Pod spec was built after
+    that moment."""
+    ids = list(instance_ids)
+    if not ids:
+        return {}
+    rows = await session.execute(
+        select(InstanceEvent.instance_id, func.max(InstanceEvent.created_at))
+        .where(
+            InstanceEvent.instance_id.in_(ids),
+            InstanceEvent.to_status.in_((sm_def.CREATING, sm_def.STARTING)),
+        )
+        .group_by(InstanceEvent.instance_id)
+    )
+    return {row[0]: row[1] for row in rows.all()}
+
+
 async def instance_locations(
     session: AsyncSession, instance_ids: Iterable[int]
 ) -> dict[int, tuple[str, str, str | None]]:

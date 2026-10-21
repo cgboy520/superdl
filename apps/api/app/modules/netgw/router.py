@@ -8,7 +8,13 @@ from app.core.ratelimit import check_rate_limit
 from app.modules.account import service as account_service
 from app.modules.account.deps import CurrentUser
 from app.modules.netgw import service
-from app.modules.netgw.schemas import ForwardIn, GatewayIn, GatewayOut, NetgwConfigOut
+from app.modules.netgw.schemas import (
+    AttachmentIn,
+    ForwardIn,
+    GatewayIn,
+    GatewayOut,
+    NetgwConfigOut,
+)
 from app.modules.orchestrator.schemas import InstanceLogsOut
 
 router = APIRouter(prefix="/netgw", tags=["netgw"])
@@ -94,6 +100,31 @@ async def delete_forward(
     await _write_limit(user.id)
     gw = await service.delete_forward(session, user.id, uuid, forward_id)
     set_audit_target(request, f"netgw:{uuid}", detail={"forward_id": forward_id})
+    return await service.gateway_view(session, gw)
+
+
+@router.post("/gateways/{uuid}/attachments", status_code=status.HTTP_201_CREATED)
+async def attach_instance(
+    uuid: str, body: AttachmentIn, user: CurrentUser, session: DbSession, request: Request
+) -> GatewayOut:
+    """Attach a dev instance to the gateway's whole-subnet access (L3 must be on). The gateway
+    picks it up without restarting; the instance gets its tunnel interface on its next start.
+    Attaching an already attached instance again is a no-op."""
+    await _write_limit(user.id)
+    gw = await service.attach_instance(session, user.id, uuid, body)
+    set_audit_target(request, f"netgw:{uuid}", detail={"instance": body.instance_uuid})
+    return await service.gateway_view(session, gw)
+
+
+@router.delete("/gateways/{uuid}/attachments/{instance_uuid}")
+async def detach_instance(
+    uuid: str, instance_uuid: str, user: CurrentUser, session: DbSession, request: Request
+) -> GatewayOut:
+    """Detach an instance: the gateway drops it at once; its tunnel interface goes with its next
+    restart."""
+    await _write_limit(user.id)
+    gw = await service.detach_instance(session, user.id, uuid, instance_uuid)
+    set_audit_target(request, f"netgw:{uuid}", detail={"instance": instance_uuid})
     return await service.gateway_view(session, gw)
 
 

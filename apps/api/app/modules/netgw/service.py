@@ -1,14 +1,16 @@
-"""Private-network gateways: CRUD, forwards, views and the render input for the apply handler.
+"""Private-network gateways: CRUD, forwards, L3 attachments, views, the render input for the apply
+handler and the instance side of an attachment for the instance Pod.
 
 Every change bumps `generation` and enqueues netgw.apply in the same transaction; the handler
-records `applied_generation`. Secrets are AES-GCM encrypted (AAD bound to the gateway uuid) and
-never returned.
+records `applied_generation`. Secrets are AES-GCM encrypted (AAD bound to the gateway uuid, or to
+the instance uuid for attachment keys) and never returned.
 """
 
 import base64
 import ipaddress
 import json
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -16,11 +18,13 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from fastapi import status as http_status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.crypto import decrypt_str, encrypt_str
 from app.core.errors import AppError, ErrorCode, conflict, not_found
+from app.core.gpu_adapter import spec_to_gpu_request
 from app.core.idempotency import (
     IDEMPOTENCY_WINDOW,
     find_replay,
@@ -28,20 +32,25 @@ from app.core.idempotency import (
     request_fingerprint,
 )
 from app.core.k8s import get_orchestrator
-from app.core.k8s.base import NETGW_SOCKS_PORT
+from app.core.k8s.base import NETGW_SOCKS_PORT, NetgwAttach, netgw_hub_host
 from app.core.logging import get_logger
 from app.core.outbox import enqueue
 from app.core.ratelimit import check_rate_limit
+from app.core.timeutil import now_utc
 from app.modules.netgw import validation as v
 from app.modules.netgw.models import (
     KIND_INSTANCE,
     KIND_INTRANET,
+    STATUS_ACTIVE,
     STATUS_DELETING,
     NetGateway,
+    NetGatewayAttachment,
     NetGatewayForward,
 )
 from app.modules.netgw.schemas import (
     AdminGatewayOut,
+    AttachmentIn,
+    AttachmentOut,
     DnsOut,
     ForwardIn,
     ForwardOut,
@@ -49,13 +58,14 @@ from app.modules.netgw.schemas import (
     GatewayOut,
     InstanceForwardIn,
     IpsecIn,
+    L3Out,
     NetgwConfigOut,
     OpenConnectIn,
     OpenVpnIn,
     TunnelIn,
     WireGuardIn,
 )
-from app.modules.netgw.spec import RenderInput
+from app.modules.netgw.spec import ATTACH_VERSION, RenderInput, cluster_cidrs
 from app.modules.orchestrator import queries as orchestrator_queries, statemachine as sm_def
 from app.modules.orchestrator.schemas import WORKLOAD_DEV, InstanceLogsOut
 
@@ -98,6 +108,10 @@ def decode_secrets(gw: NetGateway) -> dict[str, Any]:
 
 def _encode_secrets(secrets: dict[str, Any], gateway_uuid: str) -> str:
     return encrypt_str(json.dumps(secrets, separators=(",", ":")), aad=_aad(gateway_uuid))
+
+
+def _attach_aad(instance_uuid: str) -> str:
+    return f"netgw-attach:{instance_uuid}"
 
 
 def _wireguard_keypair() -> tuple[str, str]:
@@ -221,6 +235,10 @@ def _config(
     if dns is not None:
         v.check_dns(list(dns.servers), list(dns.domains), remote)
     public, secrets = _tunnel(body.tunnel, remote, old_secrets)
+    l3: dict[str, Any] | None = None
+    if body.l3 is not None:
+        net = v.parse_l3_cidr(body.l3.cidr, remote, body.local_address, protocol, nat=body.l3.nat)
+        l3 = {"cidr": str(net), "nat": body.l3.nat, "address": str(next(net.hosts()))}
     config = {
         "remote_cidrs": [str(n) for n in remote],
         "local_address": str(body.local_address) if body.local_address else None,
@@ -229,9 +247,32 @@ def _config(
             if dns is not None and dns.servers
             else None
         ),
+        "l3": l3,
         "tunnel": public,
     }
     return config, secrets
+
+
+def _l3_keys(
+    config: dict[str, Any],
+    secrets: dict[str, Any],
+    old_config: dict[str, Any] | None,
+    old_secrets: dict[str, Any] | None,
+) -> None:
+    """Hub key pair kept across updates (attached instances pin its public key); routes_at moves
+    whenever the routed networks change, so attached instances show a pending restart."""
+    l3 = config.get("l3")
+    if l3 is None:
+        return
+    old_l3 = (old_config or {}).get("l3")
+    key = (old_secrets or {}).get("hub_private_key")
+    if old_l3 and key:
+        secrets["hub_private_key"] = key
+        l3["hub_public_key"] = old_l3["hub_public_key"]
+    else:
+        secrets["hub_private_key"], l3["hub_public_key"] = _wireguard_keypair()
+    same = old_l3 is not None and (old_config or {}).get("remote_cidrs") == config["remote_cidrs"]
+    l3["routes_at"] = old_l3["routes_at"] if same and old_l3 else now_utc().isoformat()
 
 
 def _fingerprint(user_id: int, body: GatewayIn) -> str:
@@ -297,6 +338,7 @@ async def create_gateway(
         raise AppError(ErrorCode.VALIDATION_ERROR, key="netgw.gatewayQuota", params={"max": limit})
     await _require_name_free(session, user_id, body.name)
     gateway_uuid = uuid4().hex
+    _l3_keys(config, secrets, None, None)
     public_key = None
     if body.tunnel.protocol == "wireguard":
         secrets["private_key"], public_key = _wireguard_keypair()
@@ -379,6 +421,14 @@ async def update_gateway(
         gw.name = body.name
     if gw.protocol == "wireguard":
         config["tunnel"]["public_key"] = gw.public_key
+    old_l3, new_l3 = gw.config.get("l3"), config["l3"]
+    if (
+        old_l3
+        and (new_l3 is None or new_l3["cidr"] != old_l3["cidr"])
+        and await _attachments_of(session, gw.id)
+    ):
+        raise conflict(key="netgw.l3InUse")
+    _l3_keys(config, secrets, gw.config, old)
     remote = [ipaddress.IPv4Network(c) for c in config["remote_cidrs"]]
     for fw in await _forwards_of(session, gw.id):
         if fw.kind == KIND_INTRANET and fw.target_host:
@@ -490,6 +540,173 @@ async def delete_forward(
     return gw
 
 
+async def _attachments_of(session: AsyncSession, gateway_id: int) -> list[NetGatewayAttachment]:
+    return list(
+        (
+            await session.scalars(
+                select(NetGatewayAttachment)
+                .where(NetGatewayAttachment.gateway_id == gateway_id)
+                .order_by(NetGatewayAttachment.id)
+            )
+        ).all()
+    )
+
+
+def _free_address(cidr: str, taken: set[str]) -> str | None:
+    net = ipaddress.IPv4Network(cidr)
+    hosts = net.hosts()
+    next(hosts)
+    for i, ip in enumerate(hosts):
+        if i >= v.l3_capacity(net):
+            break
+        if str(ip) not in taken:
+            return str(ip)
+    return None
+
+
+def _userns_tier(instance: Any) -> bool:
+    """The user-namespaced runc pools; the Kata (VM) tier has no attach path."""
+    return spec_to_gpu_request(instance.spec, instance.gpu_count).host_users is False
+
+
+async def attach_instance(
+    session: AsyncSession, user_id: int, uuid: str, body: AttachmentIn
+) -> NetGateway:
+    """Give an instance an address in the gateway's L3 network and a hub key pair; the gateway
+    picks the peer up without a restart, the instance on its next start. Re-attaching to the same
+    gateway is a no-op."""
+    gw = await _lock_own(session, user_id, uuid)
+    _require_active(gw)
+    l3 = gw.config.get("l3")
+    if l3 is None:
+        raise conflict(key="netgw.l3Disabled")
+    instance = await orchestrator_queries.get_instance(session, user_id, body.instance_uuid)
+    if instance.workload_type != WORKLOAD_DEV or instance.status in (
+        sm_def.RELEASING,
+        sm_def.RELEASED,
+    ):
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="netgw.instanceNotEligible")
+    if not _userns_tier(instance):
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="netgw.l3InstanceUnsupported")
+    existing = await session.scalar(
+        select(NetGatewayAttachment).where(NetGatewayAttachment.instance_id == instance.id)
+    )
+    if existing is not None:
+        if existing.gateway_id == gw.id:
+            return gw
+        raise conflict(key="netgw.instanceAttached")
+    address = _free_address(l3["cidr"], {a.address for a in await _attachments_of(session, gw.id)})
+    if address is None:
+        raise conflict(key="netgw.l3Full")
+    private, public = _wireguard_keypair()
+    session.add(
+        NetGatewayAttachment(
+            gateway_id=gw.id,
+            user_id=user_id,
+            instance_id=instance.id,
+            address=address,
+            public_key=public,
+            private_key_encrypted=encrypt_str(private, aad=_attach_aad(instance.uuid)),
+        )
+    )
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise conflict(key="netgw.instanceAttached") from None
+    _bump(session, gw)
+    await session.commit()
+    await session.refresh(gw)
+    logger.info("netgw_attached", gateway_uuid=gw.uuid, instance_uuid=instance.uuid)
+    return gw
+
+
+async def detach_instance(
+    session: AsyncSession, user_id: int, uuid: str, instance_uuid: str
+) -> NetGateway:
+    gw = await _lock_own(session, user_id, uuid)
+    _require_active(gw)
+    instance = await orchestrator_queries.get_instance(session, user_id, instance_uuid)
+    att = await session.scalar(
+        select(NetGatewayAttachment).where(
+            NetGatewayAttachment.gateway_id == gw.id,
+            NetGatewayAttachment.instance_id == instance.id,
+        )
+    )
+    if att is None:
+        raise not_found(key="netgw.attachmentNotFound")
+    await session.delete(att)
+    _bump(session, gw)
+    await session.commit()
+    await session.refresh(gw)
+    logger.info("netgw_detached", gateway_uuid=gw.uuid, instance_uuid=instance.uuid)
+    return gw
+
+
+async def prune_attachments(session: AsyncSession, gws: Sequence[NetGateway]) -> int:
+    """Patrol (rows already locked, no commit): drop attachments whose instance is released and
+    re-apply their gateways."""
+    by_gw = {g.id: g for g in gws if g.status != STATUS_DELETING}
+    if not by_gw:
+        return 0
+    atts = list(
+        (
+            await session.scalars(
+                select(NetGatewayAttachment).where(NetGatewayAttachment.gateway_id.in_(by_gw))
+            )
+        ).all()
+    )
+    instances = {
+        i.id: i
+        for i in await orchestrator_queries.instances_by_ids(session, {a.instance_id for a in atts})
+    }
+    gone = [
+        a
+        for a in atts
+        if (i := instances.get(a.instance_id)) is None or i.status == sm_def.RELEASED
+    ]
+    for att in gone:
+        await session.delete(att)
+    for gateway_id in {a.gateway_id for a in gone}:
+        _bump(session, by_gw[gateway_id])
+    return len(gone)
+
+
+async def instance_attach(session: AsyncSession, instance: Any) -> NetgwAttach | None:
+    """Instance side of the instance's attachment for its next Pod: None without one, when its
+    gateway is deleting or has L3 off, or when the feature is off."""
+    s = get_settings()
+    if not s.netgw_image:
+        return None
+    row = (
+        await session.execute(
+            select(NetGatewayAttachment, NetGateway)
+            .join(NetGateway, NetGateway.id == NetGatewayAttachment.gateway_id)
+            .where(NetGatewayAttachment.instance_id == instance.id)
+        )
+    ).first()
+    if row is None:
+        return None
+    att, gw = row
+    l3 = gw.config.get("l3")
+    if gw.status != STATUS_ACTIVE or l3 is None:
+        return None
+    config = {
+        "version": ATTACH_VERSION,
+        "address": att.address,
+        "private_key": decrypt_str(att.private_key_encrypted, aad=_attach_aad(instance.uuid)),
+        "peer_public_key": l3["hub_public_key"],
+        "routes": list(gw.config["remote_cidrs"]),
+        "cluster_cidrs": cluster_cidrs(),
+        "endpoint_host": netgw_hub_host(gw.uuid),
+    }
+    return NetgwAttach(
+        gateway_uuid=gw.uuid,
+        image=s.netgw_image,
+        config_json=json.dumps(config, sort_keys=True, separators=(",", ":")),
+    )
+
+
 def _state(gw: NetGateway) -> str:
     if gw.status == STATUS_DELETING:
         return "deleting"
@@ -502,10 +719,54 @@ def _tunnel_out(gw: NetGateway) -> dict[str, Any]:
     return {"protocol": gw.protocol, **gw.config["tunnel"]}
 
 
+_POD_HOLDING = (sm_def.CREATING, sm_def.STARTING, sm_def.RUNNING)
+
+
+def _l3_out(
+    gw: NetGateway,
+    atts: list[NetGatewayAttachment],
+    instances: dict[int, Any],
+    pod_builds: dict[int, Any],
+) -> L3Out | None:
+    """pending_restart: the instance holds a Pod built before the attachment or before the last
+    change of the routed networks."""
+    l3 = gw.config.get("l3")
+    if l3 is None:
+        return None
+    routes_at = datetime.fromisoformat(l3["routes_at"])
+    out: list[AttachmentOut] = []
+    for att in atts:
+        inst = instances.get(att.instance_id)
+        if inst is None or inst.status == sm_def.RELEASED:
+            continue
+        built = pod_builds.get(inst.id)
+        pending = inst.status in _POD_HOLDING and (
+            built is None or built < max(att.created_at, routes_at)
+        )
+        out.append(
+            AttachmentOut(
+                instance_uuid=inst.uuid,
+                instance_name=inst.name,
+                address=att.address,
+                pending_restart=pending,
+                created_at=att.created_at,
+            )
+        )
+    return L3Out(
+        cidr=l3["cidr"],
+        nat=l3["nat"],
+        address=l3["address"],
+        max_attachments=v.l3_capacity(ipaddress.IPv4Network(l3["cidr"])),
+        attachments=out,
+    )
+
+
 async def gateway_views(session: AsyncSession, gws: Sequence[NetGateway]) -> list[GatewayOut]:
-    """Batch: one forwards query, one instance query."""
+    """Batch: one forwards query, one attachments query, one instance query, one Pod-build
+    query."""
     ids = [g.id for g in gws]
     forwards: dict[int, list[NetGatewayForward]] = {i: [] for i in ids}
+    attachments: dict[int, list[NetGatewayAttachment]] = {i: [] for i in ids}
     if ids:
         for fw in (
             await session.scalars(
@@ -515,10 +776,21 @@ async def gateway_views(session: AsyncSession, gws: Sequence[NetGateway]) -> lis
             )
         ).all():
             forwards[fw.gateway_id].append(fw)
+        for att in (
+            await session.scalars(
+                select(NetGatewayAttachment)
+                .where(NetGatewayAttachment.gateway_id.in_(ids))
+                .order_by(NetGatewayAttachment.id)
+            )
+        ).all():
+            attachments[att.gateway_id].append(att)
+    attached_ids = {a.instance_id for atts in attachments.values() for a in atts}
     instance_ids = {f.instance_id for fs in forwards.values() for f in fs if f.instance_id}
     instances = {
-        i.id: i for i in await orchestrator_queries.instances_by_ids(session, instance_ids)
+        i.id: i
+        for i in await orchestrator_queries.instances_by_ids(session, instance_ids | attached_ids)
     }
+    pod_builds = await orchestrator_queries.last_pod_builds(session, attached_ids)
     port = NETGW_SOCKS_PORT
     out: list[GatewayOut] = []
     for gw in gws:
@@ -556,6 +828,7 @@ async def gateway_views(session: AsyncSession, gws: Sequence[NetGateway]) -> lis
                     "remote_cidrs": gw.config["remote_cidrs"],
                     "local_address": gw.config.get("local_address"),
                     "dns": DnsOut(**dns) if dns else None,
+                    "l3": _l3_out(gw, attachments[gw.id], instances, pod_builds),
                     "tunnel": _tunnel_out(gw),
                     "socks_url": f"socks5h://{gw.name}:{port}",
                     "forwards": fws,
@@ -593,17 +866,21 @@ async def read_gateway_logs(
 
 
 async def render_input(session: AsyncSession, gw: NetGateway, *, dns_upstream: str) -> RenderInput:
-    """Everything the agent spec needs; instance forwards whose instance is released drop out."""
+    """Everything the agent spec needs; forwards and attachments of released instances drop
+    out."""
     forwards = await _forwards_of(session, gw.id)
-    ids = [f.instance_id for f in forwards if f.instance_id]
+    attachments = await _attachments_of(session, gw.id)
+    ids = {f.instance_id for f in forwards if f.instance_id} | {a.instance_id for a in attachments}
     instances = await orchestrator_queries.instances_by_ids(session, ids)
+    uuids = {i.id: i.uuid for i in instances if i.status != sm_def.RELEASED}
     return RenderInput(
         gateway=gw,
         secrets=decode_secrets(gw),
         forwards=forwards,
-        instance_uuids={i.id: i.uuid for i in instances if i.status != sm_def.RELEASED},
+        instance_uuids=uuids,
         tenant_namespace=tenant_namespace(gw.user_id),
         dns_upstream=dns_upstream,
+        attachments=[a for a in attachments if a.instance_id in uuids],
     )
 
 

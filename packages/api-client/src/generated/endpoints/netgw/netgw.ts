@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type {
+  AttachmentIn,
   CreateGatewayApiV1NetgwGatewaysPostHeaders,
   GatewayIn,
   GatewayLogsApiV1NetgwGatewaysUuidLogsGetParams,
@@ -187,6 +188,74 @@ return customFetch<GatewayOut>(getUpdateGatewayApiV1NetgwGatewaysUuidPutUrl(uuid
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(gatewayIn)
+  }
+);}
+
+
+export const getAttachInstanceApiV1NetgwGatewaysUuidAttachmentsPostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/netgw/gateways/${uuid}/attachments`
+}
+
+/**
+ * Attach a dev instance to the gateway's whole-subnet access (L3 must be on). The gateway
+ * picks it up without restarting; the instance gets its tunnel interface on its next start.
+ * Attaching an already attached instance again is a no-op.
+ * @summary Attach Instance
+ */
+export const attachInstanceApiV1NetgwGatewaysUuidAttachmentsPost = async (uuid: string,
+    attachmentIn: AttachmentIn, options?: Parameters<typeof customFetch>[1]): Promise<GatewayOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<GatewayOut>(getAttachInstanceApiV1NetgwGatewaysUuidAttachmentsPostUrl(uuid),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(attachmentIn)
+  }
+);}
+
+
+export const getDetachInstanceApiV1NetgwGatewaysUuidAttachmentsInstanceUuidDeleteUrl = (uuid: string,
+    instanceUuid: string,) => {
+
+
+
+
+  return `/api/v1/netgw/gateways/${uuid}/attachments/${instanceUuid}`
+}
+
+/**
+ * Detach an instance: the gateway drops it at once; its tunnel interface goes with its next
+ * restart.
+ * @summary Detach Instance
+ */
+export const detachInstanceApiV1NetgwGatewaysUuidAttachmentsInstanceUuidDelete = async (uuid: string,
+    instanceUuid: string, options?: Parameters<typeof customFetch>[1]): Promise<GatewayOut> => {
+
+  return customFetch<GatewayOut>(getDetachInstanceApiV1NetgwGatewaysUuidAttachmentsInstanceUuidDeleteUrl(uuid,instanceUuid),
+  {
+    ...options,
+    method: 'DELETE'
+
+
   }
 );}
 

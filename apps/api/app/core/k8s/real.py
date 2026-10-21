@@ -35,6 +35,7 @@ from app.core.k8s.base import (
     INSTANCE_LABEL,
     MANAGED_LABEL,
     NETGW_CONTAINER,
+    NETGW_L3_LABEL,
     NETGW_LABEL,
     NETGW_NAMESPACE,
     NETGW_TENANT_LABEL,
@@ -57,6 +58,8 @@ from app.core.k8s.base import (
     instance_disk_pvc_name,
     instance_env_secret_name,
     jupyter_service_name,
+    netgw_attach_secret_name,
+    netgw_l3_service_name,
     netgw_object_name,
     service_endpoint_service_name,
 )
@@ -68,6 +71,9 @@ from app.core.k8s.health import (
     WorkloadRow,
 )
 from app.core.k8s.netgw import (
+    attach_init_container,
+    attach_volume,
+    build_attach_secret,
     build_netgw_deployment,
     build_netgw_netpol,
     build_netgw_secret,
@@ -82,8 +88,10 @@ PREWARM_LABEL = "superdl.io/prewarm"
 GATEWAY_DATAPLANE_NAMESPACE = "envoy-gateway-system"
 
 
+# Enforcement is the tenant Pod baseline admission policy (a superset of PSA baseline that also
+# admits the platform's netgw-attach init container); PSA only audits / warns.
 TENANT_NS_PSA_LABELS = {
-    "pod-security.kubernetes.io/enforce": "baseline",
+    "pod-security.kubernetes.io/enforce": "privileged",
     "pod-security.kubernetes.io/audit": "restricted",
     "pod-security.kubernetes.io/warn": "restricted",
 }
@@ -299,14 +307,22 @@ def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
             )
         )
         mounts.append(client.V1VolumeMount(name="data-disk", mount_path="/root/data"))
+    labels = {INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"}
+    attach = spec.netgw
+    if attach is not None:
+        labels[NETGW_L3_LABEL] = attach.gateway_uuid
+        volumes.append(attach_volume(spec.name))
     return client.V1Pod(
         metadata=client.V1ObjectMeta(
             name=spec.name,
             namespace=spec.namespace,
-            labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
+            labels=labels,
             annotations=spec.annotations or None,
         ),
         spec=client.V1PodSpec(
+            hostname=spec.name if attach is not None else None,
+            subdomain=netgw_l3_service_name(attach.gateway_uuid) if attach is not None else None,
+            init_containers=[attach_init_container(attach)] if attach is not None else None,
             runtime_class_name=spec.runtime_class,
             scheduler_name=spec.scheduler_name,
             host_users=False if spec.host_users is False else None,
@@ -847,6 +863,7 @@ class RealOrchestrator:
     def _create_instance_sync(self, spec: InstancePodSpec) -> None:
         self._ensure_instance_disk_sync(spec)
         self._ensure_instance_secret_sync(spec)
+        self._ensure_netgw_attach_secret_sync(spec)
         self._create_pod_sync(spec)
         self._create_service_sync(spec)
         self._create_httproute_sync(spec)
@@ -908,6 +925,19 @@ class RealOrchestrator:
             lambda: self.core.create_namespaced_secret(spec.namespace, secret),
             lambda: self.core.patch_namespaced_secret(
                 name, spec.namespace, {"stringData": spec.secret_env}
+            ),
+        )
+
+    def _ensure_netgw_attach_secret_sync(self, spec: InstancePodSpec) -> None:
+        if spec.netgw is None:
+            return
+        secret = build_attach_secret(spec, spec.netgw)
+        _create_or_patch(
+            lambda: self.core.create_namespaced_secret(spec.namespace, secret),
+            lambda: self.core.patch_namespaced_secret(
+                netgw_attach_secret_name(spec.name),
+                spec.namespace,
+                {"stringData": secret.string_data},
             ),
         )
 
@@ -1136,6 +1166,7 @@ class RealOrchestrator:
                 service_endpoint_service_name(name), namespace
             ),
             lambda: self.core.delete_namespaced_secret(instance_env_secret_name(name), namespace),
+            lambda: self.core.delete_namespaced_secret(netgw_attach_secret_name(name), namespace),
             lambda: self.custom.delete_namespaced_custom_object(
                 GATEWAY_API_GROUP, GATEWAY_API_VERSION, namespace, HTTPROUTE_PLURAL, name
             ),

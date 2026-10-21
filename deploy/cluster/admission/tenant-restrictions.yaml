@@ -68,6 +68,9 @@ spec:
   validationActions: [Deny]
 
 ---
+# Tenant namespaces run PSA enforce=privileged (audit / warn restricted): this policy is the
+# enforced Pod baseline, a superset of PSA baseline plus the netgw-attach exception PSA cannot
+# express.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -90,6 +93,8 @@ spec:
         object.spec.containers +
         (has(object.spec.initContainers) ? object.spec.initContainers : []) +
         (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])
+    - name: seLinuxTypes
+      expression: "['', 'container_t', 'container_init_t', 'container_kvm_t', 'container_engine_t']"
   validations:
     - expression: >-
         !variables.allContainers.exists(c, has(c.securityContext) && has(c.securityContext.privileged) && c.securityContext.privileged)
@@ -115,8 +120,57 @@ spec:
     - expression: >-
         variables.allContainers.all(c, has(c.securityContext) && has(c.securityContext.capabilities) &&
           has(c.securityContext.capabilities.drop) && c.securityContext.capabilities.drop.exists(d, d == 'ALL') &&
-          (!has(c.securityContext.capabilities.add) || c.securityContext.capabilities.add.all(a, a in ['SYS_CHROOT', 'SETUID', 'SETGID'])))
-      message: "tenant containers (init/ephemeral included) must drop ALL capabilities and may only add SYS_CHROOT/SETUID/SETGID (needed by sshd privilege separation)"
+          (!has(c.securityContext.capabilities.add) ||
+           c.securityContext.capabilities.add.all(a, a in ['SYS_CHROOT', 'SETUID', 'SETGID']) ||
+           (c.name == 'netgw-attach' && c.securityContext.capabilities.add.all(a, a == 'NET_ADMIN'))))
+      message: "tenant containers (init/ephemeral included) must drop ALL capabilities and may only add SYS_CHROOT/SETUID/SETGID (needed by sshd privilege separation); only the netgw-attach init container may add NET_ADMIN"
+    - expression: >-
+        object.spec.containers.all(c, c.name != 'netgw-attach') &&
+        (!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.all(c, c.name != 'netgw-attach')) &&
+        (!has(object.spec.initContainers) || object.spec.initContainers.all(c, c.name != 'netgw-attach' ||
+          (c.image.matches('^[^@]+/superdl-netgw@sha256:[0-9a-f]{64}$') && !has(c.restartPolicy) &&
+           has(object.spec.hostUsers) && object.spec.hostUsers == false &&
+           has(c.securityContext) && has(c.securityContext.readOnlyRootFilesystem) &&
+           c.securityContext.readOnlyRootFilesystem &&
+           (!has(c.env) || c.env.size() == 0) && !has(c.envFrom) &&
+           has(c.volumeMounts) && c.volumeMounts.all(m, m.name == 'netgw-attach' && has(m.readOnly) && m.readOnly) &&
+           has(object.spec.volumes) && object.spec.volumes.exists(v, v.name == 'netgw-attach' &&
+             has(v.secret) && has(v.secret.secretName) && v.secret.secretName.startsWith('netgw-attach-')))))
+      message: "netgw-attach (L3 attachment) may only be an init container of a user-namespaced Pod running the digest-pinned superdl-netgw image with a read-only root, no environment and its netgw-attach-* Secret as the only (read-only) mount"
+    - expression: >-
+        variables.allContainers.all(c, !has(c.ports) || c.ports.all(p, !has(p.hostPort) || p.hostPort == 0))
+      message: "tenant Pods may not use hostPort"
+    - expression: >-
+        (!has(object.spec.securityContext) || !has(object.spec.securityContext.sysctls) ||
+         object.spec.securityContext.sysctls.size() == 0)
+      message: "tenant Pods may not set sysctls"
+    - expression: >-
+        variables.allContainers.all(c, !has(c.securityContext) || !has(c.securityContext.procMount) ||
+          c.securityContext.procMount == 'Default')
+      message: "tenant containers may not unmask /proc (procMount must be Default)"
+    - expression: >-
+        (!has(object.spec.securityContext) || !has(object.spec.securityContext.appArmorProfile) ||
+         object.spec.securityContext.appArmorProfile.type != 'Unconfined') &&
+        variables.allContainers.all(c, !has(c.securityContext) || !has(c.securityContext.appArmorProfile) ||
+          c.securityContext.appArmorProfile.type != 'Unconfined') &&
+        (!has(object.metadata.annotations) || object.metadata.annotations.all(k,
+          !k.startsWith('container.apparmor.security.beta.kubernetes.io/') || object.metadata.annotations[k] != 'unconfined'))
+      message: "tenant Pods may not run AppArmor Unconfined"
+    - expression: >-
+        (!has(object.spec.securityContext) || !has(object.spec.securityContext.seLinuxOptions) ||
+         ((!has(object.spec.securityContext.seLinuxOptions.type) ||
+           object.spec.securityContext.seLinuxOptions.type in variables.seLinuxTypes) &&
+          !has(object.spec.securityContext.seLinuxOptions.user) && !has(object.spec.securityContext.seLinuxOptions.role))) &&
+        variables.allContainers.all(c, !has(c.securityContext) || !has(c.securityContext.seLinuxOptions) ||
+          ((!has(c.securityContext.seLinuxOptions.type) || c.securityContext.seLinuxOptions.type in variables.seLinuxTypes) &&
+           !has(c.securityContext.seLinuxOptions.user) && !has(c.securityContext.seLinuxOptions.role)))
+      message: "tenant Pods may only use the container SELinux types and may not set an SELinux user or role"
+    - expression: >-
+        (!has(object.spec.securityContext) || !has(object.spec.securityContext.windowsOptions) ||
+         !has(object.spec.securityContext.windowsOptions.hostProcess) || !object.spec.securityContext.windowsOptions.hostProcess) &&
+        variables.allContainers.all(c, !has(c.securityContext) || !has(c.securityContext.windowsOptions) ||
+          !has(c.securityContext.windowsOptions.hostProcess) || !c.securityContext.windowsOptions.hostProcess)
+      message: "tenant Pods may not run Windows HostProcess containers"
     - expression: >-
         variables.allContainers.all(c, has(c.securityContext) && has(c.securityContext.seccompProfile) &&
           has(c.securityContext.seccompProfile.type) && c.securityContext.seccompProfile.type == 'RuntimeDefault')

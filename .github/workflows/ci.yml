@@ -459,13 +459,13 @@ jobs:
           fi
           echo "  ✓ allowed: node-mgr decommissions a GPU worker node"
           kubectl delete node vap-probe-infra vap-probe-gpu
-      - name: "Admission policies: every platform-generated object is admitted (dry-run)"
+      - name: "Admission policies: every platform-generated object is admitted, every deny-* variant refused (dry-run)"
         working-directory: apps/api
         run: |
           uv sync --frozen
           kubectl create namespace tenant-probe
           kubectl label namespace tenant-probe superdl.io/managed=true \
-            pod-security.kubernetes.io/enforce=baseline pod-security.kubernetes.io/audit=restricted \
+            pod-security.kubernetes.io/enforce=privileged pod-security.kubernetes.io/audit=restricted \
             pod-security.kubernetes.io/warn=restricted
           kubectl label namespace superdl pod-security.kubernetes.io/enforce=restricted --overwrite
           kubectl apply -f - <<'EOF'
@@ -482,12 +482,19 @@ jobs:
           uv run python scripts/render_admission_probes.py /tmp/admission-probes
           fail=0
           for f in /tmp/admission-probes/*.yaml; do
+            name="$(basename "$f" .yaml)"
             as_user="$(cat "${f%.yaml}.as")"
             if out=$(kubectl create --dry-run=server -f "$f" ${as_user:+--as="$as_user"} 2>&1); then
-              echo "  ✓ admitted: $(basename "$f" .yaml)"
+              case "$name" in
+                deny-*) echo "::error::tenant Pod baseline let through ${name} (--as=${as_user})"; fail=1 ;;
+                *) echo "  ✓ admitted: ${name}" ;;
+              esac
             else
-              echo "::error::platform-generated object refused by admission: $(basename "$f" .yaml) (--as=${as_user:-<admin>}): ${out}"
-              fail=1
+              case "$name:$out" in
+                deny-*ValidatingAdmissionPolicy*) echo "  ✓ denied: ${name}" ;;
+                deny-*) echo "::error::${name} was refused but not by the admission policy: ${out}"; fail=1 ;;
+                *) echo "::error::platform-generated object refused by admission: ${name} (--as=${as_user:-<admin>}): ${out}"; fail=1 ;;
+              esac
             fi
           done
           kubectl delete namespace tenant-probe --wait=false

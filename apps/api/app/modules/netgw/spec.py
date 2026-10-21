@@ -1,8 +1,8 @@
-"""Gateway row → agent spec (deploy/netgw spec v1) and K8s parameters. Pure: the caller supplies
-decrypted secrets, forwards, instance uuids and the cluster DNS address."""
+"""Gateway row → agent spec (deploy/netgw spec v1), L3 peers and K8s parameters. Pure: the caller
+supplies decrypted secrets, forwards, attachments, instance uuids and the cluster DNS address."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.config import get_settings
@@ -11,12 +11,19 @@ from app.core.k8s.base import (
     NetgwIntranetForward,
     NetgwSpec,
     netgw_instance_forward_host,
+    netgw_peer_host,
 )
 from app.modules.netgw import ovpn
-from app.modules.netgw.models import KIND_INTRANET, NetGateway, NetGatewayForward
+from app.modules.netgw.models import (
+    KIND_INTRANET,
+    NetGateway,
+    NetGatewayAttachment,
+    NetGatewayForward,
+)
 from app.modules.netgw.validation import INTERNAL_PORT_BASE, split_endpoint, split_server_url
 
 SPEC_VERSION = 1
+ATTACH_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -27,6 +34,12 @@ class RenderInput:
     instance_uuids: dict[int, str]
     tenant_namespace: str
     dns_upstream: str
+    attachments: list[NetGatewayAttachment] = field(default_factory=list)
+
+
+def cluster_cidrs() -> list[str]:
+    s = get_settings()
+    return [c for c in (s.tenant_pod_cidr, s.tenant_service_cidr) if c]
 
 
 def _protocol_params(gw: NetGateway, secrets: dict[str, Any]) -> dict[str, Any]:
@@ -82,9 +95,38 @@ def _intranet(forwards: list[NetGatewayForward]) -> list[NetGatewayForward]:
     return sorted((f for f in forwards if f.kind == KIND_INTRANET), key=lambda f: f.id)
 
 
+def _l3(gw: NetGateway, secrets: dict[str, Any]) -> dict[str, Any] | None:
+    l3 = gw.config.get("l3")
+    if l3 is None:
+        return None
+    return {
+        "cidr": l3["cidr"],
+        "address": l3["address"],
+        "nat": l3["nat"],
+        "private_key": secrets["hub_private_key"],
+    }
+
+
+def peers(inp: RenderInput) -> dict[str, Any]:
+    """peers.json: attached instances by address, each found by its Pod's DNS name."""
+    gw = inp.gateway
+    return {
+        "peers": [
+            {
+                "public_key": a.public_key,
+                "address": a.address,
+                "host": netgw_peer_host(
+                    inp.instance_uuids[a.instance_id], gw.uuid, inp.tenant_namespace
+                ),
+            }
+            for a in sorted(inp.attachments, key=lambda a: a.id)
+            if gw.config.get("l3") is not None and a.instance_id in inp.instance_uuids
+        ]
+    }
+
+
 def agent_spec(inp: RenderInput) -> dict[str, Any]:
     gw = inp.gateway
-    s = get_settings()
     dns = gw.config.get("dns") or {}
     reverse = [
         {
@@ -100,8 +142,9 @@ def agent_spec(inp: RenderInput) -> dict[str, Any]:
         "gateway": gw.uuid,
         "protocol": gw.protocol,
         "remote_cidrs": list(gw.config["remote_cidrs"]),
-        "cluster_cidrs": [c for c in (s.tenant_pod_cidr, s.tenant_service_cidr) if c],
+        "cluster_cidrs": cluster_cidrs(),
         "local_address": gw.config.get("local_address"),
+        "l3": _l3(gw, inp.secrets),
         "dns": {
             "upstream": inp.dns_upstream,
             "servers": list(dns.get("servers") or []),
@@ -140,4 +183,6 @@ def k8s_spec(inp: RenderInput) -> NetgwSpec:
             if f.kind != KIND_INTRANET and f.instance_id in inp.instance_uuids
         ),
         bandwidth_mbps=s.netgw_bandwidth_mbps,
+        l3=gw.config.get("l3") is not None,
+        peers_json=json.dumps(peers(inp), sort_keys=True, separators=(",", ":")),
     )

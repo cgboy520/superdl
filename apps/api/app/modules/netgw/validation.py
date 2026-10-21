@@ -20,6 +20,12 @@ FORBIDDEN_NETS = tuple(
     for n in ("0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/4", "240.0.0.0/4")
 )
 MIN_PREFIX = 8
+L3_PREFIX_RANGE = (16, 29)
+L3_MAX_ATTACHMENTS = 250
+L3_RANGES = tuple(
+    ipaddress.IPv4Network(n)
+    for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10")
+)
 INTERNAL_PORT_BASE = 20000
 INTERNAL_PORT_COUNT = 64
 RESERVED_LISTEN_PORTS = frozenset(
@@ -88,6 +94,43 @@ def check_local_address(addr: ipaddress.IPv4Address | None, protocol: str) -> No
             raise _invalid("localAddressForbidden", address=str(addr))
     elif addr is not None:
         raise _invalid("localAddressNotAllowed")
+
+
+def parse_l3_cidr(
+    raw: str,
+    remote: list[Net],
+    local: ipaddress.IPv4Address | None,
+    protocol: str,
+    *,
+    nat: bool,
+) -> Net:
+    """Instance network of L3: private, /16–/29, clear of the reserved, cluster and tunnelled
+    ranges and of the tunnel address; openconnect servers assign one address, so NAT only."""
+    try:
+        net = ipaddress.IPv4Network(raw.strip(), strict=False)
+    except ValueError:
+        raise _invalid("l3CidrInvalid", cidr=raw) from None
+    low, high = L3_PREFIX_RANGE
+    if not low <= net.prefixlen <= high:
+        raise _invalid("l3CidrSize", cidr=str(net), min=low, max=high)
+    if not any(net.subnet_of(r) for r in L3_RANGES):
+        raise _invalid("l3CidrNotPrivate", cidr=str(net))
+    for bad in forbidden_networks():
+        if net.overlaps(bad):
+            raise _invalid("cidrForbidden", cidr=str(net), range=str(bad))
+    for other in remote:
+        if net.overlaps(other):
+            raise _invalid("l3CidrOverlapsRemote", cidr=str(net), other=str(other))
+    if local is not None and local in net:
+        raise _invalid("l3CidrContainsLocal", cidr=str(net))
+    if protocol == "openconnect" and not nat:
+        raise _invalid("l3NatRequired")
+    return net
+
+
+def l3_capacity(net: Net) -> int:
+    """Instance addresses of an L3 network: all hosts but the hub (the first one)."""
+    return min(net.num_addresses - 3, L3_MAX_ATTACHMENTS)
 
 
 def check_host(host: str) -> None:

@@ -587,6 +587,16 @@
             "title": "Forwards",
             "type": "array"
           },
+          "l3": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/L3Out"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "local_address": {
             "anyOf": [
               {
@@ -712,6 +722,7 @@
           "remote_cidrs",
           "local_address",
           "dns",
+          "l3",
           "tunnel",
           "socks_url",
           "forwards",
@@ -2150,6 +2161,55 @@
         "title": "ApiKeyOut",
         "type": "object"
       },
+      "AttachmentIn": {
+        "properties": {
+          "instance_uuid": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Instance Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instance_uuid"
+        ],
+        "title": "AttachmentIn",
+        "type": "object"
+      },
+      "AttachmentOut": {
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "instance_name": {
+            "title": "Instance Name",
+            "type": "string"
+          },
+          "instance_uuid": {
+            "title": "Instance Uuid",
+            "type": "string"
+          },
+          "pending_restart": {
+            "description": "the running instance started before this attachment or the last change of the gateway's remote networks: they apply on its next start",
+            "title": "Pending Restart",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "instance_uuid",
+          "instance_name",
+          "address",
+          "pending_restart",
+          "created_at"
+        ],
+        "title": "AttachmentOut",
+        "type": "object"
+      },
       "AuditLogOut": {
         "properties": {
           "action": {
@@ -3542,6 +3602,17 @@
               }
             ]
           },
+          "l3": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/L3In"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null: forwards and SOCKS only"
+          },
           "local_address": {
             "anyOf": [
               {
@@ -3641,6 +3712,16 @@
             },
             "title": "Forwards",
             "type": "array"
+          },
+          "l3": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/L3Out"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "local_address": {
             "anyOf": [
@@ -3752,6 +3833,7 @@
           "remote_cidrs",
           "local_address",
           "dns",
+          "l3",
           "tunnel",
           "socks_url",
           "forwards",
@@ -5203,6 +5285,64 @@
           "full_name"
         ],
         "title": "KycSubmitRequest",
+        "type": "object"
+      },
+      "L3In": {
+        "description": "Whole-subnet access: attached instances get addresses from `cidr` (the first host is the\ngateway hub). Routed (nat false): both directions open, the tenant side routes `cidr` into the\ntunnel. NAT: instance traffic leaves with the tunnel address, no inbound path; required for\nopenconnect.",
+        "properties": {
+          "cidr": {
+            "maxLength": 18,
+            "minLength": 9,
+            "title": "Cidr",
+            "type": "string"
+          },
+          "nat": {
+            "default": false,
+            "title": "Nat",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cidr"
+        ],
+        "title": "L3In",
+        "type": "object"
+      },
+      "L3Out": {
+        "properties": {
+          "address": {
+            "description": "gateway hub address; attached instances may use it as DNS",
+            "title": "Address",
+            "type": "string"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/AttachmentOut"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
+          "cidr": {
+            "title": "Cidr",
+            "type": "string"
+          },
+          "max_attachments": {
+            "title": "Max Attachments",
+            "type": "integer"
+          },
+          "nat": {
+            "title": "Nat",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cidr",
+          "nat",
+          "address",
+          "max_attachments",
+          "attachments"
+        ],
+        "title": "L3Out",
         "type": "object"
       },
       "LedgerEntryOut": {
@@ -21170,6 +21310,121 @@
           }
         ],
         "summary": "Update Gateway",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/netgw/gateways/{uuid}/attachments": {
+      "post": {
+        "description": "Attach a dev instance to the gateway's whole-subnet access (L3 must be on). The gateway\npicks it up without restarting; the instance gets its tunnel interface on its next start.\nAttaching an already attached instance again is a no-op.",
+        "operationId": "attach_instance_api_v1_netgw_gateways__uuid__attachments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachmentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Attach Instance",
+        "tags": [
+          "netgw"
+        ]
+      }
+    },
+    "/api/v1/netgw/gateways/{uuid}/attachments/{instance_uuid}": {
+      "delete": {
+        "description": "Detach an instance: the gateway drops it at once; its tunnel interface goes with its next\nrestart.",
+        "operationId": "detach_instance_api_v1_netgw_gateways__uuid__attachments__instance_uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "instance_uuid",
+            "required": true,
+            "schema": {
+              "title": "Instance Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Detach Instance",
         "tags": [
           "netgw"
         ]

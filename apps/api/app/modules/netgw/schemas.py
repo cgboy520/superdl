@@ -27,6 +27,16 @@ class DnsIn(BaseModel):
     )
 
 
+class L3In(BaseModel):
+    """Whole-subnet access: attached instances get addresses from `cidr` (the first host is the
+    gateway hub). Routed (nat false): both directions open, the tenant side routes `cidr` into the
+    tunnel. NAT: instance traffic leaves with the tunnel address, no inbound path; required for
+    openconnect."""
+
+    cidr: str = Field(min_length=9, max_length=18)
+    nat: bool = False
+
+
 class WireGuardIn(BaseModel):
     protocol: Literal["wireguard"]
     endpoint: str = Field(min_length=3, max_length=260, description="Peer host:port")
@@ -72,6 +82,7 @@ class GatewayIn(BaseModel):
     remote_cidrs: list[Annotated[str, Field(max_length=18)]] = Field(min_length=1, max_length=16)
     local_address: IPv4Address | None = None
     dns: DnsIn | None = None
+    l3: L3In | None = Field(default=None, description="null: forwards and SOCKS only")
     tunnel: TunnelIn
 
 
@@ -156,6 +167,29 @@ class DnsOut(BaseModel):
     domains: list[str]
 
 
+class AttachmentIn(BaseModel):
+    instance_uuid: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
+class AttachmentOut(BaseModel):
+    instance_uuid: str
+    instance_name: str
+    address: str
+    pending_restart: bool = Field(
+        description="the running instance started before this attachment or the last change of "
+        "the gateway's remote networks: they apply on its next start"
+    )
+    created_at: datetime
+
+
+class L3Out(BaseModel):
+    cidr: str
+    nat: bool
+    address: str = Field(description="gateway hub address; attached instances may use it as DNS")
+    max_attachments: int
+    attachments: list[AttachmentOut]
+
+
 class GatewayOut(BaseModel):
     uuid: str
     name: str
@@ -167,6 +201,7 @@ class GatewayOut(BaseModel):
     remote_cidrs: list[str]
     local_address: str | None
     dns: DnsOut | None
+    l3: L3Out | None
     tunnel: TunnelOut
     socks_url: str = Field(description="SOCKS5 endpoint for the tenant's instances")
     forwards: list[ForwardOut]

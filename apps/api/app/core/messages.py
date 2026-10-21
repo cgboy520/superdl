@@ -362,7 +362,26 @@ MESSAGES: dict[str, str] = {
     "netgw.gatewayQuota": "You already have the maximum of {max} gateways",
     "netgw.hostInvalid": "{host} is not a valid host name or IPv4 address",
     "netgw.identityInvalid": "{field} contains characters that are not allowed",
+    "netgw.attachmentNotFound": "This instance is not attached to the gateway",
+    "netgw.instanceAttached": "This instance is already attached to another gateway",
     "netgw.instanceNotEligible": "Only unreleased dev instances can be exposed through a gateway",
+    "netgw.l3CidrContainsLocal": "Instance network {cidr} contains the gateway's tunnel address",
+    "netgw.l3CidrInvalid": "{cidr} is not an IPv4 network",
+    "netgw.l3CidrNotPrivate": (
+        "Instance network {cidr} must be inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or "
+        "100.64.0.0/10"
+    ),
+    "netgw.l3CidrOverlapsRemote": "Instance network {cidr} overlaps the tunnelled network {other}",
+    "netgw.l3CidrSize": "Instance network {cidr} must have a prefix between /{min} and /{max}",
+    "netgw.l3Disabled": "Whole-subnet access is not enabled on this gateway",
+    "netgw.l3Full": "The instance network of this gateway has no free address left",
+    "netgw.l3InUse": (
+        "Detach all instances before turning off whole-subnet access or changing its network"
+    ),
+    "netgw.l3InstanceUnsupported": (
+        "Whole-subnet access is not available for instances on dedicated (VM-isolated) GPUs"
+    ),
+    "netgw.l3NatRequired": "SSL VPN gateways support whole-subnet access with NAT only",
     "netgw.localAddressForbidden": "Tunnel address {address} is inside a reserved range",
     "netgw.localAddressNotAllowed": (
         "This protocol takes its tunnel address from the server — leave it empty"

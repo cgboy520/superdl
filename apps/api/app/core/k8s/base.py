@@ -57,6 +57,10 @@ NETGW_NODE_LABEL = "node-restriction.kubernetes.io/superdl-netgw"
 NETGW_CONTAINER = "gateway"
 NETGW_SOCKS_PORT = 1080
 NETGW_HEALTH_PORT = 9101
+# L3: attached instance Pods carry this label (value = gateway uuid) and the attach init container.
+NETGW_L3_LABEL = "superdl.io/netgw-l3"
+NETGW_ATTACH_CONTAINER = "netgw-attach"
+NETGW_HUB_PORT = 51820
 CLUSTER_DOMAIN = "cluster.local"
 
 
@@ -98,10 +102,46 @@ def netgw_instance_forward_host(gateway_uuid: str, forward_id: int, tenant_names
     return f"{name}.{tenant_namespace}.svc.{CLUSTER_DOMAIN}."
 
 
+def netgw_hub_service_name(gateway_uuid: str) -> str:
+    """Headless Service of the gateway's L3 hub (gateway namespace); instances dial it by name."""
+    return f"netgw-{gateway_uuid}-hub"
+
+
+def netgw_l3_service_name(gateway_uuid: str) -> str:
+    """Headless Service selecting the attached instance Pods (tenant namespace); also their
+    spec.subdomain, so each Pod resolves as <instance>.<this>.<namespace>.svc."""
+    return f"netgw-{gateway_uuid}-l3"
+
+
+def netgw_attach_secret_name(instance_name: str) -> str:
+    """Per-instance Secret with attach.json, mounted only into the attach init container."""
+    return f"netgw-attach-{instance_name}"
+
+
+def netgw_hub_host(gateway_uuid: str) -> str:
+    return f"{netgw_hub_service_name(gateway_uuid)}.{NETGW_NAMESPACE}.svc.{CLUSTER_DOMAIN}."
+
+
+def netgw_peer_host(instance_name: str, gateway_uuid: str, tenant_namespace: str) -> str:
+    """DNS name of one attached instance Pod, re-resolved by the hub every tick."""
+    service = netgw_l3_service_name(gateway_uuid)
+    return f"{instance_name}.{service}.{tenant_namespace}.svc.{CLUSTER_DOMAIN}."
+
+
 def instance_env_secret_name(instance_name: str) -> str:
     """Name of the per-instance Secret for sensitive env (JUPYTER_TOKEN etc.), deleted with the
     instance."""
     return f"jupyter-{instance_name}"
+
+
+@dataclass(frozen=True)
+class NetgwAttach:
+    """Instance side of an L3 attachment: init container image and attach.json (carries the
+    instance's hub private key, so it only lands in a Secret)."""
+
+    gateway_uuid: str
+    image: str
+    config_json: str
 
 
 @dataclass(frozen=True)
@@ -137,6 +177,7 @@ class InstancePodSpec:
     health_path: str | None = None
     with_ssh: bool = True
     startup_failure_threshold: int = 90
+    netgw: NetgwAttach | None = None
 
 
 @dataclass(frozen=True)
@@ -162,7 +203,8 @@ class NetgwInstanceForward:
 
 @dataclass(frozen=True)
 class NetgwSpec:
-    """K8s parameters of one gateway; spec_json carries secrets and only lands in a Secret."""
+    """K8s parameters of one gateway; spec_json carries secrets and only lands in a Secret.
+    peers_json (L3 peers) sits next to it but outside spec_hash: attaching never rolls the Pod."""
 
     uuid: str
     tenant_namespace: str
@@ -174,6 +216,8 @@ class NetgwSpec:
     instance: tuple[NetgwInstanceForward, ...] = ()
     bandwidth_mbps: int = 0
     image_pull_secret: str | None = None
+    l3: bool = False
+    peers_json: str = '{"peers":[]}'
 
     @property
     def spec_hash(self) -> str:

@@ -9,6 +9,7 @@ import type { ForwardOut } from './forwardOut';
 import type { GatewayOutProtocol } from './gatewayOutProtocol';
 import type { GatewayOutState } from './gatewayOutState';
 import type { IpsecOut } from './ipsecOut';
+import type { L3Out } from './l3Out';
 import type { OpenConnectOut } from './openConnectOut';
 import type { OpenVpnOut } from './openVpnOut';
 import type { WireGuardOut } from './wireGuardOut';
@@ -18,6 +19,7 @@ export interface GatewayOut {
   created_at: string;
   dns: DnsOut | null;
   forwards: ForwardOut[];
+  l3: L3Out | null;
   local_address: string | null;
   name: string;
   protocol: GatewayOutProtocol;

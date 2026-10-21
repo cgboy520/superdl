@@ -6,12 +6,15 @@
  */
 import type { DnsIn } from './dnsIn';
 import type { IpsecIn } from './ipsecIn';
+import type { L3In } from './l3In';
 import type { OpenConnectIn } from './openConnectIn';
 import type { OpenVpnIn } from './openVpnIn';
 import type { WireGuardIn } from './wireGuardIn';
 
 export interface GatewayIn {
   dns?: DnsIn | null;
+  /** null: forwards and SOCKS only */
+  l3?: L3In | null;
   local_address?: string | null;
   /**
      * @minLength 1

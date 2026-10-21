@@ -110,7 +110,7 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
 
     ns: Any = orch.core.read_namespace(namespace)
     assert ns.metadata.labels[MANAGED_LABEL] == "true"
-    assert ns.metadata.labels["pod-security.kubernetes.io/enforce"] == "baseline"
+    assert ns.metadata.labels["pod-security.kubernetes.io/enforce"] == "privileged"
     assert ns.metadata.labels["pod-security.kubernetes.io/audit"] == "restricted"
 
     netpol: Any = orch.net.read_namespaced_network_policy("tenant-default", namespace)
@@ -269,10 +269,15 @@ async def test_netgw_converge_and_delete(orch: RealOrchestrator, namespace: str)
     orch.apps.read_namespaced_deployment(name, NETGW_NAMESPACE)
     orch.net.read_namespaced_network_policy(name, NETGW_NAMESPACE)
     secret: Any = orch.core.read_namespaced_secret(name, NETGW_NAMESPACE)
-    assert set(secret.data) == {"spec.json"}
+    assert set(secret.data) == {"spec.json", "peers.json"}
     assert _netgw_service_names(orch, NETGW_NAMESPACE, gw) == {name, f"{name}-1"}
     assert _netgw_service_names(orch, namespace, gw) == {"corp", "nas", f"{name}-2"}
     assert [s.uuid for s in await orch.list_netgw() if s.uuid == gw] == [gw]
+
+    await orch.apply_netgw(replace(spec, l3=True))
+    assert _netgw_service_names(orch, NETGW_NAMESPACE, gw) == {name, f"{name}-1", f"{name}-hub"}
+    l3_svc: Any = orch.core.read_namespaced_service(f"{name}-l3", namespace)
+    assert l3_svc.spec.cluster_ip == "None" and l3_svc.spec.publish_not_ready_addresses is True
 
     await orch.apply_netgw(replace(spec, intranet=(), instance=()))
     assert _netgw_service_names(orch, NETGW_NAMESPACE, gw) == {name}

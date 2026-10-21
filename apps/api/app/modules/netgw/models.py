@@ -1,5 +1,6 @@
-"""Private-network gateways and their forwards. Secrets (keys, PSK, passwords, the OpenVPN profile)
-live only in `secrets_encrypted`; `config` holds the non-secret protocol parameters."""
+"""Private-network gateways, their forwards and L3 attachments. Secrets (keys, PSK, passwords, the
+OpenVPN profile) live only in `secrets_encrypted`; `config` holds the non-secret protocol
+parameters and the L3 range."""
 
 from datetime import datetime
 from typing import Any
@@ -89,4 +90,24 @@ class NetGatewayForward(Base):
     target_host: Mapped[str | None] = mapped_column(String(253))
     target_port: Mapped[int]
     instance_id: Mapped[int | None] = mapped_column(index=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class NetGatewayAttachment(Base):
+    """An instance attached to a gateway's L3 hub: its address in the gateway's L3 range and its
+    hub key pair (private half AES-GCM encrypted, AAD bound to the instance uuid). One gateway per
+    instance."""
+
+    __tablename__ = "net_gateway_attachments"
+    __table_args__ = (UniqueConstraint("gateway_id", "address"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    gateway_id: Mapped[int] = mapped_column(
+        ForeignKey("net_gateways.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(index=True)
+    instance_id: Mapped[int] = mapped_column(unique=True)
+    address: Mapped[str] = mapped_column(String(15))
+    public_key: Mapped[str] = mapped_column(String(44))
+    private_key_encrypted: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

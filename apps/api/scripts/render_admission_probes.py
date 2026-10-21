@@ -1,14 +1,18 @@
 """Export the instance Pod, the prewarm Job and its Pod template, and the private-network gateway
-objects as admission probe manifests.
+objects as admission probe manifests, plus deny-*.yaml variants of an L3-attached instance Pod the
+tenant Pod baseline policy must refuse.
 
 Usage: uv run python scripts/render_admission_probes.py <output dir>
 Output: <name>.yaml (object) and <name>.as (the --as identity for dry-run; empty = current
 identity).
 """
 
+import copy
 import pathlib
 import sys
+from collections.abc import Callable
 from dataclasses import replace
+from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -20,6 +24,7 @@ from app.core.k8s.base import (
     NETGW_NAMESPACE,
     PRIVATE_CIDRS,
     InstancePodSpec,
+    NetgwAttach,
     NetgwInstanceForward,
     NetgwIntranetForward,
     NetgwSpec,
@@ -52,6 +57,10 @@ NETGW_PROBE = NetgwSpec(
     instance=(NetgwInstanceForward(forward_id=2, instance_name="probe", port=22),),
     bandwidth_mbps=100,
     image_pull_secret="superdl-registry-pull",
+    l3=True,
+)
+NETGW_ATTACH_PROBE = NetgwAttach(
+    gateway_uuid="0" * 32, image=NETGW_PROBE.image, config_json='{"version": 1}'
 )
 
 
@@ -111,6 +120,63 @@ def _netgw_objects() -> list[tuple[str, object, str]]:
     return out
 
 
+def _set(path: str, value: Any) -> Callable[[dict[str, Any]], None]:
+    """Mutator setting a dotted path below the Pod dict (`spec.initContainers.0.image`)."""
+
+    def apply(pod: dict[str, Any]) -> None:
+        *head, last = path.split(".")
+        node: Any = pod
+        for key in head:
+            node = node[int(key)] if key.isdigit() else node.setdefault(key, {})
+        node[int(last) if last.isdigit() else last] = value
+
+    return apply
+
+
+def _attach_as_container(pod: dict[str, Any]) -> None:
+    pod["spec"]["containers"].append(pod["spec"].pop("initContainers")[0])
+
+
+def _deny_probes(attached: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Variants of the attached instance Pod, each breaking one rule of the tenant Pod baseline
+    policy (the netgw-attach exception, and the PSA baseline controls the policy enforces)."""
+    init = "spec.initContainers.0"
+    cases: dict[str, Callable[[dict[str, Any]], None]] = {
+        "attach-as-container": _attach_as_container,
+        "attach-other-image": _set(f"{init}.image", "busybox:1.36"),
+        "attach-extra-capability": _set(
+            f"{init}.securityContext.capabilities.add", ["NET_ADMIN", "SYS_ADMIN"]
+        ),
+        "attach-writable-root": _set(f"{init}.securityContext.readOnlyRootFilesystem", False),
+        "attach-env": _set(f"{init}.env", [{"name": "X", "value": "1"}]),
+        "attach-sidecar": _set(f"{init}.restartPolicy", "Always"),
+        "attach-extra-mount": _set(
+            f"{init}.volumeMounts", [{"name": "instance-disk", "mountPath": "/root"}]
+        ),
+        "netadmin-other-init": _set(f"{init}.name", "setup"),
+        "workspace-netadmin": _set(
+            "spec.containers.0.securityContext.capabilities.add", ["NET_ADMIN"]
+        ),
+        "host-port": _set("spec.containers.0.ports", [{"containerPort": 8080, "hostPort": 8080}]),
+        "proc-unmasked": _set("spec.containers.0.securityContext.procMount", "Unmasked"),
+        "sysctl": _set(
+            "spec.securityContext.sysctls", [{"name": "net.ipv4.ip_forward", "value": "0"}]
+        ),
+        "apparmor-unconfined": _set(
+            "spec.containers.0.securityContext.appArmorProfile", {"type": "Unconfined"}
+        ),
+        "selinux-user": _set("spec.securityContext.seLinuxOptions", {"user": "system_u"}),
+        "selinux-type": _set("spec.containers.0.securityContext.seLinuxOptions", {"type": "spc_t"}),
+    }
+    out: list[tuple[str, dict[str, Any]]] = []
+    for name, mutate in cases.items():
+        pod = copy.deepcopy(attached)
+        pod["metadata"]["name"] = f"deny-{name}"
+        mutate(pod)
+        out.append((f"deny-{name}", pod))
+    return out
+
+
 def main(out_dir: pathlib.Path) -> None:
     api = client.ApiClient()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -159,6 +225,12 @@ def main(out_dir: pathlib.Path) -> None:
         )
     )
 
+    attached_spec = replace(
+        _instance_spec("instance-l3", shapes["instance-hami-k3s"]), netgw=NETGW_ATTACH_PROBE
+    )
+    attached = build_instance_pod(attached_spec)
+    objects.append(("instance-l3", attached, SA + "superdl-tenant-mgr"))
+
     prewarm_job = build_prewarm_job(
         PLATFORM_NS,
         "prewarm-probe",
@@ -181,12 +253,18 @@ def main(out_dir: pathlib.Path) -> None:
         client.V1Service: ("v1", "Service"),
         client.V1NetworkPolicy: ("networking.k8s.io/v1", "NetworkPolicy"),
     }
+    rendered: list[tuple[str, dict[str, Any], str]] = []
     for name, obj, as_user in objects:
         obj.api_version, obj.kind = kinds[type(obj)]  # type: ignore[attr-defined]
-        data = api.sanitize_for_serialization(obj)
+        rendered.append((name, api.sanitize_for_serialization(obj), as_user))
+    attached_dict = next(d for n, d, _ in rendered if n == "instance-l3")
+    rendered.extend(
+        (name, pod, SA + "superdl-tenant-mgr") for name, pod in _deny_probes(attached_dict)
+    )
+    for name, data, as_user in rendered:
         (out_dir / f"{name}.yaml").write_text(yaml.safe_dump(data, sort_keys=False))
         (out_dir / f"{name}.as").write_text(as_user)
-    print(f"rendered {len(objects)} probes into {out_dir}")  # noqa: T201
+    print(f"rendered {len(rendered)} probes into {out_dir}")  # noqa: T201
 
 
 if __name__ == "__main__":

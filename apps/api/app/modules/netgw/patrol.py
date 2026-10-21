@@ -1,6 +1,6 @@
 """Gateway patrol (30 s): tunnel state from Pod readiness, re-apply on a missing Deployment or an
-image other than SUPERDL_NETGW_IMAGE, gateways of deleted accounts torn down, Deployments without
-a row deleted."""
+image other than SUPERDL_NETGW_IMAGE, attachments of released instances dropped, gateways of
+deleted accounts torn down, Deployments without a row deleted."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -32,6 +32,9 @@ async def _converge(session: AsyncSession, observed: dict[str, NetgwStatus]) -> 
     orphans = [o for uuid, o in observed.items() if uuid not in known]
     rows = list((await session.scalars(select(NetGateway).with_for_update(skip_locked=True))).all())
     statuses = await account_service.user_statuses(session, {g.user_id for g in rows})
+    pruned = await service.prune_attachments(session, rows)
+    if pruned:
+        logger.info("netgw_attachments_pruned", count=pruned)
     image = get_settings().netgw_image
     now = now_utc()
     for gw in rows:

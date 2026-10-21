@@ -6,6 +6,7 @@ import importlib
 import json
 import pathlib
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import ModuleType
 from typing import Any
@@ -15,22 +16,29 @@ import pytest
 from app.core.k8s.base import (
     INSTANCE_LABEL,
     MANAGED_LABEL,
+    NETGW_L3_LABEL,
     NETGW_LABEL,
     NETGW_NAMESPACE,
     NETGW_NODE_LABEL,
     NETGW_TENANT_LABEL,
     PRIVATE_CIDRS,
+    InstancePodSpec,
+    NetgwAttach,
 )
 from app.core.k8s.netgw import (
     NETGW_CAPABILITIES,
     SPEC_HASH_ANNOTATION,
+    build_attach_secret,
     build_netgw_deployment,
     build_netgw_netpol,
+    build_netgw_secret,
     build_netgw_services,
     build_tenant_services,
+    service_shape,
 )
+from app.core.k8s.real import build_instance_pod
 from app.modules.netgw import ovpn, service
-from app.modules.netgw.models import NetGateway, NetGatewayForward
+from app.modules.netgw.models import NetGateway, NetGatewayAttachment, NetGatewayForward
 from app.modules.netgw.schemas import GatewayIn
 from app.modules.netgw.spec import RenderInput, agent_spec, k8s_spec
 
@@ -230,3 +238,102 @@ class TestObjects:
         for svc in gw_svcs + tenant:
             assert MANAGED_LABEL not in (svc.metadata.labels or {})
             assert svc.metadata.labels[NETGW_LABEL] == UUID
+
+
+def _l3_input() -> RenderInput:
+    inp = _input("wireguard")
+    inp.gateway.config["l3"] = {
+        "cidr": "192.168.250.0/24",
+        "nat": False,
+        "address": "192.168.250.1",
+        "hub_public_key": "yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=",
+        "routes_at": datetime.now(UTC).isoformat(),
+    }
+    inp.secrets["hub_private_key"] = service._wireguard_keypair()[0]
+    inp.attachments.append(
+        NetGatewayAttachment(
+            id=1,
+            gateway_id=1,
+            user_id=7,
+            instance_id=5,
+            address="192.168.250.2",
+            public_key=service._wireguard_keypair()[1],
+            private_key_encrypted="x",
+        )
+    )
+    return inp
+
+
+class TestL3Objects:
+    def test_peers_outside_the_spec_hash(self):
+        """Fails when attaching or detaching an instance would roll (restart) the gateway Pod."""
+        inp = _l3_input()
+        with_peer = k8s_spec(inp)
+        inp.attachments.clear()
+        without = k8s_spec(inp)
+        assert with_peer.spec_hash == without.spec_hash
+        assert with_peer.peers_json != without.peers_json
+        secret: Any = build_netgw_secret(with_peer)
+        assert set(secret.string_data) == {"spec.json", "peers.json"}
+
+    def test_headless_services_name_the_hub_and_the_pods(self):
+        """Fails when the hub or the attached Pods stop resolving by name (or only resolve once
+        ready, which an unconnected gateway never is)."""
+        spec = k8s_spec(_l3_input())
+        gw_svcs: list[Any] = build_netgw_services(spec)
+        tenant_svcs: list[Any] = build_tenant_services(spec)
+        hub = {s.metadata.name: s for s in gw_svcs}[f"netgw-{UUID}-hub"]
+        pods = {s.metadata.name: s for s in tenant_svcs}[f"netgw-{UUID}-l3"]
+        for svc, selector in ((hub, {NETGW_LABEL: UUID}), (pods, {NETGW_L3_LABEL: UUID})):
+            s: Any = svc.spec
+            assert s.cluster_ip == "None" and s.publish_not_ready_addresses is True
+            assert s.selector == selector
+            assert [(p.protocol, p.port) for p in s.ports] == [("UDP", 51820)]
+        assert service_shape(hub) != service_shape(gw_svcs[0])
+        dep: Any = build_netgw_deployment(spec)
+        ports = {(p.name, p.protocol) for p in dep.spec.template.spec.containers[0].ports}
+        assert ("hub", "UDP") in ports
+
+    def test_attached_instance_pod(self):
+        """Fails when the attach init container gains more than NET_ADMIN, a writable root, an
+        environment or mounts beyond its own Secret, or the Pod stops resolving under the
+        gateway's headless Service."""
+        attach = NetgwAttach(
+            gateway_uuid=UUID, image="r.example/superdl-netgw@sha256:" + "a" * 64, config_json="{}"
+        )
+        spec = InstancePodSpec(
+            namespace="tenant-7",
+            name=INSTANCE_UUID,
+            image="img:1",
+            gpu_resources={},
+            runtime_class=None,
+            host_users=False,
+            vcpu=1,
+            mem_gb=1,
+            disk_gb=10,
+            ssh_node_port=31001,
+            jupyter_host="x.app.example.com",
+            netgw=attach,
+        )
+        pod: Any = build_instance_pod(spec)
+        assert pod.metadata.labels[NETGW_L3_LABEL] == UUID
+        assert pod.spec.hostname == INSTANCE_UUID
+        assert pod.spec.subdomain == f"netgw-{UUID}-l3"
+        (init,) = pod.spec.init_containers
+        assert init.name == "netgw-attach" and init.image == attach.image
+        sc = init.security_context
+        assert sc.capabilities.drop == ["ALL"] and sc.capabilities.add == ["NET_ADMIN"]
+        assert sc.read_only_root_filesystem is True and sc.allow_privilege_escalation is False
+        assert init.env is None and init.env_from is None
+        assert [(m.name, m.read_only) for m in init.volume_mounts] == [("netgw-attach", True)]
+        vol = {v.name: v for v in pod.spec.volumes}["netgw-attach"]
+        assert vol.secret.secret_name == f"netgw-attach-{INSTANCE_UUID}"
+        (workspace,) = pod.spec.containers
+        assert "NET_ADMIN" not in workspace.security_context.capabilities.add
+        assert not any(m.name == "netgw-attach" for m in workspace.volume_mounts)
+        secret: Any = build_attach_secret(spec, attach)
+        assert secret.metadata.labels == {INSTANCE_LABEL: INSTANCE_UUID, MANAGED_LABEL: "true"}
+
+        plain: Any = build_instance_pod(replace(spec, netgw=None))
+        assert plain.spec.init_containers is None and plain.spec.subdomain is None
+        assert NETGW_L3_LABEL not in plain.metadata.labels
