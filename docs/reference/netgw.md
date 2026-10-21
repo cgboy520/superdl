@@ -90,6 +90,6 @@ Mutations other than create share a 60/h per-user bucket. Every write is audited
 
 1. Build and push the image ([deploy/netgw](../../deploy/netgw/README.md)); set `SUPERDL_NETGW_IMAGE` to the `…/superdl-netgw@sha256:…` reference (prod refuses tags) and `SUPERDL_NETGW_EGRESS_IPS` to the gateway nodes' public egress addresses.
 2. On each gateway node load `wireguard`, `tun`, `xfrm_user`, `esp4`, `nf_tables`, `nft_chain_nat`, `nft_masq`, `nft_ct` (`/etc/modules-load.d/superdl-netgw.conf`) and label it `node-restriction.kubernetes.io/superdl-netgw=true`; on nodes running instances load `wireguard` (L3 attachments).
-3. Release; `superdl-netgw` and its RBAC come with `deploy/app/k8s`.
+3. Before the first release that ships the feature, create the `superdl-netgw` namespace out of band (apply its `Namespace` document from `deploy/app/k8s/00-namespace-config.yaml`): `scripts/release.sh` dry-runs every rendered object server-side, and the Role inside a namespace that does not exist yet fails that dry-run. Then release; from there on the namespace, its labels and its RBAC are converged with `deploy/app/k8s`.
 
 Gateways are not billed separately; the per-user and per-gateway limits and the bandwidth cap bound their footprint.
