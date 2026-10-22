@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { useAppLocale } from "@superdl/ui";
 import { useSiteConfig } from "../api/queries";
+import { siteBrand } from "../lib/brand";
 import { useThemeMode } from "../stores/theme";
 
 export const Route = createRootRoute({
@@ -17,11 +18,16 @@ export const Route = createRootRoute({
 });
 
 /** The single Provider linking locale + theme + deployment currency: shared by the main tree / error boundary / 404. Dark = darkAlgorithm + webDarkTheme overrides;
- *  the currency comes from /site-config, amounts show the number only until it is known. */
+ *  the currency and the site name (document title) come from /site-config, amounts show the number only until it is known. */
 function AppProviders({ children }: { children: ReactNode }) {
   const antdLocale = useAppLocale();
   const mode = useThemeMode();
   const { data: site } = useSiteConfig();
+  const { t } = useTranslation();
+  const siteName = siteBrand(site).name;
+  useEffect(() => {
+    document.title = t("app.title", { name: siteName });
+  }, [t, siteName]);
   useEffect(() => {
     document.documentElement.dataset.theme = mode;
     document.documentElement.style.colorScheme = mode;

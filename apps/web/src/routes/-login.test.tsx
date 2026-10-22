@@ -1,4 +1,4 @@
-/** Login page: field labels, placeholders, password reset and the market summary. */
+/** Login page: field labels, placeholders, password reset, the market summary and the site name / slogan. */
 import type { SkuMarketOut } from "@superdl/api-client";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -12,15 +12,21 @@ const LoginPage = (Route as unknown as { component: ComponentType }).component;
 
 const LAZY = { timeout: 10_000 };
 
-const { skusState, breakpoints } = vi.hoisted(() => {
+const { skusState, siteState, breakpoints } = vi.hoisted(() => {
   const skusState = {
     current: { data: undefined as SkuMarketOut[] | undefined, isLoading: false, isError: false },
   };
+  const siteState: { current: { site_name: string | null; site_slogan: string | null } | undefined } = {
+    current: undefined,
+  };
   const breakpoints: { current: Record<string, boolean> } = { current: {} };
-  return { skusState, breakpoints };
+  return { skusState, siteState, breakpoints };
 });
 
-vi.mock("../api/queries", () => ({ useSkus: () => skusState.current, useSiteConfig: () => ({ data: undefined }) }));
+vi.mock("../api/queries", () => ({
+  useSkus: () => skusState.current,
+  useSiteConfig: () => ({ data: siteState.current }),
+}));
 
 vi.mock("../api/mutations", () => {
   const stub = () => ({ mutate: vi.fn(), isPending: false });
@@ -144,5 +150,28 @@ describe("login page market summary", () => {
     renderLogin();
     expect(await screen.findByText("数据盘独立于实例,释放实例不丢数据", undefined, LAZY)).toBeInTheDocument(); // cjk-ok
     expect(screen.queryByText(/GPU 时价低至/)).not.toBeInTheDocument(); // cjk-ok
+  });
+});
+
+describe("login page site name and slogan", () => {
+  beforeEach(() => {
+    breakpoints.current = { lg: true };
+    skusState.current = { data: [], isLoading: false, isError: false };
+  });
+
+  it("without an admin-set name and slogan the title and brand column keep the built-in copy", async () => {
+    siteState.current = { site_name: null, site_slogan: null };
+    renderLogin();
+    expect(await screen.findByRole("heading", { name: "登录 SuperDL" }, LAZY)).toBeInTheDocument(); // cjk-ok
+    expect(screen.getByText("开机计费,关机停表")).toBeInTheDocument(); // cjk-ok
+  });
+
+  it("the admin-set name titles the form and the slogan replaces the built-in one", async () => {
+    siteState.current = { site_name: "YesGPU", site_slogan: "算力随开随用" }; // cjk-ok
+    renderLogin();
+    expect(await screen.findByRole("heading", { name: "登录 YesGPU" }, LAZY)).toBeInTheDocument(); // cjk-ok
+    expect(screen.getByText("算力随开随用")).toBeInTheDocument(); // cjk-ok
+    expect(screen.queryByText("开机计费,关机停表")).not.toBeInTheDocument(); // cjk-ok
+    expect(screen.getAllByText("YesGPU").length).toBeGreaterThan(0);
   });
 });

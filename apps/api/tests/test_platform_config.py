@@ -351,6 +351,38 @@ class TestAdminApi:
         assert site["icp_number"] is None
         assert site["business_license_url"] is None
 
+    async def test_site_name_and_slogan_reach_site_config(self, client: AsyncClient, sm):
+        """Branding round trip: unset = null (the frontends' built-in copy), an admin write is
+        public on site-config, multi-line or overlong values are rejected, empty clears."""
+        ah = await admin_headers(sm, client, role="admin")
+
+        async def put(updates: dict[str, str]):
+            return await client.put(
+                "/api/admin/v1/platform-config",
+                json={"updates": updates, "reason": "branding"},
+                headers=ah,
+            )
+
+        site = (await client.get("/api/v1/site-config")).json()
+        assert (site["site_name"], site["site_slogan"]) == (None, None)
+
+        resp = await put({"site_name": "YesGPU", "site_slogan": "GPUs by the second"})
+        assert resp.status_code == 200, resp.text
+        site = (await client.get("/api/v1/site-config")).json()
+        assert (site["site_name"], site["site_slogan"]) == ("YesGPU", "GPUs by the second")
+        data = (await client.get("/api/admin/v1/platform-config", headers=ah)).json()
+        groups = {i["key"]: i["group"] for i in data["items"]}
+        assert groups["site_name"] == groups["site_slogan"] == "branding"
+
+        for bad in ({"site_name": "Yes\nGPU"}, {"site_name": "x" * 33}, {"site_slogan": "y" * 65}):
+            resp = await put(bad)
+            assert resp.status_code == 400, bad
+            assert resp.json()["code"] == "VALIDATION_ERROR"
+
+        assert (await put({"site_name": "", "site_slogan": ""})).status_code == 200
+        site = (await client.get("/api/v1/site-config")).json()
+        assert (site["site_name"], site["site_slogan"]) == (None, None)
+
     async def test_unknown_key_rejected_via_api(self, client: AsyncClient, sm):
         """Keys outside the allow-list (such as the JWT secret) cannot be written."""
         ah = await admin_headers(sm, client, role="admin")

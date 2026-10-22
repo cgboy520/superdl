@@ -9158,6 +9158,7 @@
               "email",
               "real_name",
               "captcha",
+              "branding",
               "compliance",
               "support",
               "cluster",
@@ -11033,7 +11034,7 @@
         "type": "object"
       },
       "SiteConfigOut": {
-        "description": "Public site configuration (footer filing numbers, operator information etc., no login).",
+        "description": "Public site configuration (site name and slogan, footer filing numbers, operator information\netc., no login); empty site_name / site_slogan = the frontends' built-in copy.",
         "properties": {
           "billing_timezone": {
             "title": "Billing Timezone",
@@ -11146,6 +11147,28 @@
             ],
             "title": "Police Record Number"
           },
+          "site_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Name"
+          },
+          "site_slogan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Slogan"
+          },
           "support_email": {
             "anyOf": [
               {
@@ -11170,6 +11193,8 @@
           }
         },
         "required": [
+          "site_name",
+          "site_slogan",
           "icp_number",
           "police_record_number",
           "support_email",
@@ -25844,7 +25869,7 @@
     },
     "/api/v1/site-config": {
       "get": {
-        "description": "Public site configuration: filing numbers + enabled payment channels + deployment identity\n(compliance profile / currency / billing time zone) (no login).",
+        "description": "Public site configuration: site name and slogan + filing numbers + enabled payment channels +\ndeployment identity (compliance profile / currency / billing time zone) (no login).",
         "operationId": "get_site_config_api_v1_site_config_get",
         "responses": {
           "200": {

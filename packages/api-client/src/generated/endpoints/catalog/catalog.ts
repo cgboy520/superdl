@@ -46,8 +46,8 @@ export const getGetSiteConfigApiV1SiteConfigGetUrl = () => {
 }
 
 /**
- * Public site configuration: filing numbers + enabled payment channels + deployment identity
- * (compliance profile / currency / billing time zone) (no login).
+ * Public site configuration: site name and slogan + filing numbers + enabled payment channels +
+ * deployment identity (compliance profile / currency / billing time zone) (no login).
  * @summary Get Site Config
  */
 export const getSiteConfigApiV1SiteConfigGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<SiteConfigOut> => {

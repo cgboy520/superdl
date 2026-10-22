@@ -6,6 +6,7 @@ import { theme, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { useSiteConfig } from "../../api/queries";
+import { siteBrand } from "../../lib/brand";
 
 /** In-site paths (single leading `/`) use the SPA Link; anchors / mailto / external links stay <a>. */
 function isInternal(to: string): boolean {
@@ -107,7 +108,7 @@ export function SiteFooter() {
             </Typography.Paragraph>
           )}
           <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-            {t("footer.copyright", { year: new Date().getFullYear() })}
+            {t("footer.copyright", { year: new Date().getFullYear(), name: siteBrand(site).name })}
             {icp && (
               <>
                 {" · "}

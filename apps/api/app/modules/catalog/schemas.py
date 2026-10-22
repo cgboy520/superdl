@@ -20,8 +20,11 @@ class PaymentChannelOut(BaseModel):
 
 
 class SiteConfigOut(BaseModel):
-    """Public site configuration (footer filing numbers, operator information etc., no login)."""
+    """Public site configuration (site name and slogan, footer filing numbers, operator information
+    etc., no login); empty site_name / site_slogan = the frontends' built-in copy."""
 
+    site_name: str | None
+    site_slogan: str | None
     icp_number: str | None
     police_record_number: str | None
     support_email: str | None

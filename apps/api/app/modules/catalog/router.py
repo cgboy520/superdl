@@ -18,12 +18,14 @@ router = APIRouter(tags=["catalog"])
 
 @router.get("/site-config")
 async def get_site_config(session: DbSession) -> SiteConfigOut:
-    """Public site configuration: filing numbers + enabled payment channels + deployment identity
-    (compliance profile / currency / billing time zone) (no login)."""
+    """Public site configuration: site name and slogan + filing numbers + enabled payment channels +
+    deployment identity (compliance profile / currency / billing time zone) (no login)."""
     cfg = await get_runtime_config(session)
     s = get_settings()
     profile = current_profile()
     return SiteConfigOut(
+        site_name=cfg.site_name or None,
+        site_slogan=cfg.site_slogan or None,
         icp_number=cfg.icp_number or None,
         police_record_number=cfg.police_record_number or None,
         support_email=cfg.support_email or None,

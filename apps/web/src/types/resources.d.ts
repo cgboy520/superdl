@@ -684,7 +684,7 @@ export default interface Resources {
   },
   "web": {
     "app": {
-      "title": "SuperDL · GPU 算力云"
+      "title": "{{name}} · GPU 算力云"
     },
     "attention": {
       "announcement": "公告:{{title}}",
@@ -991,7 +991,7 @@ export default interface Resources {
     },
     "footer": {
       "complianceTitle": "合规",
-      "copyright": "© {{year}} SuperDL",
+      "copyright": "© {{year}} {{name}}",
       "linkContact": "联系客服",
       "linkHelp": "帮助与支持",
       "linkMarket": "算力市场",
@@ -1209,7 +1209,7 @@ export default interface Resources {
         "ctaPrimary": "免费注册",
         "ctaSecondary": "查看算力市场",
         "subtitle": "按秒计费的 GPU 租用平台。价格牌上的可开台数就是真库存。",
-        "title": "SuperDL GPU 算力云"
+        "title": "{{name}} GPU 算力云"
       },
       "pricing": {
         "dedicatedSpec": "整卡 · {{vram}}G 显存",
@@ -1306,7 +1306,7 @@ export default interface Resources {
       "phoneLabel": "手机号",
       "phonePlaceholder": "手机号",
       "phoneRequiredHint": "当前站点要求绑定手机号",
-      "registerTitle": "注册 SuperDL",
+      "registerTitle": "注册 {{name}}",
       "resetDone": "密码已更新",
       "resetTitle": "重置登录密码",
       "slogan": "开机计费,关机停表",
@@ -1317,7 +1317,7 @@ export default interface Resources {
       "submitReset": "重置密码并登录",
       "terms": "我已阅读并同意 <terms>《用户协议》</terms><privacy>《隐私政策》</privacy>,并知悉平台禁止挖矿等使用限制",
       "termsRequired": "请先阅读并同意用户协议与隐私政策",
-      "title": "登录 SuperDL"
+      "title": "登录 {{name}}"
     },
     "market": {
       "all": "全部",

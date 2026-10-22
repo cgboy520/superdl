@@ -136,6 +136,9 @@ class Settings(BaseSettings):
     config_encryption_key: str | None = None
     config_encryption_key_previous: str | None = None
 
+    site_name: str | None = None
+    site_slogan: str | None = None
+
     icp_number: str | None = None
     police_record_number: str | None = None
     company_name: str | None = None

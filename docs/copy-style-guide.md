@@ -32,4 +32,4 @@ Tone: restrained, concrete, actionable; facts and consequences, not emotion or s
 ## Glossary
 
 - Common technical abbreviations stay as-is in both languages: ID, IP, CUDA, Python, GPU, vCPU, SSH, API Key, JupyterLab, diff%.
-- The brand wordmark `SuperDL` is not translated; the allow-listed zh-CN phrases for "join" / "add" are used verbatim.
+- The brand wordmark (the `site_name` setting, default `SuperDL`) is not translated; the allow-listed zh-CN phrases for "join" / "add" are used verbatim.

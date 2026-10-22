@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "SuperDL · GPU Cloud"
+    "title": "{{name}} · GPU Cloud"
   },
   "attention": {
     "announcement": "Announcement: {{title}}",
@@ -314,7 +314,7 @@
   },
   "footer": {
     "complianceTitle": "Compliance",
-    "copyright": "© {{year}} SuperDL",
+    "copyright": "© {{year}} {{name}}",
     "linkContact": "Contact support",
     "linkHelp": "Help & support",
     "linkMarket": "Marketplace",
@@ -536,7 +536,7 @@
       "ctaPrimary": "Sign up free",
       "ctaSecondary": "Browse marketplace",
       "subtitle": "GPU rental billed by the second. The count on the price board is real stock.",
-      "title": "SuperDL GPU Cloud"
+      "title": "{{name}} GPU Cloud"
     },
     "pricing": {
       "dedicatedSpec": "Full card · {{vram}}G VRAM",
@@ -634,7 +634,7 @@
     "phoneLabel": "Phone number",
     "phonePlaceholder": "Phone number",
     "phoneRequiredHint": "This site requires a phone number",
-    "registerTitle": "Create your SuperDL account",
+    "registerTitle": "Create your {{name}} account",
     "resetDone": "Password updated",
     "resetTitle": "Reset your password",
     "slogan": "Pay only while it runs",
@@ -645,7 +645,7 @@
     "submitReset": "Reset and sign in",
     "terms": "I have read and agree to the <terms>Terms of Service</terms> and <privacy>Privacy Policy</privacy>, and understand that crypto mining is prohibited",
     "termsRequired": "Please read and accept the Terms and Privacy Policy first",
-    "title": "Log in to SuperDL"
+    "title": "Log in to {{name}}"
   },
   "market": {
     "all": "All",
