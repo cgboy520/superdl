@@ -27,6 +27,7 @@ import { useLogin, useRegister, useResetPassword } from "../api/mutations";
 import { useSiteConfig, useSkus } from "../api/queries";
 import { GRID_TEXTURE } from "../components/gridTexture";
 import { BrandLogo } from "../components/layout/BrandLogo";
+import { useSiteBrand } from "../lib/brand";
 import { ThemeToggle } from "../components/layout/AppTopBar";
 import { CodeField } from "../components/CodeField";
 import { dedupAvailableTotal } from "../lib/inventory";
@@ -101,9 +102,10 @@ function minGpuHourlyPrice(skus: readonly SkuMarketOut[]): string | null {
   return min;
 }
 
-/** Left brand column (lg+): the market summary uses real /skus data (lowest hourly price + deduplicated available count); skeleton while loading, three static facts on failure. */
+/** Left brand column (lg+): the site slogan over a market summary from real /skus data (lowest hourly price + deduplicated available count); skeleton while loading, three static facts on failure. */
 function BrandPane() {
   const { t } = useTranslation();
+  const { slogan } = useSiteBrand();
   const { formatHourlyPrice } = useFormat();
   const { data: skus, isLoading, isError } = useSkus();
   const minPrice = minGpuHourlyPrice(skus ?? []);
@@ -136,7 +138,7 @@ function BrandPane() {
       </div>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <Typography.Title style={{ color: brand.onHero, fontSize: fontSize.kpi, marginBottom: space.xxl }}>
-          {t("login.slogan")}
+          {slogan ?? t("login.slogan")}
         </Typography.Title>
         {isLoading ? (
           <Space orientation="vertical" size={space.lg}>
@@ -168,6 +170,7 @@ function LoginPage() {
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
   const { data: site } = useSiteConfig();
+  const { name: brandName } = useSiteBrand();
   const phoneRequired = site?.phone_required ?? false;
   const dialCodes = site?.phone_dial_codes ?? [];
   const [mode, setMode] = useState<Mode>(searchMode === "register" ? "register" : "code");
@@ -278,8 +281,8 @@ function LoginPage() {
             {mode === "reset"
               ? t("login.resetTitle")
               : mode === "register"
-                ? t("login.registerTitle")
-                : t("login.title")}
+                ? t("login.registerTitle", { name: brandName })
+                : t("login.title", { name: brandName })}
           </Typography.Title>
           {(mode === "code" || mode === "password") && (
             <Segmented

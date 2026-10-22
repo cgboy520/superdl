@@ -1,6 +1,8 @@
-/** Brand mark: SVG glyph (same shape as the favicon) + wordmark. light = white on dark, dark = indigo on light. */
+/** Brand mark: SVG glyph (same shape as the favicon) + the site name as wordmark. light = white on dark, dark = indigo on light. */
 
 import { brandGradientStops, colorPrimary, fontSize, textOnAccent } from "@superdl/ui";
+
+import { useSiteBrand } from "../../lib/brand";
 
 const S_PATH =
   "M21.5 10.6c-.9-1.6-2.7-2.6-5-2.6-3.1 0-5.3 1.7-5.3 4.2 0 2.2 1.5 3.4 4.6 4l1.9.4c1.9.4 " +
@@ -8,10 +10,9 @@ const S_PATH =
   "5.9-1.8 5.9-4.5 0-2.2-1.5-3.4-4.7-4.1l-1.8-.4c-1.8-.4-2.6-1-2.6-1.9 0-1.1 1.1-1.9 " +
   "2.8-1.9 1.6 0 2.8.7 3.1 1.9h2.6z";
 
-const BRAND_NAME = "SuperDL";
-
 export function BrandLogo({ variant = "dark" }: { variant?: "light" | "dark" }) {
   const light = variant === "light";
+  const { name } = useSiteBrand();
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
       <svg width={26} height={26} viewBox="0 0 32 32" aria-hidden>
@@ -32,7 +33,7 @@ export function BrandLogo({ variant = "dark" }: { variant?: "light" | "dark" }) 
           letterSpacing: 0.3,
         }}
       >
-        {BRAND_NAME}
+        {name}
       </span>
     </span>
   );

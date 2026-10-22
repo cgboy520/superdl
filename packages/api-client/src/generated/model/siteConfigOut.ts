@@ -7,7 +7,8 @@
 import type { PaymentChannelOut } from './paymentChannelOut';
 
 /**
- * Public site configuration (footer filing numbers, operator information etc., no login).
+ * Public site configuration (site name and slogan, footer filing numbers, operator information
+ * etc., no login); empty site_name / site_slogan = the frontends' built-in copy.
  */
 export interface SiteConfigOut {
   billing_timezone: string;
@@ -24,6 +25,8 @@ export interface SiteConfigOut {
   phone_dial_codes: string[];
   phone_required: boolean;
   police_record_number: string | null;
+  site_name: string | null;
+  site_slogan: string | null;
   support_email: string | null;
   support_wechat: string | null;
 }

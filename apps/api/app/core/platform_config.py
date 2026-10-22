@@ -47,6 +47,7 @@ PlatformConfigGroup = Literal[
     "email",
     "real_name",
     "captcha",
+    "branding",
     "compliance",
     "support",
     "cluster",
@@ -80,6 +81,9 @@ class SettingSpec:
     prod_gate: bool = False
     hint: str = ""
     prod_hint: str = ""
+
+
+_SINGLE_LINE = r"[^\x00-\x1f\x7f]*"
 
 
 def _num(kind: Literal["int", "decimal"], lo: str, hi: str, hint: str = "") -> SettingSpec:
@@ -349,6 +353,20 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         hint="Turnstile site key (public; the web app renders the widget with it)",
     ),
     "captcha_turnstile_secret_key": SettingSpec("captcha", "secret", max_len=128),
+    "site_name": SettingSpec(
+        "branding",
+        "str",
+        pattern=_SINGLE_LINE,
+        max_len=32,
+        hint="Site name in the console logo, page titles, sign-in page and footer; empty = SuperDL",
+    ),
+    "site_slogan": SettingSpec(
+        "branding",
+        "str",
+        pattern=_SINGLE_LINE,
+        max_len=64,
+        hint="Slogan on the home page and the sign-in page; empty = the built-in copy",
+    ),
     "icp_number": SettingSpec(
         "compliance",
         "str",
@@ -616,6 +634,8 @@ class RuntimeConfig:
     captcha_provider: str
     captcha_turnstile_site_key: str
     captcha_turnstile_secret_key: str
+    site_name: str
+    site_slogan: str
     icp_number: str
     police_record_number: str
     company_name: str

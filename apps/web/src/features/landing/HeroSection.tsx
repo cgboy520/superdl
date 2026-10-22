@@ -1,4 +1,4 @@
-/** Home Hero: title, two CTAs and the live price board; stacked vertically on narrow screens. */
+/** Home Hero: title (site name), slogan, two CTAs and the live price board; stacked vertically on narrow screens. */
 
 import { brand, brandInverseButtonStyle, fontSize, fontWeight, layout, space } from "@superdl/ui";
 import { Link } from "@tanstack/react-router";
@@ -6,12 +6,14 @@ import { Button, Grid, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { GRID_TEXTURE } from "../../components/gridTexture";
+import { useSiteBrand } from "../../lib/brand";
 import { useIsLoggedIn } from "../../stores/auth";
 import { PriceBoard } from "./PriceBoard";
 
 export function HeroSection() {
   const { t } = useTranslation();
   const loggedIn = useIsLoggedIn();
+  const { name, slogan } = useSiteBrand();
   const wide = Grid.useBreakpoint().lg;
 
   return (
@@ -43,7 +45,7 @@ export function HeroSection() {
               marginBottom: space.md,
             }}
           >
-            {t("landing.hero.title")}
+            {t("landing.hero.title", { name })}
           </Typography.Title>
           <Typography.Paragraph
             style={{
@@ -53,7 +55,7 @@ export function HeroSection() {
               marginBottom: space.xl,
             }}
           >
-            {t("landing.hero.subtitle")}
+            {slogan ?? t("landing.hero.subtitle")}
           </Typography.Paragraph>
           <div style={{ display: "flex", gap: space.lg, flexWrap: "wrap" }}>
             <Link to={loggedIn ? "/instances" : "/login"} search={loggedIn ? {} : { mode: "register" }}>

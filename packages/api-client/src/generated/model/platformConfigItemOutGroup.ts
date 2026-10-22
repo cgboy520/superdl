@@ -17,6 +17,7 @@ export const PlatformConfigItemOutGroup = {
   email: 'email',
   real_name: 'real_name',
   captcha: 'captcha',
+  branding: 'branding',
   compliance: 'compliance',
   support: 'support',
   cluster: 'cluster',
