@@ -5,7 +5,7 @@ RUN npm install -g corepack@latest && corepack enable
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm --filter ${APP} build
 
-FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:6a23acdfca2b9cfbcec61419e3f1426bcbedb91362f2f19306a8567423bb4612
+FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
 ARG APP=web
 COPY deploy/app/nginx.${APP}.conf /etc/nginx/templates/default.conf.template
 COPY deploy/app/security-headers.conf /etc/nginx/snippets/security-headers.conf
