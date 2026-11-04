@@ -24,6 +24,19 @@ else
   miss "kube-apiserver unreachable (check KUBECONFIG)"
 fi
 
+say "== Node kernels (≥ 6.3: userns Pods; Cilium BBR stops the agent below 5.18) =="
+node_kernels="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.nodeInfo.kernelVersion}{"\n"}{end}' 2>/dev/null || true)"
+[[ -n "$node_kernels" ]] || miss "node kernel versions unreadable (kubectl get nodes)"
+while read -r node kernel; do
+  [[ -n "$node" ]] || continue
+  sorted="$(printf '6.3\n%s\n' "${kernel%%-*}" | sort -V)"
+  if [[ "${sorted%%$'\n'*}" == "6.3" ]]; then
+    ok "$node kernel $kernel"
+  else
+    miss "$node kernel $kernel is older than 6.3 (Ubuntu 22.04: install linux-generic-hwe-22.04 and reboot)"
+  fi
+done <<< "$node_kernels"
+
 say "== Prerequisite Secrets (helm does not create them; components stay down while missing) =="
 check_secret() {
   if kubectl -n "$1" get secret "$2" >/dev/null 2>&1; then

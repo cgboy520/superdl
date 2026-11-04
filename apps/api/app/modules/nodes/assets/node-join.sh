@@ -11,6 +11,9 @@ LVM_IMG_DIR="${SUPERDL_JOIN_LVM_DIR:-/var/lib/superdl-lvm}"
 IOMMU_GROUPS_DIR="${SUPERDL_JOIN_IOMMU_DIR:-/sys/kernel/iommu_groups}"
 OS_RELEASE_FILE="${SUPERDL_JOIN_OS_RELEASE:-/etc/os-release}"
 CPUINFO_FILE="${SUPERDL_JOIN_CPUINFO:-/proc/cpuinfo}"
+KERNEL_RELEASE="${SUPERDL_JOIN_KERNEL_RELEASE:-$(uname -r)}"
+# Node kernel floor: userns Pods need 6.3, Cilium BBR needs 5.18.
+MIN_KERNEL="6.3"
 # Kernel IOMMU arguments for x86_64; empty = derived from the CPU vendor (unknown vendors fail closed).
 IOMMU_ARGS="${SUPERDL_JOIN_IOMMU_ARGS:-}"
 RESUME_UNIT="superdl-node-join-resume"
@@ -236,6 +239,17 @@ check_distro() {
   return 1
 }
 
+check_kernel() {
+  local sorted
+  sorted="$(printf '%s\n%s\n' "$MIN_KERNEL" "${KERNEL_RELEASE%%-*}" | sort -V)"
+  if [[ "${sorted%%$'\n'*}" == "$MIN_KERNEL" ]]; then
+    echo "-- kernel: $KERNEL_RELEASE"
+    return 0
+  fi
+  echo "kernel $KERNEL_RELEASE is older than $MIN_KERNEL (userns Pods, Cilium BBR); upgrade it first (Ubuntu 22.04: linux-generic-hwe-22.04)"
+  return 1
+}
+
 # GRUB kernel arguments that enable the IOMMU for this CPU vendor (x86_64 only).
 iommu_kernel_args() {
   if [[ -n "$IOMMU_ARGS" ]]; then echo "$IOMMU_ARGS"; return 0; fi
@@ -254,6 +268,7 @@ iommu_kernel_args() {
 step_precheck() {
   case "$(uname -m)" in x86_64 | aarch64) ;; *) echo "only x86_64 / aarch64 are supported (this host: $(uname -m))"; return 1 ;; esac
   check_distro || return 1
+  check_kernel || return 1
   command -v python3 >/dev/null || { echo "python3 is missing"; return 1; }
   command -v systemctl >/dev/null || { echo "systemd is required"; return 1; }
   if is_cpu_pool; then

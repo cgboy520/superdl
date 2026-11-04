@@ -11,6 +11,10 @@ l2announcements:
   enabled: true
 bandwidthManager:
   enabled: true
+  bbr: true
+# BBR for Pods needs BPF host routing, which iptables masquerading turns off (the agent refuses to start)
+bpf:
+  masquerade: true
 hubble:
   enabled: true
   relay:

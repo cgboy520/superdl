@@ -4,7 +4,7 @@
 
 ## OS baseline
 
-- **Debian family** (Ubuntu Server 22.04 / 24.04 LTS is the validated baseline, Debian 12 is the same family), x86_64 or aarch64; the playbooks use apt throughout.
+- **Debian family** (Ubuntu Server 22.04 / 24.04 LTS is the validated baseline, Debian 12 is the same family; kernel ≥ 6.3, so 22.04 runs the HWE kernel), x86_64 or aarch64; the playbooks use apt throughout.
 - Target machines: root or sudo (`become: true`), python3, reachable over ssh, with public egress: the installers are downloaded from the official sources `get.rke2.io` / `get.k3s.io` by default (`k8s_install_mirror: official`); mainland-China data centres can switch to `rancher-mirror.rancher.cn` with `-e k8s_install_mirror=cn`; any other value fails the playbook assertion.
 
 ## Inventory groups

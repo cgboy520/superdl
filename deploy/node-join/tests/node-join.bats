@@ -13,6 +13,7 @@ setup() {
   mkdir -p "$TMP/iommu_groups/0"
   export SUPERDL_JOIN_OS_RELEASE="$TMP/os-release"
   export SUPERDL_JOIN_CPUINFO="$TMP/cpuinfo"
+  export SUPERDL_JOIN_KERNEL_RELEASE="6.8.0-90-generic"
   _write_os_release ubuntu debian "Ubuntu 24.04 LTS"
   _write_cpuinfo GenuineIntel
   export CURL_LOG="$TMP/curl.log"
@@ -449,6 +450,26 @@ RKESHIM
   [[ "$output" == *"unsupported distribution: Fedora Linux 41"* ]]
   grep -q '"phase":"precheck","state":"failed"' "$CURL_LOG"
   ! grep -q "apt-get" "$SHIM_CALLS"
+}
+
+@test "kernel older than 6.3 fails precheck closed" {
+  export SUPERDL_JOIN_KERNEL_RELEASE="5.15.0-122-generic"
+  run_script
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"kernel 5.15.0-122-generic is older than 6.3"* ]]
+  grep -q '"phase":"precheck","state":"failed"' "$CURL_LOG"
+  ! grep -q "apt-get" "$SHIM_CALLS"
+}
+
+@test "kernel 6.3 and newer double-digit minors pass the kernel gate" {
+  export SUPERDL_JOIN_KERNEL_RELEASE="6.3"
+  run_script
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"-- kernel: 6.3"* ]]
+  export SUPERDL_JOIN_KERNEL_RELEASE="6.10.0-1-generic"
+  run_script --force
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"-- kernel: 6.10.0-1-generic"* ]]
 }
 
 @test "ID_LIKE=debian derivatives pass the distro gate and bootstrap reports PRETTY_NAME" {
