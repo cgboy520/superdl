@@ -323,7 +323,7 @@ say "== Application NetworkPolicy egress (advisory) =="
 netpol=../app/k8s/09-networkpolicy.yaml
 if [[ -f "$netpol" ]]; then
   if grep -vE '^\s*#' "$netpol" | grep -q 'CHANGE_ME'; then
-    say "  ⚠ the egress rules of $netpol contain CHANGE_ME placeholders (PG / object storage / payment and SMS gateways / K8s API endpoints):"
+    say "  ⚠ the egress rules of $netpol contain CHANGE_ME placeholders (PG / object storage / payment gateways / K8s API endpoints; SMS gateways are allowed by FQDN in cilium-policies.yaml):"
     say "    replace them with real endpoints before applying, otherwise all platform egress is cut (notice only, not blocking)"
   else
     ok "$netpol egress narrowed to real endpoints"

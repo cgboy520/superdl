@@ -30,3 +30,32 @@ spec:
       toPorts:
         - ports:
             - {port: "22", protocol: TCP}
+---
+# SMS gateways by FQDN (aliyun / twilio providers in apps/api/app/core/sms.py); the DNS rule lets the Cilium DNS proxy learn their addresses
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: superdl-platform-sms-egress
+spec:
+  endpointSelector:
+    matchExpressions:
+      - {key: k8s:io.kubernetes.pod.namespace, operator: In, values: [superdl]}
+      - {key: app, operator: In, values: [superdl-api, superdl-worker]}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: UDP}
+            - {port: "53", protocol: TCP}
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: dysmsapi.aliyuncs.com
+        - matchName: api.twilio.com
+      toPorts:
+        - ports:
+            - {port: "443", protocol: TCP}

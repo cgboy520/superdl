@@ -138,10 +138,11 @@ An older cluster installed without `flannel-backend: none` that needs Cilium fac
 6. Leftover `cni0` / `flannel.1` interfaces and the iptables rules of flannel / kube-proxy (`KUBE-*` chains) **are only fully cleared by a node reboot**; without a reboot run `ip link delete cni0`, `ip link delete flannel.1` by hand and clear the `KUBE-*` chains.
 7. Read back: `kubectl -n kube-system exec ds/cilium -- cilium-dbg status`, every node Ready, the tenant SSH NodePort connects, the Envoy LoadBalancer external IP unchanged.
 
-**Two Cilium policy semantics must be supplied by `cilium-policies.yaml`** (shipped by the cilium release postsync); when it is missing the symptom is "every component Running but the platform cannot reach the database and tenant SSH is dead":
+**Three Cilium policy semantics must be supplied by `cilium-policies.yaml`** (shipped by the cilium release postsync); when it is missing the symptom is "every component Running but the platform cannot reach the database and tenant SSH is dead":
 
 - **`ipBlock` does not select nodes.** In Cilium a node is the reserved identity `host` / `remote-node`, independent of its IP. `policyCIDRMatchMode: [nodes]` in `values/cilium.yaml` only lets CIDR selectors cover `remote-node`; the local `host` (the platform database runs on the node host) still has to be allowed by identity.
 - **The SNAT source of a NodePort is the entry node's `cilium_host`.** That address is **allocated dynamically** from the Pod CIDR and falls inside the `except 10.42.0.0/16` of `tenant-default`, so allowing by address does not match; `cilium-policies.yaml` allows by identity.
+- **SMS gateways are allowed by FQDN, not CIDR.** `superdl-platform-sms-egress` lets `superdl-api` / `superdl-worker` reach `dysmsapi.aliyuncs.com` and `api.twilio.com` on 443 (`toFQDNs`, with the DNS rule that feeds Cilium's DNS proxy); `CHANGE_ME_GATEWAY_CIDR` in `../app/k8s/09-networkpolicy.yaml` remains for the payment gateways.
 
 After the switch test for real: the three platform domains, tenant Jupyter, and the tenant SSH NodePort **from at least two different nodes**.
 
