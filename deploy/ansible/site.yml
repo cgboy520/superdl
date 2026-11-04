@@ -206,7 +206,7 @@
 
     - name: "Install the k3s server (idempotent: skipped when installed)"
       shell: >
-        {{ k3s_installer_mirror_env }} sh /root/.cache/superdl/k3s-install.sh -s - server
+        {{ k3s_installer_mirror_env }} sh /root/.cache/superdl/k3s-install.sh server
       args:
         executable: /bin/bash
         creates: /etc/systemd/system/k3s.service
