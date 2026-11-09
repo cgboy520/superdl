@@ -18,7 +18,8 @@ from kubernetes import client, config
 from app.core.config import get_settings
 from app.core.k8s import health
 from app.core.k8s.base import (
-    DATA_DISK_STORAGE_CLASS,
+    CEPH_CSI_DRIVER,
+    CEPH_CSI_NODEPLUGIN_SUFFIX,
     EGRESS_BLOCKED_TCP_PORTS,
     GATEWAY_API_GROUP,
     GATEWAY_API_VERSION,
@@ -31,7 +32,6 @@ from app.core.k8s.base import (
     HTTPROUTE_PLURAL,
     INFRA_NODE_LABEL,
     INFRA_ROLE_LABELS,
-    INSTANCE_DISK_STORAGE_CLASS,
     INSTANCE_LABEL,
     MANAGED_LABEL,
     NETGW_CONTAINER,
@@ -39,10 +39,13 @@ from app.core.k8s.base import (
     NETGW_LABEL,
     NETGW_NAMESPACE,
     NETGW_TENANT_LABEL,
+    ORG_MOUNT_LABEL,
+    ORG_MOUNT_REV_LABEL,
     POOL_NODE_LABEL,
     PRIVATE_CIDRS,
     STARTUP_PROBE_PERIOD_SECONDS,
     WORKSPACE_CONTAINER,
+    CephVolumeSpec,
     ClusterProbe,
     ComponentDetail,
     ComponentFact,
@@ -55,7 +58,6 @@ from app.core.k8s.base import (
     PodStatus,
     PrewarmJobStatus,
     derive_distro,
-    instance_disk_pvc_name,
     instance_env_secret_name,
     jupyter_service_name,
     netgw_attach_secret_name,
@@ -64,10 +66,10 @@ from app.core.k8s.base import (
     service_endpoint_service_name,
 )
 from app.core.k8s.health import (
+    CsiDriverRow,
     ListenerRow,
     NodeRow,
     RuntimeClassRow,
-    StorageClassRow,
     WorkloadRow,
 )
 from app.core.k8s.netgw import (
@@ -268,6 +270,106 @@ class _TimeoutApi:
 logger = get_logger(__name__)
 
 
+def _pvc_volume(name: str, claim: str, *, read_only: bool = False) -> "client.V1Volume":
+    return client.V1Volume(
+        name=name,
+        persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+            claim_name=claim, read_only=read_only or None
+        ),
+    )
+
+
+def _pod_volumes(
+    spec: InstancePodSpec,
+) -> tuple[list["client.V1Volume"], list["client.V1VolumeMount"]]:
+    """System disk at /root, then data disks and organization storage at their own paths; every
+    claim is a static CephFS PVC in the tenant namespace."""
+    volumes = [_pvc_volume("system-disk", spec.system_disk_pvc)]
+    mounts = [client.V1VolumeMount(name="system-disk", mount_path="/root")]
+    for i, extra in enumerate(spec.extra_mounts):
+        name = f"mount-{i}"
+        volumes.append(_pvc_volume(name, extra.pvc_name, read_only=extra.read_only))
+        mounts.append(
+            client.V1VolumeMount(
+                name=name, mount_path=extra.mount_path, read_only=extra.read_only or None
+            )
+        )
+    return volumes, mounts
+
+
+def _ceph_labels(spec: CephVolumeSpec) -> dict[str, str]:
+    return {MANAGED_LABEL: "true", **spec.labels}
+
+
+def build_ceph_secret(spec: CephVolumeSpec) -> "client.V1Secret":
+    """Node-stage Secret of a static CephFS volume: ceph-csi reads userID / userKey."""
+    return client.V1Secret(
+        metadata=client.V1ObjectMeta(
+            name=spec.secret_name, namespace=spec.namespace, labels=_ceph_labels(spec)
+        ),
+        type="Opaque",
+        string_data={"userID": spec.client_id, "userKey": spec.client_key},
+    )
+
+
+def _ceph_access_modes(spec: CephVolumeSpec) -> list[str]:
+    return ["ReadOnlyMany" if spec.read_only else "ReadWriteMany"]
+
+
+def build_ceph_pv(spec: CephVolumeSpec) -> "client.V1PersistentVolume":
+    """Static PV (kernel mounter, Retain, no StorageClass) pre-bound to its PVC; volumeHandle =
+    PV name, unique per PV."""
+    attributes = {
+        "clusterID": spec.cluster_id,
+        "fsName": spec.fs_name,
+        "staticVolume": "true",
+        "rootPath": spec.root_path,
+        "mounter": "kernel",
+    }
+    if spec.mount_options:
+        attributes["kernelMountOptions"] = spec.mount_options
+    return client.V1PersistentVolume(
+        metadata=client.V1ObjectMeta(name=spec.pv_name, labels=_ceph_labels(spec)),
+        spec=client.V1PersistentVolumeSpec(
+            access_modes=_ceph_access_modes(spec),
+            capacity={"storage": f"{spec.size_gb}Gi"},
+            csi=client.V1CSIPersistentVolumeSource(
+                driver=CEPH_CSI_DRIVER,
+                volume_handle=spec.pv_name,
+                node_stage_secret_ref=client.V1SecretReference(
+                    name=spec.secret_name, namespace=spec.namespace
+                ),
+                volume_attributes=attributes,
+                read_only=spec.read_only or None,
+            ),
+            persistent_volume_reclaim_policy="Retain",
+            storage_class_name="",
+            volume_mode="Filesystem",
+            claim_ref=client.V1ObjectReference(namespace=spec.namespace, name=spec.pvc_name),
+        ),
+    )
+
+
+def build_ceph_pvc(spec: CephVolumeSpec) -> "client.V1PersistentVolumeClaim":
+    return client.V1PersistentVolumeClaim(
+        metadata=client.V1ObjectMeta(
+            name=spec.pvc_name, namespace=spec.namespace, labels=_ceph_labels(spec)
+        ),
+        spec=client.V1PersistentVolumeClaimSpec(
+            access_modes=_ceph_access_modes(spec),
+            storage_class_name="",
+            volume_name=spec.pv_name,
+            resources=client.V1VolumeResourceRequirements(
+                requests={"storage": f"{spec.size_gb}Gi"}
+            ),
+        ),
+    )
+
+
+def _terminating(obj: Any) -> bool:
+    return obj is not None and obj.metadata.deletion_timestamp is not None
+
+
 def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
     """Build the instance Pod without calling the API; secret_env is injected via Secret
     references."""
@@ -290,25 +392,7 @@ def build_instance_pod(spec: InstancePodSpec) -> "client.V1Pod":
         for key in spec.secret_env
     )
     env.append(client.V1EnvVar(name="AUTHORIZED_KEYS", value="\n".join(spec.authorized_keys)))
-    volumes: list[client.V1Volume] = [
-        client.V1Volume(
-            name="instance-disk",
-            persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                claim_name=instance_disk_pvc_name(spec.name)
-            ),
-        )
-    ]
-    mounts = [client.V1VolumeMount(name="instance-disk", mount_path="/root")]
-    if spec.data_disk_pvc:
-        volumes.append(
-            client.V1Volume(
-                name="data-disk",
-                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                    claim_name=spec.data_disk_pvc
-                ),
-            )
-        )
-        mounts.append(client.V1VolumeMount(name="data-disk", mount_path="/root/data"))
+    volumes, mounts = _pod_volumes(spec)
     labels = {INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"}
     attach = spec.netgw
     if attach is not None:
@@ -380,6 +464,9 @@ class _Workloads:
     dcgm: list[WorkloadRow] = field(default_factory=list)
     cert_manager: list[WorkloadRow] = field(default_factory=list)
     kata_deploy: WorkloadRow = field(default_factory=lambda: WorkloadRow("kata-deploy"))
+    ceph_nodeplugin: WorkloadRow = field(
+        default_factory=lambda: WorkloadRow("ceph-csi-cephfs-nodeplugin")
+    )
     prometheus: WorkloadRow = field(default_factory=lambda: WorkloadRow("prometheus"))
     alertmanager: WorkloadRow = field(default_factory=lambda: WorkloadRow("alertmanager"))
     gpu_operator_present: bool = False
@@ -493,7 +580,7 @@ _DETAIL_POD_PATTERNS: dict[str, tuple[str, ...]] = {
     "gpu_operator": ("nvidia-", "gpu-feature-discovery", "node-feature-discovery"),
     "dcgm": ("dcgm",),
     "kata_runtimeclass": ("kata-deploy",),
-    "storage": ("topolvm", "csi-cephfs", "rook-ceph"),
+    "storage": ("ceph-csi", "csi-cephfs"),
     "gateway": ("envoy-",),
     "cert_manager": ("cert-manager",),
     "monitoring": ("prometheus-", "alertmanager-"),
@@ -521,9 +608,6 @@ def _pod_not_ready_reason(pod: Any) -> str:
 
 def _pod_ready(pod: Any) -> bool:
     return any(c.type == "Ready" and c.status == "True" for c in (pod.status.conditions or []))
-
-
-_SC_DEFAULT_ANNOTATION = "storageclass.kubernetes.io/is-default-class"
 
 
 def _selector_text(rc: Any) -> str:
@@ -561,6 +645,8 @@ def _index_daemonset(out: "_Workloads", ds: Any) -> None:
         out.dcgm.append(row)
     if "kata-deploy" in name:
         out.kata_deploy = row
+    if name.endswith(CEPH_CSI_NODEPLUGIN_SUFFIX):
+        out.ceph_nodeplugin = row
     if out.gpu_operator_ns and row.namespace == out.gpu_operator_ns:
         out.gpu_operands.append(row)
 
@@ -579,7 +665,7 @@ def _assemble_probe(
     w: "_Workloads",
     gw: "_GatewayProbe",
     rcs: list[RuntimeClassRow],
-    scs: list[StorageClassRow],
+    drivers: list[CsiDriverRow],
     nodes: "_NodeProbe",
     *,
     error: str | None,
@@ -600,7 +686,8 @@ def _assemble_probe(
             prometheus=w.prometheus,
             alertmanager=w.alertmanager,
             runtime_classes=rcs,
-            storage_classes=scs,
+            csi_drivers=drivers,
+            ceph_nodeplugin=w.ceph_nodeplugin,
             gateway_programmed=gw.programmed,
             gateway_address=gw.address,
             listeners=gw.listeners,
@@ -608,8 +695,7 @@ def _assemble_probe(
             allocatable_gpu=nodes.allocatable_gpu,
             driver_version=nodes.driver_version,
         ),
-        instance_disk_sc=INSTANCE_DISK_STORAGE_CLASS,
-        data_disk_sc=DATA_DISK_STORAGE_CLASS,
+        csi_driver=CEPH_CSI_DRIVER,
     )
     return ClusterProbe(
         api_reachable=True,
@@ -625,7 +711,8 @@ def _assemble_probe(
         cert_manager_ready=any(d.name == "cert-manager" and d.ready > 0 for d in w.cert_manager),
         nodes_ready=nodes_ready,
         nodes_total=len(nodes.rows),
-        storage_classes=tuple(r.name for r in scs),
+        ceph_csi_ready=any(d.name == CEPH_CSI_DRIVER for d in drivers)
+        and w.ceph_nodeplugin.ready > 0,
         pools=pools,
         pools_ready=pools_ready,
         component_facts=facts,
@@ -863,7 +950,6 @@ class RealOrchestrator:
         await self._run(self._create_instance_sync, spec)
 
     def _create_instance_sync(self, spec: InstancePodSpec) -> None:
-        self._ensure_instance_disk_sync(spec)
         self._ensure_instance_secret_sync(spec)
         self._ensure_netgw_attach_secret_sync(spec)
         self._create_pod_sync(spec)
@@ -941,28 +1027,6 @@ class RealOrchestrator:
                 spec.namespace,
                 {"stringData": secret.string_data},
             ),
-        )
-
-    def _ensure_instance_disk_sync(self, spec: InstancePodSpec) -> None:
-        """Instance disk PVC (TopoLVM node-local volume, PV with node affinity); skipped when
-        present,
-        never recreated at a new size."""
-        pvc = client.V1PersistentVolumeClaim(
-            metadata=client.V1ObjectMeta(
-                name=instance_disk_pvc_name(spec.name),
-                namespace=spec.namespace,
-                labels={INSTANCE_LABEL: spec.name, MANAGED_LABEL: "true"},
-            ),
-            spec=client.V1PersistentVolumeClaimSpec(
-                access_modes=["ReadWriteOnce"],
-                storage_class_name=INSTANCE_DISK_STORAGE_CLASS,
-                resources=client.V1VolumeResourceRequirements(
-                    requests={"storage": f"{spec.disk_gb}Gi"}
-                ),
-            ),
-        )
-        _ignore(
-            lambda: self.core.create_namespaced_persistent_volume_claim(spec.namespace, pvc), 409
         )
 
     def _create_pod_sync(self, spec: InstancePodSpec) -> None:
@@ -1177,17 +1241,6 @@ class RealOrchestrator:
         ):
             _ignore(deleter, 404)
 
-    async def delete_instance_disk(self, namespace: str, name: str) -> None:
-        await self._run(self._delete_instance_disk_sync, namespace, name)
-
-    def _delete_instance_disk_sync(self, namespace: str, name: str) -> None:
-        _ignore(
-            lambda: self.core.delete_namespaced_persistent_volume_claim(
-                instance_disk_pvc_name(name), namespace
-            ),
-            404,
-        )
-
     async def get_status(self, namespace: str, name: str) -> PodStatus:
         return await self._run(self._get_status_sync, namespace, name)
 
@@ -1293,56 +1346,107 @@ class RealOrchestrator:
             security_context=platform_job_security_context(),
         )
 
-    async def ensure_data_disk(self, namespace: str, name: str, size_gb: int) -> None:
-        await self._run(self._ensure_data_disk_sync, namespace, name, size_gb)
+    async def ensure_ceph_volume(self, spec: CephVolumeSpec) -> None:
+        await self._run(self._ensure_ceph_volume_sync, spec)
 
-    @staticmethod
-    def _requested_gi(pvc: Any) -> int:
-        """Read an integer Gi capacity string; missing or other formats return 0."""
-        spec = getattr(pvc, "spec", None)
-        res = getattr(spec, "resources", None) if spec else None
-        value = (getattr(res, "requests", None) or {}).get("storage") if res else None
-        if isinstance(value, str) and value.endswith("Gi") and value[:-2].isdigit():
-            return int(value[:-2])
-        return 0
+    def _ensure_ceph_volume_sync(self, spec: CephVolumeSpec) -> None:
+        """Secret is created or overwritten; PV and PVC are created when missing. A PV or PVC of
+        the same name that is still terminating raises, the outbox retries."""
+        secret = build_ceph_secret(spec)
+        _create_or_patch(
+            lambda: self.core.create_namespaced_secret(spec.namespace, secret),
+            lambda: self.core.patch_namespaced_secret(
+                spec.secret_name, spec.namespace, {"stringData": secret.string_data}
+            ),
+        )
+        pv: Any = _ignore(lambda: self.core.read_persistent_volume(spec.pv_name), 404)
+        if _terminating(pv):
+            raise RuntimeError(f"pv {spec.pv_name} is terminating; volume ensure resumes on retry")
+        if pv is None:
+            _ignore(lambda: self.core.create_persistent_volume(build_ceph_pv(spec)), 409)
+        pvc: Any = _ignore(
+            lambda: self.core.read_namespaced_persistent_volume_claim(
+                spec.pvc_name, spec.namespace
+            ),
+            404,
+        )
+        if _terminating(pvc):
+            raise RuntimeError(
+                f"pvc {spec.namespace}/{spec.pvc_name} is terminating;"
+                " volume ensure resumes on retry"
+            )
+        if pvc is None:
+            _ignore(
+                lambda: self.core.create_namespaced_persistent_volume_claim(
+                    spec.namespace, build_ceph_pvc(spec)
+                ),
+                409,
+            )
 
-    def _ensure_data_disk_sync(self, namespace: str, name: str, size_gb: int) -> None:
-        """Create the CephFS RWX PVC; request a grow when the existing capacity is smaller, never
-        shrink."""
-        want = f"{size_gb}Gi"
-        existing: Any = _ignore(
+    async def delete_ceph_volume(
+        self, namespace: str, *, pvc_name: str, pv_name: str, secret_name: str
+    ) -> None:
+        await self._run(self._delete_ceph_volume_sync, namespace, pvc_name, pv_name, secret_name)
+
+    def _delete_ceph_volume_sync(
+        self, namespace: str, pvc_name: str, pv_name: str, secret_name: str
+    ) -> None:
+        _ignore(
+            lambda: self.core.delete_namespaced_persistent_volume_claim(pvc_name, namespace), 404
+        )
+        _ignore(lambda: self.core.delete_persistent_volume(pv_name), 404)
+        _ignore(lambda: self.core.delete_namespaced_secret(secret_name, namespace), 404)
+
+    async def pvc_exists(self, namespace: str, name: str) -> bool:
+        return await self._run(self._pvc_exists_sync, namespace, name)
+
+    def _pvc_exists_sync(self, namespace: str, name: str) -> bool:
+        pvc = _ignore(
             lambda: self.core.read_namespaced_persistent_volume_claim(name, namespace), 404
         )
-        if existing is None:
-            pvc = client.V1PersistentVolumeClaim(
-                metadata=client.V1ObjectMeta(
-                    name=name, namespace=namespace, labels={MANAGED_LABEL: "true"}
-                ),
-                spec=client.V1PersistentVolumeClaimSpec(
-                    access_modes=["ReadWriteMany"],
-                    storage_class_name=DATA_DISK_STORAGE_CLASS,
-                    resources=client.V1VolumeResourceRequirements(requests={"storage": want}),
-                ),
-            )
-            _ignore(
-                lambda: self.core.create_namespaced_persistent_volume_claim(namespace, pvc), 409
-            )
-            return
-        if self._requested_gi(existing) >= size_gb:
-            return
-        self.core.patch_namespaced_persistent_volume_claim(
-            name, namespace, {"spec": {"resources": {"requests": {"storage": want}}}}
+        return pvc is not None
+
+    async def delete_org_mount_volumes(
+        self,
+        *,
+        namespace: str | None = None,
+        mount_uuid: str | None = None,
+        keep_revision: int | None = None,
+    ) -> int:
+        return await self._run(
+            self._delete_org_mount_volumes_sync, namespace, mount_uuid, keep_revision
         )
 
-    async def delete_data_disk(self, namespace: str, name: str) -> None:
-        await self._run(self._delete_data_disk_sync, namespace, name)
+    def _delete_org_mount_volumes_sync(
+        self, namespace: str | None, mount_uuid: str | None, keep_revision: int | None
+    ) -> int:
+        selector = f"{ORG_MOUNT_LABEL}={mount_uuid}" if mount_uuid else ORG_MOUNT_LABEL
+        if keep_revision is not None:
+            selector += f",{ORG_MOUNT_REV_LABEL}!={keep_revision}"
+        if namespace is None:
+            claims = self._list_all(
+                self.core.list_persistent_volume_claim_for_all_namespaces, label_selector=selector
+            )
+        else:
+            claims = self._list_all(
+                self.core.list_namespaced_persistent_volume_claim,
+                namespace=namespace,
+                label_selector=selector,
+            )
+        for pvc in claims:
+            self._delete_claim_and_secret_sync(pvc.metadata.namespace, pvc.metadata.name)
+        for pv in self._list_all(self.core.list_persistent_volume, label_selector=selector):
+            claim_ns = getattr(getattr(pv.spec, "claim_ref", None), "namespace", None)
+            if namespace is None or claim_ns == namespace:
+                self._delete_pv_sync(str(pv.metadata.name))
+        return len(claims)
 
-    def _delete_data_disk_sync(self, namespace: str, name: str) -> None:
-        """Delete the data-disk PVC; the SC has reclaimPolicy=Delete so the CSI destroys the
-        subvolume.
-        A missing PVC or a vanished tenant ns both count as success (the delete chain is
-        idempotent)."""
+    def _delete_claim_and_secret_sync(self, namespace: str, name: str) -> None:
         _ignore(lambda: self.core.delete_namespaced_persistent_volume_claim(name, namespace), 404)
+        _ignore(lambda: self.core.delete_namespaced_secret(name, namespace), 404)
+
+    def _delete_pv_sync(self, name: str) -> None:
+        _ignore(lambda: self.core.delete_persistent_volume(name), 404)
 
     @staticmethod
     def _gpu_amount(resources: dict[str, Any] | None) -> int:
@@ -1521,6 +1625,7 @@ class RealOrchestrator:
                     driver_version_label=self._gfd_version(labels, "driver")[:32],
                     cuda_version_label=self._gfd_version(labels, "runtime")[:16],
                     infra=_node_is_infra(labels),
+                    arch=labels.get("kubernetes.io/arch", "")[:16],
                 )
             )
         return out
@@ -1694,14 +1799,14 @@ class RealOrchestrator:
         workloads = step("apps", self._probe_workloads_sync, _Workloads())
         gateway = step("gateway", self._probe_gateway_sync, _GatewayProbe(), ignore=(404,))
         runtime_classes = step("runtimeclasses", self._runtime_class_rows_sync, [])
-        storage_classes = step("storageclasses", self._storage_class_rows_sync, [])
+        csi_drivers = step("csidrivers", self._csi_driver_rows_sync, [])
         nodes = step("nodes", self._probe_nodes_sync, _NodeProbe())
         return _assemble_probe(
             git_version,
             workloads,
             gateway,
             runtime_classes,
-            storage_classes,
+            csi_drivers,
             nodes,
             error="; ".join(errors) or None,
         )
@@ -1732,18 +1837,14 @@ class RealOrchestrator:
             for rc in rcs.items
         ]
 
-    def _storage_class_rows_sync(self) -> list[StorageClassRow]:
-        scs: Any = self._storage.list_storage_class()
+    def _csi_driver_rows_sync(self) -> list[CsiDriverRow]:
+        drivers: Any = self._storage.list_csi_driver()
         return [
-            StorageClassRow(
-                name=str(sc.metadata.name or ""),
-                provisioner=str(getattr(sc, "provisioner", "") or ""),
-                binding_mode=str(getattr(sc, "volume_binding_mode", "") or ""),
-                expandable=bool(getattr(sc, "allow_volume_expansion", False)),
-                reclaim=str(getattr(sc, "reclaim_policy", "") or ""),
-                is_default=(sc.metadata.annotations or {}).get(_SC_DEFAULT_ANNOTATION) == "true",
+            CsiDriverRow(
+                name=str(d.metadata.name or ""),
+                attach_required=bool(getattr(d.spec, "attach_required", False)),
             )
-            for sc in scs.items
+            for d in drivers.items
         ]
 
     def _probe_gateway_sync(self) -> "_GatewayProbe":

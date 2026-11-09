@@ -1,0 +1,25 @@
+# CephFS CSI for the external Ceph cluster. The platform creates every volume itself (a subvolume,
+# a per-subvolume cephx key and a static PV that references it), so no StorageClass, provisioner
+# Secret or provisioner replica is deployed: the node plugin only stages and mounts.
+# clusterID is the cluster fsid (ceph.conf [global] fsid, the same value as the ceph_fsid platform
+# setting); monitors are the msgr2 addresses of mon_host.
+csiConfig:
+  - clusterID: "CHANGE_ME_CEPH_FSID"
+    monitors:
+      - "CHANGE_ME_CEPH_MON_1:3300"
+      - "CHANGE_ME_CEPH_MON_2:3300"
+      - "CHANGE_ME_CEPH_MON_3:3300"
+
+nodeplugin:
+  # Tenant Pods may land on any node; the plugin mounts with the host kernel client.
+  tolerations:
+    - operator: Exists
+
+provisioner:
+  replicaCount: 0
+
+storageClass:
+  create: false
+
+secret:
+  create: false

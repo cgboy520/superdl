@@ -192,7 +192,8 @@ while true; do
     --no-browser \
     --allow-root \
     --IdentityProvider.token="$JUPYTER_TOKEN" \
-    --ServerApp.root_dir=/root \
+    --ServerApp.root_dir=/ \
+    --ContentsManager.preferred_dir=root \
     --ServerApp.default_url=/lab \
     --ResourceUseDisplay.track_cpu_percent=True \
     "${lab_args[@]}" \

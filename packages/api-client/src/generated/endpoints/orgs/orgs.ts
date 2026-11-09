@@ -5,17 +5,28 @@
  * OpenAPI spec version: 0.1.0
  */
 import type {
+  BalanceTransferCreate,
+  BalanceTransferOut,
   CreateOrgApiV1OrgPostHeaders,
   DisclosureOut,
   InvitationAccept,
   InvitationCreate,
   InvitationOut,
+  ManagedPasswordOut,
+  ManagedPasswordReset,
+  ManagedUserCreatedOut,
+  ManagedUserUpdate,
+  ManagedUsersCreate,
   MemberOut,
   MemberUpdate,
+  MoveMemberBalanceApiV1OrgMembersMemberIdBalancePostHeaders,
   MyOrgOut,
   OrgCreate,
   OrgDissolve,
   OrgFinanceOut,
+  OrgMountCreate,
+  OrgMountOut,
+  OrgMountUpdate,
   OrgRename,
   OrgTransfer,
   ReceivedInvitationOut
@@ -57,7 +68,8 @@ export const getRenameOrgApiV1OrgPatchUrl = () => {
 }
 
 /**
- * Owner only.
+ * Owner only: name and / or code (the code changes only while the tenant has created no
+ * accounts).
  * @summary Rename Org
  */
 export const renameOrgApiV1OrgPatch = async (orgRename: OrgRename, options?: Parameters<typeof customFetch>[1]): Promise<MyOrgOut> => {
@@ -500,6 +512,308 @@ return customFetch<MemberOut>(getUpdateMemberApiV1OrgMembersMemberIdPatchUrl(mem
 );}
 
 
+export const getDeleteMemberAccountApiV1OrgMembersMemberIdAccountDeleteUrl = (memberId: number,) => {
+
+
+
+
+  return `/api/v1/org/members/${memberId}/account`
+}
+
+/**
+ * Delete an account the tenant created: it must hold no unreleased instance, no data disk
+ * and no balance (take the balance back first).
+ * @summary Delete Member Account
+ */
+export const deleteMemberAccountApiV1OrgMembersMemberIdAccountDelete = async (memberId: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteMemberAccountApiV1OrgMembersMemberIdAccountDeleteUrl(memberId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+export const getMoveMemberBalanceApiV1OrgMembersMemberIdBalancePostUrl = (memberId: number,) => {
+
+
+
+
+  return `/api/v1/org/members/${memberId}/balance`
+}
+
+/**
+ * Owners and admins: allocate from the caller's available balance to a member, or take back
+ * from an account the tenant created. Moved money can only be spent: never refunded or
+ * invoiced by whoever receives it. A replay of the same Idempotency-Key returns the first move
+ * (200 + X-Idempotent-Replay).
+ * @summary Move Member Balance
+ */
+export const moveMemberBalanceApiV1OrgMembersMemberIdBalancePost = async (memberId: number,
+    balanceTransferCreate: BalanceTransferCreate,
+    headers?: MoveMemberBalanceApiV1OrgMembersMemberIdBalancePostHeaders, options?: Parameters<typeof customFetch>[1]): Promise<BalanceTransferOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<BalanceTransferOut>(getMoveMemberBalanceApiV1OrgMembersMemberIdBalancePostUrl(memberId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json',...headers, ...getHeaders(options?.headers) },
+    body: JSON.stringify(balanceTransferCreate)
+  }
+);}
+
+
+export const getSetMemberLoginApiV1OrgMembersMemberIdLoginPatchUrl = (memberId: number,) => {
+
+
+
+
+  return `/api/v1/org/members/${memberId}/login`
+}
+
+/**
+ * Switch sign-in of an account the tenant created; disabling ends its sessions at once
+ * (instances keep running).
+ * @summary Set Member Login
+ */
+export const setMemberLoginApiV1OrgMembersMemberIdLoginPatch = async (memberId: number,
+    managedUserUpdate: ManagedUserUpdate, options?: Parameters<typeof customFetch>[1]): Promise<MemberOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MemberOut>(getSetMemberLoginApiV1OrgMembersMemberIdLoginPatchUrl(memberId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(managedUserUpdate)
+  }
+);}
+
+
+export const getResetMemberPasswordApiV1OrgMembersMemberIdPasswordPostUrl = (memberId: number,) => {
+
+
+
+
+  return `/api/v1/org/members/${memberId}/password`
+}
+
+/**
+ * An account the tenant created (owner: any, admin: members): set or generate a password,
+ * end its sessions; returned only here.
+ * @summary Reset Member Password
+ */
+export const resetMemberPasswordApiV1OrgMembersMemberIdPasswordPost = async (memberId: number,
+    managedPasswordReset: ManagedPasswordReset, options?: Parameters<typeof customFetch>[1]): Promise<ManagedPasswordOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ManagedPasswordOut>(getResetMemberPasswordApiV1OrgMembersMemberIdPasswordPostUrl(memberId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(managedPasswordReset)
+  }
+);}
+
+
+export const getListMountsApiV1OrgMountsGetUrl = () => {
+
+
+
+
+  return `/api/v1/org/mounts`
+}
+
+/**
+ * The organization's storage mounts, every member: mounted at /mnt/org/<name> in each
+ * member's instances from their next start. Path, key user and check errors are shown to
+ * owners and admins only; the key never comes back.
+ * @summary List Mounts
+ */
+export const listMountsApiV1OrgMountsGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<OrgMountOut[]> => {
+
+  return customFetch<OrgMountOut[]>(getListMountsApiV1OrgMountsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getCreateMountApiV1OrgMountsPostUrl = () => {
+
+
+
+
+  return `/api/v1/org/mounts`
+}
+
+/**
+ * Owners and admins: a directory of the platform's Ceph cluster plus the organization's own
+ * cephx key. Checked in user space first; only a ready mount reaches instances. Members are
+ * notified.
+ * @summary Create Mount
+ */
+export const createMountApiV1OrgMountsPost = async (orgMountCreate: OrgMountCreate, options?: Parameters<typeof customFetch>[1]): Promise<OrgMountOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OrgMountOut>(getCreateMountApiV1OrgMountsPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(orgMountCreate)
+  }
+);}
+
+
+export const getDeleteMountApiV1OrgMountsUuidDeleteUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/org/mounts/${uuid}`
+}
+
+/**
+ * Owners and admins; instances lose the mount at their next start.
+ * @summary Delete Mount
+ */
+export const deleteMountApiV1OrgMountsUuidDelete = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteMountApiV1OrgMountsUuidDeleteUrl(uuid),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+export const getUpdateMountApiV1OrgMountsUuidPatchUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/org/mounts/${uuid}`
+}
+
+/**
+ * Owners and admins; a new path, key user, key or access is checked again and reaches
+ * instances from their next start (running instances keep the previous one).
+ * @summary Update Mount
+ */
+export const updateMountApiV1OrgMountsUuidPatch = async (uuid: string,
+    orgMountUpdate: OrgMountUpdate, options?: Parameters<typeof customFetch>[1]): Promise<OrgMountOut> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OrgMountOut>(getUpdateMountApiV1OrgMountsUuidPatchUrl(uuid),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(orgMountUpdate)
+  }
+);}
+
+
+export const getRecheckMountApiV1OrgMountsUuidCheckPostUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/v1/org/mounts/${uuid}/check`
+}
+
+/**
+ * Owners and admins: check the directory and key again.
+ * @summary Recheck Mount
+ */
+export const recheckMountApiV1OrgMountsUuidCheckPost = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<OrgMountOut> => {
+
+  return customFetch<OrgMountOut>(getRecheckMountApiV1OrgMountsUuidCheckPostUrl(uuid),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
 export const getTransferOwnerApiV1OrgTransferPostUrl = () => {
 
 
@@ -534,6 +848,70 @@ return customFetch<MyOrgOut>(getTransferOwnerApiV1OrgTransferPostUrl(),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(orgTransfer)
+  }
+);}
+
+
+export const getListTransfersApiV1OrgTransfersGetUrl = () => {
+
+
+
+
+  return `/api/v1/org/transfers`
+}
+
+/**
+ * The tenant's balance moves, newest 200 (owners and admins).
+ * @summary List Transfers
+ */
+export const listTransfersApiV1OrgTransfersGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<BalanceTransferOut[]> => {
+
+  return customFetch<BalanceTransferOut[]>(getListTransfersApiV1OrgTransfersGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getCreateUsersApiV1OrgUsersPostUrl = () => {
+
+
+
+
+  return `/api/v1/org/users`
+}
+
+/**
+ * Owners and admins: create 1-100 accounts named <tenant code>.<name>, members from the
+ * start, no identity verification needed. Each password (the shared one, or a random one per
+ * account) is returned only here; the accounts pick their own at first sign-in.
+ * @summary Create Users
+ */
+export const createUsersApiV1OrgUsersPost = async (managedUsersCreate: ManagedUsersCreate, options?: Parameters<typeof customFetch>[1]): Promise<ManagedUserCreatedOut[]> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ManagedUserCreatedOut[]>(getCreateUsersApiV1OrgUsersPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(managedUsersCreate)
   }
 );}
 

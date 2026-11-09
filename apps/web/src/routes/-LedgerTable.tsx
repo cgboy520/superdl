@@ -16,7 +16,7 @@ import { BillingTab } from "./_console.billing";
 const routeApi = getRouteApi("/_console/billing");
 
 /** Ledger type filter (URL ?ledger=); values match the backend LedgerType */
-export const LEDGER_FILTERS = ["recharge", "consume", "refund", "adjust"] as const;
+export const LEDGER_FILTERS = ["recharge", "consume", "refund", "adjust", "transfer_in", "transfer_out"] as const;
 export type LedgerFilter = (typeof LEDGER_FILTERS)[number];
 
 /** Ledger: cursor pagination + "load more"; amounts are always rendered as strings. */

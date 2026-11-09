@@ -90,7 +90,7 @@ export function TenantFreezeAction({
   const { t } = useTranslation(["admin", "shared"]);
   const freeze = useFreezeTenant();
   const unfreeze = useUnfreezeTenant();
-  const account = tenant.email_masked ?? tenant.phone_masked ?? "-";
+  const account = tenant.email_masked ?? tenant.phone_masked ?? tenant.username ?? "-";
   const target = `#${tenant.id} · ${account}`;
   return tenant.status === "active" ? (
     <ReasonAction
@@ -247,7 +247,7 @@ function TenantHeader({ tenant, onChanged }: { tenant: TenantRow; onChanged: () 
     <EntityHeader
       size="drawer"
       name={t("tenants.drawerName", { id: tenant.id })}
-      subtitle={tenant.email_masked ?? tenant.phone_masked ?? undefined}
+      subtitle={tenant.email_masked ?? tenant.phone_masked ?? tenant.username ?? undefined}
       status={
         tenant.status === "active" ? (
           <Tag color="green">{t("tenants.active")}</Tag>

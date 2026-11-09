@@ -344,17 +344,17 @@ _COPY: dict[str, dict[str, str]] = {
     },
     "account.deletion_reject.org_owner": {
         "en-US": (
-            "Auto-rejected: the account owns an organization with {members} other member(s);"
+            "Auto-rejected: the account owns a tenant with {members} other member(s);"
             " transfer ownership or dissolve it and apply again"
         ),
         "zh-CN": (
-            "自动驳回:该账号是组织的所有者,组织内还有 {members} 名其他成员;"  # cjk-ok
-            "请先转让所有者或解散组织后重新申请"  # cjk-ok
+            "自动驳回:该账号是租户的所有者,租户内还有 {members} 名其他成员;"  # cjk-ok
+            "请先转让所有者或解散租户后重新申请"  # cjk-ok
         ),
     },
     "netgw.org_attached.title": {
-        "en-US": 'Instance "{name}" joined an organization network',
-        "zh-CN": "实例「{name}」已接入组织网络",  # cjk-ok
+        "en-US": 'Instance "{name}" joined a tenant network',
+        "zh-CN": "实例「{name}」已接入租户网络",  # cjk-ok
     },
     "netgw.org_attached.content": {
         "en-US": (
@@ -368,8 +368,8 @@ _COPY: dict[str, dict[str, str]] = {
         ),
     },
     "netgw.org_detached.title": {
-        "en-US": 'Instance "{name}" left an organization network',
-        "zh-CN": "实例「{name}」已断开组织网络",  # cjk-ok
+        "en-US": 'Instance "{name}" left a tenant network',
+        "zh-CN": "实例「{name}」已断开租户网络",  # cjk-ok
     },
     "netgw.org_detached.content": {
         "en-US": (
@@ -387,13 +387,54 @@ _COPY: dict[str, dict[str, str]] = {
     },
     "orgs.invited.content": {
         "en-US": (
-            'You are invited to join the organization "{org}". Review what its administrators can'
-            " see on the Organization page before accepting."
+            'You are invited to join the tenant "{org}". Review what its administrators can'
+            " see on the Tenant page before accepting."
         ),
         "zh-CN": (
-            "您被邀请加入组织「{org}」。"  # cjk-ok
-            "接受前请在「组织」页查看其管理员可见的信息。"  # cjk-ok
+            "您被邀请加入租户「{org}」。"  # cjk-ok
+            "接受前请在「租户」页查看其管理员可见的信息。"  # cjk-ok
         ),
+    },
+    "orgs.mount_added.title": {
+        "en-US": 'Shared storage from "{org}"',
+        "zh-CN": "「{org}」添加了共享存储",  # cjk-ok
+    },
+    "orgs.mount_added.content": {
+        "en-US": (
+            '"{org}" mounts its storage at {path} in your instances from their next start or'
+            " restart."
+        ),
+        "zh-CN": "「{org}」会把其存储挂载到您实例的 {path},实例下次开机或重启后生效。",  # cjk-ok
+    },
+    "orgs.balance_allocate.title": {
+        "en-US": 'Balance from "{org}"',
+        "zh-CN": "「{org}」为您划入了余额",  # cjk-ok
+    },
+    "orgs.balance_allocate.content": {
+        "en-US": (
+            '"{org}" added {amount} to your balance. It can be spent on resources; it is not'
+            " refundable or invoiceable on your account."
+        ),
+        "zh-CN": "「{org}」向您的余额划入了 {amount},可用于消费,不可退款或开票。",  # cjk-ok
+    },
+    "orgs.balance_reclaim.title": {
+        "en-US": 'Balance taken back by "{org}"',
+        "zh-CN": "「{org}」收回了余额",  # cjk-ok
+    },
+    "orgs.balance_reclaim.content": {
+        "en-US": (
+            '"{org}" took {amount} back from your balance. Pay-as-you-go instances stop when the'
+            " balance runs out."
+        ),
+        "zh-CN": "「{org}」从您的余额收回了 {amount}。余额用尽时按量实例会关机。",  # cjk-ok
+    },
+    "orgs.transfer_out.remark": {
+        "en-US": "Moved to {peer} ({org})",
+        "zh-CN": "划给 {peer}({org})",  # cjk-ok
+    },
+    "orgs.transfer_in.remark": {
+        "en-US": "Moved from {peer} ({org})",
+        "zh-CN": "来自 {peer}({org})",  # cjk-ok
     },
     "orgs.removed.title": {
         "en-US": 'You left "{org}"',
@@ -401,12 +442,12 @@ _COPY: dict[str, dict[str, str]] = {
     },
     "orgs.removed.content": {
         "en-US": (
-            'You were removed from the organization "{org}". Your account, balance and resources'
+            'You were removed from the tenant "{org}". Your account, balance and resources'
             " are unchanged; your instances were detached from its gateways."
         ),
         "zh-CN": (
-            "您已被移出组织「{org}」。账号、余额和资源不受影响,"  # cjk-ok
-            "您的实例已从该组织的网关断开。"  # cjk-ok
+            "您已被移出租户「{org}」。账号、余额和资源不受影响,"  # cjk-ok
+            "您的实例已从该租户的网关断开。"  # cjk-ok
         ),
     },
     "orgs.dissolved.title": {
@@ -415,10 +456,9 @@ _COPY: dict[str, dict[str, str]] = {
     },
     "orgs.dissolved.content": {
         "en-US": (
-            'The organization "{org}" was dissolved. Your account, balance and resources are'
-            " unchanged."
+            'The tenant "{org}" was dissolved. Your account, balance and resources are unchanged.'
         ),
-        "zh-CN": "组织「{org}」已解散。您的账号、余额和资源不受影响。",  # cjk-ok
+        "zh-CN": "租户「{org}」已解散。您的账号、余额和资源不受影响。",  # cjk-ok
     },
     "orgs.owner_transferred.title": {
         "en-US": 'You now own "{org}"',
@@ -426,10 +466,10 @@ _COPY: dict[str, dict[str, str]] = {
     },
     "orgs.owner_transferred.content": {
         "en-US": (
-            'Ownership of the organization "{org}" was transferred to you; you can now manage'
+            'Ownership of the tenant "{org}" was transferred to you; you can now manage'
             " its members, administrators and settings."
         ),
-        "zh-CN": "组织「{org}」的所有者已转给您,您现在可以管理其成员、管理员和设置。",  # cjk-ok
+        "zh-CN": "租户「{org}」的所有者已转给您,您现在可以管理其成员、管理员和设置。",  # cjk-ok
     },
     "billing.invoice_issued.title": {"en-US": "Invoice issued", "zh-CN": "发票已开具"},  # cjk-ok
     "billing.invoice_issued.content": {

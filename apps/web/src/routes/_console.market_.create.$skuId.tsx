@@ -1,4 +1,4 @@
-/** Dev-box create page: sectioned form, billing preview and consent; a new disk is created before the instance. */
+/** Dev-box create page: sectioned form, billing preview and consent; images come from the platform, the user's uploads or a registry reference; every data disk mounts automatically and a new /data disk is created before the instance. */
 
 import { isApiError, type DiskOut, type InstanceOut, type SkuMarketOut } from "@superdl/api-client";
 import {
@@ -40,12 +40,14 @@ import { useCreateDisk, useCreateInstance } from "../api/mutations";
 import { useDisks, useImages, usePolicies, useSkus, useWallet } from "../api/queries";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { useConsentGate } from "../components/ConsentGate";
-import { DataDiskCard, defaultDiskName, type DiskMode } from "../components/create/DataDiskCard";
+import { MyImagePicker } from "../components/create/MyImagePicker";
+import { StorageCard, hasDataDisk, type DiskMode } from "../components/create/StorageCard";
 import { SshKeyPicker } from "../components/create/SshKeyPicker";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
 import { BillingModeCard, type BillingMode } from "../components/skuTable";
 import { SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
 import { parseDeployDeepLink, type DeploySearch } from "../lib/deployLink";
+import { DEFAULT_MOUNT_PATH, defaultDiskName } from "../lib/disks";
 import { requireAuth } from "../lib/guard";
 import { isPinnedImageRef } from "../lib/serviceSpec";
 import { useLeaveGuard } from "../lib/useLeaveGuard";
@@ -86,6 +88,9 @@ function RequiredTitle({ children }: { children: ReactNode }) {
 
 const RECOMMENDED_FRAMEWORK_ORDER = ["PyTorch", "TensorFlow", "Paddle", "Miniconda", "DataScience"];
 
+/** platform = curated images; mine = uploaded archives (own and tenant-shared); custom = a registry reference. */
+type ImageTab = "platform" | "mine" | "custom";
+
 function CreatePage() {
   const { t } = useTranslation(["web", "shared"]);
   const { t: tErr } = useTranslation("errors");
@@ -118,15 +123,15 @@ function CreatePage() {
     periodFromMarket ?? (marketFromUrl === "spot" ? "spot" : "on_demand"),
   );
   const [periodCount, setPeriodCount] = useState(countFromMarket ?? 1);
-  const [imageTab, setImageTab] = useState<"platform" | "custom">("platform");
+  const [imageTab, setImageTab] = useState<ImageTab>("platform");
   const [platformImage, setPlatformImage] = useState<string[]>();
   const [imageTouched, setImageTouched] = useState(false);
   const [moreImages, setMoreImages] = useState(false);
   const [customImage, setCustomImage] = useState("");
+  const [myImage, setMyImage] = useState<string>();
   const [diskMode, setDiskMode] = useState<DiskMode>("none");
   const [newDiskName, setNewDiskName] = useState(defaultDiskName);
   const [newDiskGb, setNewDiskGb] = useState<number>();
-  const [existingDiskId, setExistingDiskId] = useState<number>();
   const [keyIds, setKeyIds] = useState<number[]>([]);
   const [name, setName] = useState("");
   const [phase, setPhase] = useState<"disk" | "instance" | null>(null);
@@ -195,10 +200,10 @@ function CreatePage() {
     imageTab !== "platform" ||
     imageTouched ||
     customImage.trim() !== "" ||
+    myImage != null ||
     diskMode !== "none" ||
     newDiskName !== mountSnapshot.newDiskName ||
     newDiskGb != null ||
-    existingDiskId != null ||
     name.trim() !== "";
 
   const leave = useLeaveGuard(formDirty);
@@ -220,12 +225,8 @@ function CreatePage() {
   const priceUnits = isCpu ? 1 : gpuCount;
 
   const diskPriceGbMonth = policies?.disk_price_gb_month;
-  const diskGb =
-    diskMode === "new"
-      ? diskGbValue
-      : diskMode === "existing"
-        ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
-        : 0;
+  const creatingDisk = diskMode === "new" && !hasDataDisk(disks);
+  const diskGb = creatingDisk ? diskGbValue : 0;
   const diskDaily =
     diskPriceGbMonth === undefined
       ? undefined
@@ -252,7 +253,8 @@ function CreatePage() {
   const balanceReady = wallet != null && (!period || quote != null);
   const enough = balanceReady && needAmount != null && compareAmounts(wallet.balance, needAmount) >= 0;
 
-  const imageRef = imageTab === "platform" ? effectivePlatformImage?.[3] : customImage.trim();
+  const imageRef =
+    imageTab === "platform" ? effectivePlatformImage?.[3] : imageTab === "mine" ? myImage : customImage.trim();
   const selectedImage = usableImages.find((i) => i.image_ref === imageRef);
   const customInvalid = imageTab === "custom" && customImage.trim() !== "" && !isPinnedImageRef(customImage.trim());
 
@@ -262,19 +264,17 @@ function CreatePage() {
       ? tErr("orchestrator.imageRefNotPinned")
       : null;
   const sshIssue = keyIds.length === 0 ? t("create.issueSsh") : null;
-  const diskIssue = diskMode === "existing" && existingDiskId == null ? t("create.issueDisk") : null;
 
   const issues: { key: string; label: string; anchor: string }[] = [];
   if (imageIssue) issues.push({ key: "image", label: imageIssue, anchor: ANCHOR.image });
   if (sshIssue) issues.push({ key: "ssh", label: sshIssue, anchor: ANCHOR.ssh });
-  if (diskIssue) issues.push({ key: "disk", label: diskIssue, anchor: ANCHOR.disk });
   const canSubmit = issues.length === 0;
 
   const sections: SectionDef[] = [
     { id: ANCHOR.basic, title: t("create.basicCard"), issue: null, touched: touchedIds.has(ANCHOR.basic) },
     { id: ANCHOR.billing, title: t("sku.billingModeTitle"), issue: null, touched: touchedIds.has(ANCHOR.billing) },
     { id: ANCHOR.image, title: t("create.imageCard"), issue: imageIssue, touched: touchedIds.has(ANCHOR.image) },
-    { id: ANCHOR.disk, title: t("create.diskCard"), issue: diskIssue, touched: touchedIds.has(ANCHOR.disk) },
+    { id: ANCHOR.disk, title: t("create.diskCard"), issue: null, touched: touchedIds.has(ANCHOR.disk) },
     { id: ANCHOR.ssh, title: t("create.sshCard"), issue: sshIssue, touched: touchedIds.has(ANCHOR.ssh) },
   ];
 
@@ -297,26 +297,27 @@ function CreatePage() {
       imageRef,
       [...keyIds].sort((a, b) => a - b).join(","),
       name || null,
-      diskMode,
-      existingDiskId ?? null,
-      diskMode === "new" ? newDiskName.trim() : null,
-      diskMode === "new" ? diskGbValue : null,
+      creatingDisk ? 1 : 0,
+      creatingDisk ? newDiskName.trim() : null,
+      creatingDisk ? diskGbValue : null,
     ]);
     try {
-      let diskId: number | null = diskMode === "existing" ? (existingDiskId ?? null) : null;
       let createdDisk: DiskOut | null = diskCreatedButFailed;
-      if (diskMode === "new" && !createdDisk) {
+      if (creatingDisk && !createdDisk) {
         setPhase("disk");
         try {
           createdDisk = await createDisk.mutateAsync({
-            body: { name: newDiskName.trim() || defaultDiskName(), size_gb: diskGbValue },
+            body: {
+              name: newDiskName.trim() || defaultDiskName(),
+              size_gb: diskGbValue,
+              mount_path: DEFAULT_MOUNT_PATH,
+            },
             idempotencyKey,
           });
         } catch {
           return;
         }
       }
-      if (createdDisk) diskId = createdDisk.id;
       setPhase("instance");
       try {
         await create.mutateAsync({
@@ -326,7 +327,6 @@ function CreatePage() {
             image_ref: imageRef,
             ssh_key_ids: keyIds,
             name: name || null,
-            data_disk_id: diskId,
             ...(period
               ? { market: "subscription" as const, period, period_count: periodCount }
               : isSpot
@@ -343,7 +343,7 @@ function CreatePage() {
         } else {
           message.error(errText(err));
         }
-        if (diskMode === "new" && createdDisk) setDiskCreatedButFailed(createdDisk);
+        if (createdDisk) setDiskCreatedButFailed(createdDisk);
       }
     } finally {
       setPhase(null);
@@ -486,11 +486,12 @@ function CreatePage() {
               <Tabs
                 activeKey={imageTab}
                 onChange={(k) => {
-                  setImageTab(k as "platform" | "custom");
+                  setImageTab(k as ImageTab);
                   setImageTouched(true);
                   touch(ANCHOR.image);
-                  if (k === "custom") setPlatformImage(undefined);
-                  else setCustomImage("");
+                  if (k !== "platform") setPlatformImage(undefined);
+                  if (k !== "custom") setCustomImage("");
+                  if (k !== "mine") setMyImage(undefined);
                 }}
                 items={[
                   {
@@ -555,6 +556,21 @@ function CreatePage() {
                     ),
                   },
                   {
+                    key: "mine",
+                    label: t("create.tabMine"),
+                    children: (
+                      <MyImagePicker
+                        value={myImage}
+                        onChange={(ref) => {
+                          touch(ANCHOR.image);
+                          setMyImage(ref);
+                        }}
+                        purpose="dev"
+                        archs={skuNN.archs ?? []}
+                      />
+                    ),
+                  },
+                  {
                     key: "custom",
                     label: t("create.tabCustom"),
                     children: (
@@ -586,15 +602,14 @@ function CreatePage() {
 
           <div onFocusCapture={() => touch(ANCHOR.disk)} onClickCapture={() => touch(ANCHOR.disk)}>
             <SectionAnchor id={ANCHOR.disk} card={false}>
-              <DataDiskCard
+              <StorageCard
                 mode={diskMode}
                 onModeChange={setDiskMode}
                 newName={newDiskName}
                 onNewNameChange={setNewDiskName}
                 newGb={diskGbValue}
                 onNewGbChange={setNewDiskGb}
-                existingId={existingDiskId}
-                onExistingIdChange={setExistingDiskId}
+                systemDiskGb={skuNN.disk_gb}
               />
             </SectionAnchor>
           </div>

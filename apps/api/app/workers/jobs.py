@@ -14,11 +14,13 @@ from app.modules.billing.reconcile import reconcile_funds
 from app.modules.billing.settlement import settle_daily_disks, settle_due_hours
 from app.modules.billing.subscriptions import subscription_patrol
 from app.modules.catalog.prewarm import prewarm_patrol
+from app.modules.customimages.patrol import custom_image_patrol
 from app.modules.metering.service import aggregate_previous_hour
 from app.modules.netgw.patrol import netgw_patrol
 from app.modules.nodes.patrol import node_spec_patrol
 from app.modules.nodes.reconciler import reconcile_enrollments_once
 from app.modules.orchestrator.reconciler import reconcile_once
+from app.modules.orchestrator.storage_patrol import storage_patrol
 from app.modules.tickets.patrol import stale_ticket_patrol
 from app.workers.cleanup import cleanup_expired_rows
 from app.workers.components import WorkerComponent
@@ -52,11 +54,12 @@ def _daily_local(hour: int, minute: int) -> dict[str, Any]:
     return {"trigger": "cron", "hour": hour, "minute": minute, "timezone": billing_zone()}
 
 
-CORE, TENANT_MGR, NODE_MGR, PREWARM = (
+CORE, TENANT_MGR, NODE_MGR, PREWARM, IMAGE_OPS = (
     WorkerComponent.CORE,
     WorkerComponent.TENANT_MGR,
     WorkerComponent.NODE_MGR,
     WorkerComponent.PREWARM,
+    WorkerComponent.IMAGE_OPS,
 )
 
 JOBS: tuple[ScheduledJob, ...] = (
@@ -69,6 +72,15 @@ JOBS: tuple[ScheduledJob, ...] = (
     ),
     ScheduledJob(
         "netgw_patrol", netgw_patrol, TENANT_MGR, 30, _interval(seconds=30), max_instances=1
+    ),
+    ScheduledJob(
+        "storage_patrol",
+        storage_patrol,
+        TENANT_MGR,
+        60,
+        _interval(seconds=60),
+        max_instances=1,
+        run_immediately=True,
     ),
     ScheduledJob(
         "hourly_settlement",
@@ -124,6 +136,14 @@ JOBS: tuple[ScheduledJob, ...] = (
     ),
     ScheduledJob(
         "prewarm_patrol", prewarm_patrol, PREWARM, 60, _interval(seconds=60), max_instances=1
+    ),
+    ScheduledJob(
+        "custom_image_patrol",
+        custom_image_patrol,
+        IMAGE_OPS,
+        600,
+        _interval(minutes=10),
+        max_instances=1,
     ),
     ScheduledJob(
         "node_spec_patrol",

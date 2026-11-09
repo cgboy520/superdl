@@ -14,7 +14,7 @@ class WorkerComponent(StrEnum):
     TENANT_MGR = "tenant-mgr"
     NODE_MGR = "node-mgr"
     PREWARM = "prewarm"
-    DISK_OPS = "disk-ops"
+    IMAGE_OPS = "image-ops"
 
 
 COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
@@ -27,6 +27,10 @@ COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
             "instance.restart",
             "instance.release",
             "instance.disk_cleanup",
+            "disk.provision",
+            "disk.deprovision",
+            "orgs.mount_check",
+            "orgs.mount_sweep",
             "service.retire",
             "netgw.apply",
             "netgw.delete",
@@ -34,7 +38,7 @@ COMPONENT_OUTBOX_TYPES: dict[WorkerComponent, frozenset[str]] = {
     ),
     WorkerComponent.NODE_MGR: frozenset({"node.cordon", "node.decommission", "node.switch_pool"}),
     WorkerComponent.PREWARM: frozenset({"image.prewarm"}),
-    WorkerComponent.DISK_OPS: frozenset({"disk.provision", "disk.deprovision"}),
+    WorkerComponent.IMAGE_OPS: frozenset({"image.import", "image.delete"}),
 }
 
 

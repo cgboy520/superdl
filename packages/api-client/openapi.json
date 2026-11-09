@@ -372,6 +372,294 @@
         "title": "AdminCreateRequest",
         "type": "object"
       },
+      "AdminCustomImageOut": {
+        "properties": {
+          "architecture": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architecture"
+          },
+          "archive_format": {
+            "enum": [
+              "tar",
+              "tar.gz",
+              "zip"
+            ],
+            "title": "Archive Format",
+            "type": "string"
+          },
+          "chunk_bytes": {
+            "title": "Chunk Bytes",
+            "type": "integer"
+          },
+          "chunks_received": {
+            "title": "Chunks Received",
+            "type": "integer"
+          },
+          "chunks_total": {
+            "title": "Chunks Total",
+            "type": "integer"
+          },
+          "cmd": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cmd"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "dev_ready": {
+            "title": "Dev Ready",
+            "type": "boolean"
+          },
+          "entrypoint": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entrypoint"
+          },
+          "error_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Detail"
+          },
+          "error_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Key"
+          },
+          "exposed_ports": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposed Ports"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "image_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Ref"
+          },
+          "layers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layers"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "os": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os"
+          },
+          "owned": {
+            "title": "Owned",
+            "type": "boolean"
+          },
+          "owner_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Label"
+          },
+          "progress_bytes": {
+            "title": "Progress Bytes",
+            "type": "integer"
+          },
+          "received_bitmap": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Bitmap"
+          },
+          "shared_with_org": {
+            "title": "Shared With Org",
+            "type": "boolean"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "status": {
+            "enum": [
+              "uploading",
+              "importing",
+              "ready",
+              "failed",
+              "deleting"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          },
+          "unpacked_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpacked Bytes"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "upload_bytes": {
+            "title": "Upload Bytes",
+            "type": "integer"
+          },
+          "upload_expires_at": {
+            "format": "date-time",
+            "title": "Upload Expires At",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "tag",
+          "description",
+          "status",
+          "owned",
+          "shared_with_org",
+          "filename",
+          "archive_format",
+          "upload_bytes",
+          "chunk_bytes",
+          "chunks_total",
+          "chunks_received",
+          "upload_expires_at",
+          "progress_bytes",
+          "error_key",
+          "error_detail",
+          "image_ref",
+          "size_bytes",
+          "unpacked_bytes",
+          "architecture",
+          "os",
+          "entrypoint",
+          "cmd",
+          "exposed_ports",
+          "dev_ready",
+          "layers",
+          "created_at",
+          "updated_at",
+          "user_id"
+        ],
+        "title": "AdminCustomImageOut",
+        "type": "object"
+      },
       "AdminDeletionApprove": {
         "description": "Execute the deletion (operator reason required, written to note and the audit detail;\nirreversible actions always leave a trace).",
         "properties": {
@@ -845,16 +1133,13 @@
             "title": "Created At",
             "type": "string"
           },
-          "data_disk_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Disk Id"
+          "data_disk_ids": {
+            "description": "Data disks the instance's current (or next) Pod mounts, each at its mount point",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Data Disk Ids",
+            "type": "array"
           },
           "frozen_deadline": {
             "anyOf": [
@@ -959,6 +1244,18 @@
               }
             ]
           },
+          "system_disk_bytes_used": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bytes stored on the system disk (size = spec.disk_gb), refreshed by the storage patrol",
+            "title": "System Disk Bytes Used"
+          },
           "user_id": {
             "title": "User Id",
             "type": "integer"
@@ -990,7 +1287,6 @@
           "market",
           "with_ssh",
           "ssh_port",
-          "data_disk_id",
           "frozen_deadline",
           "created_at",
           "user_id",
@@ -1233,7 +1529,12 @@
         "type": "object"
       },
       "AdminOrgDetailOut": {
+        "description": "mounts carry the Ceph path and user (never the key).",
         "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -1268,6 +1569,13 @@
           "members": {
             "title": "Members",
             "type": "integer"
+          },
+          "mounts": {
+            "items": {
+              "$ref": "#/components/schemas/OrgMountOut"
+            },
+            "title": "Mounts",
+            "type": "array"
           },
           "name": {
             "title": "Name",
@@ -1315,6 +1623,7 @@
         "required": [
           "uuid",
           "name",
+          "code",
           "status",
           "owner_user_id",
           "owner_email_masked",
@@ -1323,7 +1632,8 @@
           "created_at",
           "dissolved_at",
           "member_list",
-          "invitations"
+          "invitations",
+          "mounts"
         ],
         "title": "AdminOrgDetailOut",
         "type": "object"
@@ -1380,6 +1690,7 @@
         "type": "object"
       },
       "AdminOrgMemberOut": {
+        "description": "managed = created by the tenant (signs in with username, no email).",
         "properties": {
           "email_masked": {
             "title": "Email Masked",
@@ -1389,6 +1700,16 @@
             "format": "date-time",
             "title": "Joined At",
             "type": "string"
+          },
+          "login_disabled": {
+            "default": false,
+            "title": "Login Disabled",
+            "type": "boolean"
+          },
+          "managed": {
+            "default": false,
+            "title": "Managed",
+            "type": "boolean"
           },
           "role": {
             "enum": [
@@ -1411,6 +1732,17 @@
           "user_id": {
             "title": "User Id",
             "type": "integer"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
           }
         },
         "required": [
@@ -1425,6 +1757,10 @@
       },
       "AdminOrgOut": {
         "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -1492,6 +1828,7 @@
         "required": [
           "uuid",
           "name",
+          "code",
           "status",
           "owner_user_id",
           "owner_email_masked",
@@ -2625,6 +2962,86 @@
         "title": "AuditLogOut",
         "type": "object"
       },
+      "BalanceTransferCreate": {
+        "description": "allocate: from the caller's available balance to the member; reclaim: back from an\naccount the tenant created, up to its available balance. Moved money can only be spent.",
+        "properties": {
+          "amount": {
+            "description": "Amount, decimal string",
+            "pattern": "^\\d{1,8}(\\.\\d{1,2})?$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "allocate",
+              "reclaim"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "amount"
+        ],
+        "title": "BalanceTransferCreate",
+        "type": "object"
+      },
+      "BalanceTransferOut": {
+        "properties": {
+          "actor_label": {
+            "title": "Actor Label",
+            "type": "string"
+          },
+          "amount": {
+            "title": "Amount",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "allocate",
+              "reclaim"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Member Id"
+          },
+          "member_label": {
+            "title": "Member Label",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "kind",
+          "member_id",
+          "member_label",
+          "actor_label",
+          "amount",
+          "created_at"
+        ],
+        "title": "BalanceTransferOut",
+        "type": "object"
+      },
       "BillHourlyOut": {
         "properties": {
           "amount": {
@@ -2773,13 +3190,6 @@
             "title": "K8S Distro",
             "type": "string"
           },
-          "nvme_devices": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Nvme Devices",
-            "type": "array"
-          },
           "pool": {
             "title": "Pool",
             "type": "string"
@@ -2809,7 +3219,6 @@
           "cluster_server_url",
           "cluster_join_token",
           "driver_version",
-          "nvme_devices",
           "registries_yaml",
           "progress_token",
           "script_sha256"
@@ -2966,6 +3375,24 @@
           "prefix"
         ],
         "title": "CaptchaConfigOut",
+        "type": "object"
+      },
+      "ChunkAck": {
+        "properties": {
+          "chunks_received": {
+            "title": "Chunks Received",
+            "type": "integer"
+          },
+          "chunks_total": {
+            "title": "Chunks Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chunks_received",
+          "chunks_total"
+        ],
+        "title": "ChunkAck",
         "type": "object"
       },
       "ClusterComponentOut": {
@@ -3307,6 +3734,377 @@
         "title": "ComponentProbeOut",
         "type": "object"
       },
+      "CustomImageCreate": {
+        "description": "Start an upload: the archive's name and size, and the sha256 of its first chunk (a resumed\nupload must present the same file).",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "filename": {
+            "maxLength": 255,
+            "title": "Filename",
+            "type": "string"
+          },
+          "first_chunk_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "First Chunk Sha256",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "shared_with_org": {
+            "default": false,
+            "title": "Shared With Org",
+            "type": "boolean"
+          },
+          "size_bytes": {
+            "minimum": 1.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "tag": {
+            "default": "latest",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "filename",
+          "size_bytes",
+          "first_chunk_sha256"
+        ],
+        "title": "CustomImageCreate",
+        "type": "object"
+      },
+      "CustomImageOut": {
+        "description": "owned = the caller uploaded it; otherwise a tenant member shared it (owner_label). The\nupload fields matter while uploading: received_bitmap is base64, bit i = chunk i.",
+        "properties": {
+          "architecture": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architecture"
+          },
+          "archive_format": {
+            "enum": [
+              "tar",
+              "tar.gz",
+              "zip"
+            ],
+            "title": "Archive Format",
+            "type": "string"
+          },
+          "chunk_bytes": {
+            "title": "Chunk Bytes",
+            "type": "integer"
+          },
+          "chunks_received": {
+            "title": "Chunks Received",
+            "type": "integer"
+          },
+          "chunks_total": {
+            "title": "Chunks Total",
+            "type": "integer"
+          },
+          "cmd": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cmd"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "dev_ready": {
+            "title": "Dev Ready",
+            "type": "boolean"
+          },
+          "entrypoint": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entrypoint"
+          },
+          "error_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Detail"
+          },
+          "error_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Key"
+          },
+          "exposed_ports": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposed Ports"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "image_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Ref"
+          },
+          "layers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layers"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "os": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os"
+          },
+          "owned": {
+            "title": "Owned",
+            "type": "boolean"
+          },
+          "owner_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Label"
+          },
+          "progress_bytes": {
+            "title": "Progress Bytes",
+            "type": "integer"
+          },
+          "received_bitmap": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Bitmap"
+          },
+          "shared_with_org": {
+            "title": "Shared With Org",
+            "type": "boolean"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "status": {
+            "enum": [
+              "uploading",
+              "importing",
+              "ready",
+              "failed",
+              "deleting"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          },
+          "unpacked_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpacked Bytes"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "upload_bytes": {
+            "title": "Upload Bytes",
+            "type": "integer"
+          },
+          "upload_expires_at": {
+            "format": "date-time",
+            "title": "Upload Expires At",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "tag",
+          "description",
+          "status",
+          "owned",
+          "shared_with_org",
+          "filename",
+          "archive_format",
+          "upload_bytes",
+          "chunk_bytes",
+          "chunks_total",
+          "chunks_received",
+          "upload_expires_at",
+          "progress_bytes",
+          "error_key",
+          "error_detail",
+          "image_ref",
+          "size_bytes",
+          "unpacked_bytes",
+          "architecture",
+          "os",
+          "entrypoint",
+          "cmd",
+          "exposed_ports",
+          "dev_ready",
+          "layers",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CustomImageOut",
+        "type": "object"
+      },
+      "CustomImageUpdate": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "shared_with_org": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shared With Org"
+          }
+        },
+        "title": "CustomImageUpdate",
+        "type": "object"
+      },
       "DailySummaryOut": {
         "description": "Today's consumption summary (local day boundary via tz_offset_minutes, default the billing\nzone's current offset).",
         "properties": {
@@ -3394,10 +4192,11 @@
         "description": "Request deletion: retype one of the account's handles (email or phone) plus a reason.",
         "properties": {
           "handle": {
-            "description": "Login handle: an email address or an E.164 phone number",
+            "description": "Login handle: an email address, an E.164 phone number or a tenant username (<tenant code>.<name>)",
             "examples": [
               "user@example.com",
-              "+14155550123"
+              "+14155550123",
+              "ailab.student01"
             ],
             "maxLength": 254,
             "title": "Handle",
@@ -3526,6 +4325,14 @@
       },
       "DiskCreate": {
         "properties": {
+          "mount_path": {
+            "default": "/data",
+            "description": "Mount point inside every instance of the user: /data, /data<suffix>, /workspace<suffix> or /mnt/<name> (not /mnt/org)",
+            "maxLength": 64,
+            "minLength": 2,
+            "title": "Mount Path",
+            "type": "string"
+          },
           "name": {
             "maxLength": 64,
             "minLength": 1,
@@ -3545,22 +4352,20 @@
         "title": "DiskCreate",
         "type": "object"
       },
-      "DiskExpand": {
-        "properties": {
-          "size_gb": {
-            "minimum": 1.0,
-            "title": "Size Gb",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "size_gb"
-        ],
-        "title": "DiskExpand",
-        "type": "object"
-      },
       "DiskOut": {
         "properties": {
+          "bytes_used": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bytes stored on the disk, refreshed by the storage patrol",
+            "title": "Bytes Used"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3594,16 +4399,17 @@
             "title": "Id",
             "type": "integer"
           },
-          "mounted_instance_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mounted Instance Id"
+          "mount_path": {
+            "title": "Mount Path",
+            "type": "string"
+          },
+          "mounted_by": {
+            "description": "Instances whose Pod currently mounts the disk",
+            "items": {
+              "$ref": "#/components/schemas/DiskUserOut"
+            },
+            "title": "Mounted By",
+            "type": "array"
           },
           "name": {
             "title": "Name",
@@ -3625,6 +4431,18 @@
             "title": "Status",
             "type": "string"
           },
+          "usage_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Checked At"
+          },
           "uuid": {
             "title": "Uuid",
             "type": "string"
@@ -3635,15 +4453,72 @@
           "uuid",
           "name",
           "size_gb",
+          "mount_path",
           "status",
           "price_gb_month",
-          "mounted_instance_id",
           "grace_started_at",
           "frozen_started_at",
           "provisioned",
           "created_at"
         ],
         "title": "DiskOut",
+        "type": "object"
+      },
+      "DiskUpdate": {
+        "description": "Grow the disk and / or move its mount point (applies from each instance's next start).",
+        "properties": {
+          "mount_path": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mount point inside every instance of the user: /data, /data<suffix>, /workspace<suffix> or /mnt/<name> (not /mnt/org)",
+            "title": "Mount Path"
+          },
+          "size_gb": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Gb"
+          }
+        },
+        "title": "DiskUpdate",
+        "type": "object"
+      },
+      "DiskUserOut": {
+        "description": "An instance whose Pod mounts the disk.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "status"
+        ],
+        "title": "DiskUserOut",
         "type": "object"
       },
       "DnsIn": {
@@ -3780,21 +4655,6 @@
               }
             ],
             "title": "Note"
-          },
-          "nvme_devices": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "maxItems": 16,
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Nvme Devices"
           },
           "pool": {
             "enum": [
@@ -4325,10 +5185,11 @@
         "description": "Start binding or replacing a contact handle on the signed-in account.",
         "properties": {
           "handle": {
-            "description": "Login handle: an email address or an E.164 phone number",
+            "description": "Login handle: an email address, an E.164 phone number or a tenant username (<tenant code>.<name>)",
             "examples": [
               "user@example.com",
-              "+14155550123"
+              "+14155550123",
+              "ailab.student01"
             ],
             "maxLength": 254,
             "title": "Handle",
@@ -4350,10 +5211,11 @@
             "type": "string"
           },
           "handle": {
-            "description": "Login handle: an email address or an E.164 phone number",
+            "description": "Login handle: an email address, an E.164 phone number or a tenant username (<tenant code>.<name>)",
             "examples": [
               "user@example.com",
-              "+14155550123"
+              "+14155550123",
+              "ailab.student01"
             ],
             "maxLength": 254,
             "title": "Handle",
@@ -4726,17 +5588,6 @@
       "InstanceCreate": {
         "additionalProperties": false,
         "properties": {
-          "data_disk_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Disk Id"
-          },
           "gpu_count": {
             "default": 1,
             "maximum": 8.0,
@@ -5049,16 +5900,13 @@
             "title": "Created At",
             "type": "string"
           },
-          "data_disk_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Disk Id"
+          "data_disk_ids": {
+            "description": "Data disks the instance's current (or next) Pod mounts, each at its mount point",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Data Disk Ids",
+            "type": "array"
           },
           "frozen_deadline": {
             "anyOf": [
@@ -5152,6 +6000,18 @@
               }
             ]
           },
+          "system_disk_bytes_used": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bytes stored on the system disk (size = spec.disk_gb), refreshed by the storage patrol",
+            "title": "System Disk Bytes Used"
+          },
           "uuid": {
             "title": "Uuid",
             "type": "string"
@@ -5179,7 +6039,6 @@
           "market",
           "with_ssh",
           "ssh_port",
-          "data_disk_id",
           "frozen_deadline",
           "created_at"
         ],
@@ -6246,10 +7105,11 @@
             "title": "Code"
           },
           "handle": {
-            "description": "Login handle: an email address or an E.164 phone number",
+            "description": "Login handle: an email address, an E.164 phone number or a tenant username (<tenant code>.<name>)",
             "examples": [
               "user@example.com",
-              "+14155550123"
+              "+14155550123",
+              "ailab.student01"
             ],
             "maxLength": 254,
             "title": "Handle",
@@ -6273,6 +7133,130 @@
           "handle"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "ManagedPasswordOut": {
+        "properties": {
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "ManagedPasswordOut",
+        "type": "object"
+      },
+      "ManagedPasswordReset": {
+        "description": "Omit the password for a random one; the account must pick its own at next sign-in.",
+        "properties": {
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 12,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "title": "ManagedPasswordReset",
+        "type": "object"
+      },
+      "ManagedUserCreatedOut": {
+        "properties": {
+          "member_id": {
+            "title": "Member Id",
+            "type": "integer"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_id",
+          "user_id",
+          "username",
+          "password"
+        ],
+        "title": "ManagedUserCreatedOut",
+        "type": "object"
+      },
+      "ManagedUserUpdate": {
+        "properties": {
+          "login_disabled": {
+            "title": "Login Disabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "login_disabled"
+        ],
+        "title": "ManagedUserUpdate",
+        "type": "object"
+      },
+      "ManagedUsersCreate": {
+        "description": "Create 1-100 accounts named <tenant code>.<name>; one shared password, or a random one per\naccount when omitted. Passwords come back once, in the response.",
+        "properties": {
+          "names": {
+            "items": {
+              "maxLength": 32,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Names",
+            "type": "array"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 12,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "remark": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark"
+          }
+        },
+        "required": [
+          "names"
+        ],
+        "title": "ManagedUsersCreate",
         "type": "object"
       },
       "MemberFinanceOut": {
@@ -6343,6 +7327,7 @@
         "type": "object"
       },
       "MemberOut": {
+        "description": "managed = an account this tenant created (username shown in full, password reset,\nsign-in switch, deletion and balance take-back by the tenant's admins).",
         "properties": {
           "email_masked": {
             "title": "Email Masked",
@@ -6356,6 +7341,16 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "login_disabled": {
+            "default": false,
+            "title": "Login Disabled",
+            "type": "boolean"
+          },
+          "managed": {
+            "default": false,
+            "title": "Managed",
+            "type": "boolean"
           },
           "member_id": {
             "title": "Member Id",
@@ -6389,6 +7384,17 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
           }
         },
         "required": [
@@ -7684,6 +8690,12 @@
       },
       "OrgCreate": {
         "properties": {
+          "code": {
+            "description": "Short code prefixed to the usernames of accounts the tenant creates (<code>.<name>)",
+            "maxLength": 20,
+            "title": "Code",
+            "type": "string"
+          },
           "name": {
             "maxLength": 80,
             "title": "Name",
@@ -7691,7 +8703,8 @@
           }
         },
         "required": [
-          "name"
+          "name",
+          "code"
         ],
         "title": "OrgCreate",
         "type": "object"
@@ -7984,8 +8997,221 @@
         "title": "OrgInstanceOut",
         "type": "object"
       },
+      "OrgMountCreate": {
+        "description": "A directory on the platform's Ceph cluster plus the organization's own key for it; mounted\nat /mnt/org/<name> in every member's instances.",
+        "properties": {
+          "ceph_key": {
+            "maxLength": 128,
+            "title": "Ceph Key",
+            "type": "string"
+          },
+          "ceph_path": {
+            "maxLength": 255,
+            "title": "Ceph Path",
+            "type": "string"
+          },
+          "ceph_user": {
+            "maxLength": 71,
+            "title": "Ceph User",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 40,
+            "title": "Name",
+            "type": "string"
+          },
+          "read_only": {
+            "default": true,
+            "title": "Read Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "ceph_path",
+          "ceph_user",
+          "ceph_key"
+        ],
+        "title": "OrgMountCreate",
+        "type": "object"
+      },
+      "OrgMountOut": {
+        "description": "ceph_path and ceph_user are shown to owners and admins only; the key never comes back.",
+        "properties": {
+          "ceph_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ceph Path"
+          },
+          "ceph_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ceph User"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "mount_path": {
+            "title": "Mount Path",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "read_only": {
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "checking",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "name",
+          "mount_path",
+          "read_only",
+          "enabled",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "OrgMountOut",
+        "type": "object"
+      },
+      "OrgMountUpdate": {
+        "description": "Omitted fields stay; a new path, user, key or access is checked again and reaches\ninstances from their next start.",
+        "properties": {
+          "ceph_key": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ceph Key"
+          },
+          "ceph_path": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ceph Path"
+          },
+          "ceph_user": {
+            "anyOf": [
+              {
+                "maxLength": 71,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ceph User"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "read_only": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Only"
+          }
+        },
+        "title": "OrgMountUpdate",
+        "type": "object"
+      },
       "OrgOut": {
         "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -8011,6 +9237,7 @@
         "required": [
           "uuid",
           "name",
+          "code",
           "status",
           "created_at"
         ],
@@ -8047,16 +9274,34 @@
         "type": "object"
       },
       "OrgRename": {
+        "description": "Omitted fields stay; the code changes only while the tenant has created no accounts.",
         "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "description": "Short code prefixed to the usernames of accounts the tenant creates (<code>.<name>)",
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
           "name": {
-            "maxLength": 80,
-            "title": "Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           }
         },
-        "required": [
-          "name"
-        ],
         "title": "OrgRename",
         "type": "object"
       },
@@ -9025,6 +10270,29 @@
         "title": "Page[TicketOut]",
         "type": "object"
       },
+      "PasswordChange": {
+        "description": "Change the password of the signed-in account with the current one.",
+        "properties": {
+          "current_password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChange",
+        "type": "object"
+      },
       "PasswordResetRequest": {
         "description": "Set / change / recover the password with a verification code; no old password needed.",
         "properties": {
@@ -9035,10 +10303,11 @@
             "type": "string"
           },
           "handle": {
-            "description": "Login handle: an email address or an E.164 phone number",
+            "description": "Login handle: an email address, an E.164 phone number or a tenant username (<tenant code>.<name>)",
             "examples": [
               "user@example.com",
-              "+14155550123"
+              "+14155550123",
+              "ailab.student01"
             ],
             "maxLength": 254,
             "title": "Handle",
@@ -9163,6 +10432,7 @@
               "support",
               "cluster",
               "registry",
+              "storage",
               "observability"
             ],
             "title": "Group",
@@ -9367,6 +10637,18 @@
             "title": "Currency",
             "type": "string"
           },
+          "custom_image_max_count": {
+            "title": "Custom Image Max Count",
+            "type": "integer"
+          },
+          "custom_image_max_total_gb": {
+            "title": "Custom Image Max Total Gb",
+            "type": "integer"
+          },
+          "custom_image_max_upload_gb": {
+            "title": "Custom Image Max Upload Gb",
+            "type": "integer"
+          },
           "disk_frozen_days": {
             "title": "Disk Frozen Days",
             "type": "integer"
@@ -9463,7 +10745,10 @@
           "billing_timezone",
           "recharge_min",
           "recharge_max",
-          "recharge_presets"
+          "recharge_presets",
+          "custom_image_max_count",
+          "custom_image_max_total_gb",
+          "custom_image_max_upload_gb"
         ],
         "title": "PoliciesOut",
         "type": "object"
@@ -10068,7 +11353,7 @@
         "type": "object"
       },
       "RefundableOrderOut": {
-        "description": "Top-up order under the refund-eligibility definition.\n\nWith refundable=False, reason_code: not_paid / already_applied / fully_refunded / invoiced\n/ no_balance.\nAn order may be partially refunded several times: max_amount = min(order remainder,\nnon-negative available balance, refundable ledger balance).\nRemainder = order amount − Σ paid refunds; available balance = balance − frozen.\nThe refundable ledger balance is the net ledger excluding positive adjustments, floored at\nzero.",
+        "description": "Top-up order under the refund-eligibility definition.\n\nWith refundable=False, reason_code: not_paid / already_applied / fully_refunded / invoiced\n/ no_balance.\nAn order may be partially refunded several times: max_amount = min(order remainder,\nnon-negative available balance, refundable ledger balance).\nRemainder = order amount − Σ paid refunds; available balance = balance − frozen.\nThe refundable ledger balance is the net ledger excluding positive adjustments and tenant\nbalance moves, floored at zero.",
         "properties": {
           "amount": {
             "title": "Amount",
@@ -10464,17 +11749,6 @@
               }
             ],
             "title": "Container Command"
-          },
-          "data_disk_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Disk Id"
           },
           "env": {
             "anyOf": [
@@ -10877,17 +12151,6 @@
               }
             ],
             "title": "Container Command"
-          },
-          "data_disk_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Data Disk Id"
           },
           "env": {
             "anyOf": [
@@ -11542,8 +12805,16 @@
         "type": "object"
       },
       "SkuMarketOut": {
-        "description": "Market card view (user console); display_model is the model tenants see, gpu_model when the\nSKU sets none.",
+        "description": "Market card view (user console); display_model is the model tenants see, gpu_model when the\nSKU sets none; archs are the CPU architectures of the pool's Ready nodes (an uploaded image\nmust match one).",
         "properties": {
+          "archs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Archs",
+            "type": "array"
+          },
           "available_count": {
             "default": 0,
             "title": "Available Count",
@@ -12027,6 +13298,7 @@
         "type": "object"
       },
       "TenantOut": {
+        "description": "username is set on accounts a tenant created (they have no email or phone).",
         "properties": {
           "balance": {
             "title": "Balance",
@@ -12103,6 +13375,17 @@
           "total_consumed": {
             "title": "Total Consumed",
             "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
           }
         },
         "required": [
@@ -12632,6 +13915,17 @@
             "title": "Low Balance Warn Hours",
             "type": "integer"
           },
+          "managed": {
+            "default": false,
+            "description": "Created by a tenant admin: no identity verification, managed by the tenant",
+            "title": "Managed",
+            "type": "boolean"
+          },
+          "password_change_required": {
+            "default": false,
+            "title": "Password Change Required",
+            "type": "boolean"
+          },
           "phone": {
             "anyOf": [
               {
@@ -12646,6 +13940,18 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sign-in name of an account created by a tenant admin",
+            "title": "Username"
           }
         },
         "required": [
@@ -12717,10 +14023,11 @@
             "title": "Captcha Token"
           },
           "handle": {
-            "description": "Login handle: an email address or an E.164 phone number",
+            "description": "Login handle: an email address, an E.164 phone number or a tenant username (<tenant code>.<name>)",
             "examples": [
               "user@example.com",
-              "+14155550123"
+              "+14155550123",
+              "ailab.student01"
             ],
             "maxLength": 254,
             "title": "Handle",
@@ -14509,6 +15816,140 @@
           }
         ],
         "summary": "Admin Cluster Test Connection",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/custom-images": {
+      "get": {
+        "description": "Images users uploaded, newest 200, filterable by user and status.",
+        "operationId": "admin_list_custom_images_api_admin_v1_custom_images_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "uploading",
+                    "importing",
+                    "ready",
+                    "failed",
+                    "deleting"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminCustomImageOut"
+                  },
+                  "title": "Response Admin List Custom Images Api Admin V1 Custom Images Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin List Custom Images",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/v1/custom-images/{uuid}": {
+      "delete": {
+        "description": "Remove an uploaded image (abuse, policy): its registry artifact is deleted even while\ninstances use it; their next start cannot pull it. reason required.",
+        "operationId": "admin_delete_custom_image_api_admin_v1_custom_images__uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Delete Custom Image",
         "tags": [
           "admin"
         ]
@@ -21105,8 +22546,373 @@
         ]
       }
     },
+    "/api/v1/custom-images": {
+      "get": {
+        "description": "The caller's uploads (any state) and the ready images members of the caller's tenant\nshare.",
+        "operationId": "list_images_api_v1_custom_images_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CustomImageOut"
+                  },
+                  "title": "Response List Images Api V1 Custom Images Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Images",
+        "tags": [
+          "custom-images"
+        ]
+      },
+      "post": {
+        "description": "Open a 24-hour upload of a `docker save` archive (.tar, .tar.gz / .tgz, .zip): name:tag is\nreserved, the archive size counts against the quota. Send the chunks (chunk_bytes each, the\nlast one shorter), then complete.",
+        "operationId": "start_upload_api_v1_custom_images_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomImageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomImageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Upload",
+        "tags": [
+          "custom-images"
+        ]
+      }
+    },
+    "/api/v1/custom-images/{uuid}": {
+      "delete": {
+        "description": "Uploads and failed imports go at once; a ready image only while no unreleased instance uses\nit; an import in progress must finish first.",
+        "operationId": "delete_image_api_v1_custom_images__uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Image",
+        "tags": [
+          "custom-images"
+        ]
+      },
+      "get": {
+        "description": "One of the caller's images; while uploading, received_bitmap tells which chunks arrived.",
+        "operationId": "get_image_api_v1_custom_images__uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomImageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Image",
+        "tags": [
+          "custom-images"
+        ]
+      },
+      "patch": {
+        "description": "Description and sharing with the caller's tenant.",
+        "operationId": "update_image_api_v1_custom_images__uuid__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomImageUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomImageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Image",
+        "tags": [
+          "custom-images"
+        ]
+      }
+    },
+    "/api/v1/custom-images/{uuid}/chunks/{index}": {
+      "put": {
+        "description": "Chunk `index` (0-based) as the raw body, its sha256 in X-Chunk-Sha256. Resending a chunk\nreplaces it; chunk 0 must match the sha256 given at start.",
+        "operationId": "put_chunk_api_v1_custom_images__uuid__chunks__index__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "title": "Index",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-chunk-sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{64}$",
+              "title": "X-Chunk-Sha256",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChunkAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Chunk",
+        "tags": [
+          "custom-images"
+        ]
+      }
+    },
+    "/api/v1/custom-images/{uuid}/complete": {
+      "post": {
+        "description": "Every chunk arrived: the import starts (progress_bytes advances, then ready or failed with\nerror_key).",
+        "operationId": "complete_upload_api_v1_custom_images__uuid__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomImageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Complete Upload",
+        "tags": [
+          "custom-images"
+        ]
+      }
+    },
     "/api/v1/disks": {
       "get": {
+        "description": "Every disk of the user; each is mounted on all of the user's instances at its mount point.",
         "operationId": "list_disks_api_v1_disks_get",
         "responses": {
           "200": {
@@ -21200,7 +23006,7 @@
     },
     "/api/v1/disks/{uuid}": {
       "delete": {
-        "description": "Delete the data disk (irreversible); forbidden while mounted.",
+        "description": "Delete the data disk (irreversible); forbidden while an instance's Pod mounts it.",
         "operationId": "delete_disk_api_v1_disks__uuid__delete",
         "parameters": [
           {
@@ -21246,8 +23052,8 @@
         ]
       },
       "patch": {
-        "description": "Expand (grow only).",
-        "operationId": "expand_disk_api_v1_disks__uuid__patch",
+        "description": "Grow (never shrink) and / or move the mount point.",
+        "operationId": "update_disk_api_v1_disks__uuid__patch",
         "parameters": [
           {
             "in": "path",
@@ -21263,7 +23069,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DiskExpand"
+                "$ref": "#/components/schemas/DiskUpdate"
               }
             }
           },
@@ -21296,7 +23102,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Expand Disk",
+        "summary": "Update Disk",
         "tags": [
           "disks"
         ]
@@ -22740,6 +24546,53 @@
         ]
       }
     },
+    "/api/v1/me/password": {
+      "post": {
+        "description": "Change the password of the signed-in account with the current one (tenant usernames have\nno code channel); every other session is revoked and a fresh token pair is issued.",
+        "operationId": "change_password_api_v1_me_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Change Password",
+        "tags": [
+          "account"
+        ]
+      }
+    },
     "/api/v1/me/warn-threshold": {
       "patch": {
         "operationId": "set_warn_threshold_api_v1_me_warn_threshold_patch",
@@ -23788,7 +25641,7 @@
         ]
       },
       "patch": {
-        "description": "Owner only.",
+        "description": "Owner only: name and / or code (the code changes only while the tenant has created no\naccounts).",
         "operationId": "rename_org_api_v1_org_patch",
         "requestBody": {
           "content": {
@@ -24398,6 +26251,459 @@
         ]
       }
     },
+    "/api/v1/org/members/{member_id}/account": {
+      "delete": {
+        "description": "Delete an account the tenant created: it must hold no unreleased instance, no data disk\nand no balance (take the balance back first).",
+        "operationId": "delete_member_account_api_v1_org_members__member_id__account_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Member Account",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/members/{member_id}/balance": {
+      "post": {
+        "description": "Owners and admins: allocate from the caller's available balance to a member, or take back\nfrom an account the tenant created. Moved money can only be spent: never refunded or\ninvoiced by whoever receives it. A replay of the same Idempotency-Key returns the first move\n(200 + X-Idempotent-Replay).",
+        "operationId": "move_member_balance_api_v1_org_members__member_id__balance_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BalanceTransferCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalanceTransferOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Move Member Balance",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/members/{member_id}/login": {
+      "patch": {
+        "description": "Switch sign-in of an account the tenant created; disabling ends its sessions at once\n(instances keep running).",
+        "operationId": "set_member_login_api_v1_org_members__member_id__login_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedUserUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Member Login",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/members/{member_id}/password": {
+      "post": {
+        "description": "An account the tenant created (owner: any, admin: members): set or generate a password,\nend its sessions; returned only here.",
+        "operationId": "reset_member_password_api_v1_org_members__member_id__password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "title": "Member Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedPasswordReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedPasswordOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset Member Password",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/mounts": {
+      "get": {
+        "description": "The organization's storage mounts, every member: mounted at /mnt/org/<name> in each\nmember's instances from their next start. Path, key user and check errors are shown to\nowners and admins only; the key never comes back.",
+        "operationId": "list_mounts_api_v1_org_mounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgMountOut"
+                  },
+                  "title": "Response List Mounts Api V1 Org Mounts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Mounts",
+        "tags": [
+          "orgs"
+        ]
+      },
+      "post": {
+        "description": "Owners and admins: a directory of the platform's Ceph cluster plus the organization's own\ncephx key. Checked in user space first; only a ready mount reaches instances. Members are\nnotified.",
+        "operationId": "create_mount_api_v1_org_mounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgMountCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgMountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Mount",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/mounts/{uuid}": {
+      "delete": {
+        "description": "Owners and admins; instances lose the mount at their next start.",
+        "operationId": "delete_mount_api_v1_org_mounts__uuid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Mount",
+        "tags": [
+          "orgs"
+        ]
+      },
+      "patch": {
+        "description": "Owners and admins; a new path, key user, key or access is checked again and reaches\ninstances from their next start (running instances keep the previous one).",
+        "operationId": "update_mount_api_v1_org_mounts__uuid__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgMountUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgMountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Mount",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/mounts/{uuid}/check": {
+      "post": {
+        "description": "Owners and admins: check the directory and key again.",
+        "operationId": "recheck_mount_api_v1_org_mounts__uuid__check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "title": "Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgMountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Recheck Mount",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
     "/api/v1/org/netgw/gateways": {
       "get": {
         "description": "The organization's gateways (owners and admins).",
@@ -24887,6 +27193,88 @@
           }
         ],
         "summary": "Transfer Owner",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/transfers": {
+      "get": {
+        "description": "The tenant's balance moves, newest 200 (owners and admins).",
+        "operationId": "list_transfers_api_v1_org_transfers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BalanceTransferOut"
+                  },
+                  "title": "Response List Transfers Api V1 Org Transfers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Transfers",
+        "tags": [
+          "orgs"
+        ]
+      }
+    },
+    "/api/v1/org/users": {
+      "post": {
+        "description": "Owners and admins: create 1-100 accounts named <tenant code>.<name>, members from the\nstart, no identity verification needed. Each password (the shared one, or a random one per\naccount) is returned only here; the accounts pick their own at first sign-in.",
+        "operationId": "create_users_api_v1_org_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedUsersCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedUserCreatedOut"
+                  },
+                  "title": "Response Create Users Api V1 Org Users Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Users",
         "tags": [
           "orgs"
         ]

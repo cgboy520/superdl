@@ -1,4 +1,4 @@
-/** Instance detail: connect, monitoring, logs, events, bills and settings; the default tab follows the instance status. */
+/** Instance detail: connect, monitoring, logs, events, storage, bills and settings; the default tab follows the instance status. */
 
 import { type InstanceOut } from "@superdl/api-client";
 import { formatDateTime, isTransientInstanceStatus, localToday, POLL, space } from "@superdl/ui";
@@ -24,12 +24,13 @@ import { HourlyBillsTable } from "../components/HourlyBillsTable";
 import { EventsTab } from "../components/instance/EventsTab";
 import { LogsTab } from "../components/instance/LogsTab";
 import { MetricsPanel } from "../components/instance/MetricsPanel";
+import { StorageTab } from "../components/instance/StorageTab";
 import { InstanceActions, ReleaseModal, canReleaseStatus } from "../components/InstanceActions";
 import { requireAuth } from "../lib/guard";
 import { useRememberedListSearch } from "../stores/listSearch";
 import { specGpuModel } from "../lib/instanceSpec";
 
-const DETAIL_TABS = ["access", "metrics", "logs", "events", "bills", "settings"] as const;
+const DETAIL_TABS = ["access", "metrics", "logs", "events", "storage", "bills", "settings"] as const;
 
 export const Route = createFileRoute("/_console/instances_/$uuid")({
   beforeLoad: requireAuth,
@@ -281,6 +282,11 @@ function InstanceDetail() {
               key: "events",
               label: t("instances.tabEvents"),
               children: <EventsTab subject={{ kind: "instance", uuid }} status={instance.status} />,
+            },
+            {
+              key: "storage",
+              label: t("instances.tabStorage"),
+              children: <StorageTab instance={instance} />,
             },
             {
               key: "bills",

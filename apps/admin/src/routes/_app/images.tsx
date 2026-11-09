@@ -1,4 +1,4 @@
-/** Images page: list, prewarm actions, per-node cache expansion panel and edit drawer. */
+/** Images page: platform image list, prewarm actions, per-node cache expansion panel and edit drawer; below it the images users uploaded. */
 
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import {
@@ -64,6 +64,7 @@ import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { ReasonAction } from "../../components/ReasonAction";
 import { StatusTag } from "@superdl/ui/components";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
+import { UserImagesCard } from "./-UserImagesCard";
 
 export const Route = createFileRoute("/_app/images")({
   validateSearch: (search: Record<string, unknown>): { image?: number } => ({
@@ -515,6 +516,9 @@ function ImagesPage() {
         </Drawer>
         {leave.modal}
       </Card>
+      <div style={{ marginTop: space.lg }}>
+        <UserImagesCard writable={writable} />
+      </div>
     </PageContainer>
   );
 }

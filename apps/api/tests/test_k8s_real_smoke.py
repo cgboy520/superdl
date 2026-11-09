@@ -19,10 +19,13 @@ from app.core.k8s.base import (
     HTTPROUTE_PLURAL,
     NETGW_LABEL,
     NETGW_NAMESPACE,
+    CephVolumeSpec,
     InstancePodSpec,
     NetgwInstanceForward,
     NetgwIntranetForward,
     NetgwSpec,
+    ceph_pv_name,
+    ceph_secret_name,
     data_disk_pvc_name,
     instance_disk_pvc_name,
     jupyter_service_name,
@@ -130,21 +133,20 @@ async def test_namespace_security_baseline(orch: RealOrchestrator, namespace: st
     assert quota.spec is not None and "pods" in quota.spec.hard
     assert "requests.cpu" in quota.spec.hard and "limits.ephemeral-storage" in quota.spec.hard
 
-    pvc_name = data_disk_pvc_name("a" * 32)
-    await orch.ensure_data_disk(namespace, pvc_name, 10)
-    created: Any = orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)
-    assert created.spec.resources.requests["storage"] == "10Gi"
+    disk = _ceph_volume(namespace, data_disk_pvc_name("a" * 32), "u1-disk-" + "a" * 32)
+    await orch.ensure_ceph_volume(disk)
+    await orch.ensure_ceph_volume(disk)
+    created: Any = orch.core.read_namespaced_persistent_volume_claim(disk.pvc_name, namespace)
     assert created.spec.access_modes == ["ReadWriteMany"]
-    await orch.ensure_data_disk(namespace, pvc_name, 10)
-    await wait_pvc_bound(orch.core, namespace, pvc_name)
-    await orch.ensure_data_disk(namespace, pvc_name, 20)
-    grown: Any = orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)
-    assert grown.spec.resources.requests["storage"] == "20Gi"
-    await orch.ensure_data_disk(namespace, pvc_name, 5)
-    same: Any = orch.core.read_namespaced_persistent_volume_claim(pvc_name, namespace)
-    assert same.spec.resources.requests["storage"] == "20Gi"
-    await orch.delete_data_disk(namespace, pvc_name)
-    await orch.delete_data_disk(namespace, pvc_name)
+    assert created.spec.volume_name == disk.pv_name
+    await wait_pvc_bound(orch.core, namespace, disk.pvc_name)
+    pv: Any = orch.core.read_persistent_volume(disk.pv_name)
+    assert pv.spec.csi.volume_attributes["staticVolume"] == "true"
+    secret: Any = orch.core.read_namespaced_secret(disk.secret_name, namespace)
+    assert set(secret.data) == {"userID", "userKey"}
+    await _delete_volume(orch, disk)
+    await _delete_volume(orch, disk)
+    await _wait_pvc_gone(orch, namespace, disk.pvc_name)
 
 
 async def test_ensure_namespace_under_tenant_mgr_sa(orch_restricted: RealOrchestrator) -> None:
@@ -178,7 +180,7 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
         host_users=True,
         vcpu=1,
         mem_gb=1,
-        disk_gb=1,
+        system_disk_pvc=instance_disk_pvc_name(name),
         ssh_node_port=31999,
         jupyter_host=f"{name}.app.example.invalid",
         secret_env={"JUPYTER_TOKEN": "smoke"},
@@ -186,6 +188,8 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeFakeFakeFakeFakeFakeFakeFakeFak smoke",
         ),
     )
+    system = _ceph_volume(namespace, instance_disk_pvc_name(name), f"u1-sys-{name}")
+    await orch.ensure_ceph_volume(system)
     await orch.create_instance(spec)
     await orch.create_instance(spec)
 
@@ -230,8 +234,31 @@ async def test_instance_lifecycle_and_disk_reclaim(orch: RealOrchestrator, names
         orch.core.read_namespaced_secret(f"jupyter-{name}", namespace)
     assert exc_secret.value.status == 404
 
-    await orch.delete_instance_disk(namespace, name)
+    await _delete_volume(orch, system)
     await _wait_pvc_gone(orch, namespace, pvc_name)
+
+
+def _ceph_volume(namespace: str, pvc_name: str, subvolume: str) -> CephVolumeSpec:
+    """A static CephFS volume pointing at a path no node mounts in the smoke cluster: the objects
+    bind, the CSI node stage is never reached."""
+    return CephVolumeSpec(
+        namespace=namespace,
+        pvc_name=pvc_name,
+        pv_name=ceph_pv_name(subvolume),
+        secret_name=ceph_secret_name(subvolume),
+        cluster_id="00000000-0000-0000-0000-000000000000",
+        fs_name="cephfs",
+        root_path=f"/volumes/smoke/{subvolume}/0",
+        client_id=f"smoke.{subvolume}",
+        client_key="AQBsmokeKeyNotUsedAnywhere==",
+        size_gb=1,
+    )
+
+
+async def _delete_volume(orch: RealOrchestrator, spec: CephVolumeSpec) -> None:
+    await orch.delete_ceph_volume(
+        spec.namespace, pvc_name=spec.pvc_name, pv_name=spec.pv_name, secret_name=spec.secret_name
+    )
 
 
 def _netgw_service_names(orch: RealOrchestrator, namespace: str, gateway_uuid: str) -> set[str]:

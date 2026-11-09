@@ -11,7 +11,7 @@ const { deleteMutate } = vi.hoisted(() => ({ deleteMutate: vi.fn() }));
 
 vi.mock("../api/mutations", () => ({
   useCreateDisk: () => ({ mutate: vi.fn(), isPending: false }),
-  useExpandDisk: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateDisk: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteDisk: () => ({ mutate: deleteMutate, isPending: false }),
 }));
 

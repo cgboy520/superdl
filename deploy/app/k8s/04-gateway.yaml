@@ -213,6 +213,27 @@ spec:
     - backendRefs:
         - {name: superdl-web, port: 80}
 ---
+# Uploaded image chunks (PUT /api/v1/custom-images/<uuid>/chunks/<n>, 8 MiB each) on both API entries:
+# the longer prefix with the method match wins over the /api/v1 routes; streamed (no requestBuffer,
+# the API caps the body), a longer request timeout for slow uplinks and its own rate limit below.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: superdl-image-chunks
+  namespace: superdl
+spec:
+  parentRefs:
+    - {name: superdl, sectionName: api-https}
+    - {name: superdl, sectionName: console-https}
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /api/v1/custom-images/}
+          method: PUT
+      timeouts:
+        request: 300s
+      backendRefs:
+        - {name: superdl-api, port: 80}
+---
 # The real public entry is the console domain (CDN → front proxy → this listener); /api/v1 reaches the API directly here instead of the nginx same-origin proxy;
 # the prefix is longer than the superdl-console fallback, so Envoy matches it first. Rate limit and request body cap as api-https (BackendTrafficPolicy below).
 apiVersion: gateway.networking.k8s.io/v1
@@ -337,6 +358,21 @@ spec:
           clientSelectors:
             - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
         - limit: {requests: 600, unit: Minute}
+          clientSelectors:
+            - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: superdl-image-chunks
+  namespace: superdl
+spec:
+  targetRefs:
+    - {group: gateway.networking.k8s.io, kind: HTTPRoute, name: superdl-image-chunks}
+  rateLimit:
+    local:
+      rules:
+        - limit: {requests: 40, unit: Second}
           clientSelectors:
             - sourceCIDR: {value: 0.0.0.0/0, type: Distinct}
 ---

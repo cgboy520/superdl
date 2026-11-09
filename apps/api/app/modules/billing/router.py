@@ -65,6 +65,9 @@ async def get_policies(session: DbSession) -> PoliciesOut:
         recharge_min=as_amount(p.recharge_min),
         recharge_max=as_amount(p.recharge_max),
         recharge_presets=[as_amount(v) for v in recharge_presets_of(p)],
+        custom_image_max_count=p.max_custom_images_per_user,
+        custom_image_max_total_gb=p.max_custom_image_gb_per_user,
+        custom_image_max_upload_gb=p.custom_image_max_upload_gb,
     )
 
 

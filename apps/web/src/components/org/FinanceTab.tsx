@@ -1,12 +1,53 @@
-/** Members' spending at a glance (owners and admins, every read audited): available balance, this billing month's bills since joining, hourly burn and the hours it lasts. Read only. */
+/** Members' spending at a glance (owners and admins, every read audited): available balance, this billing month's bills since joining, hourly burn and the hours it lasts; below it, the balance moves between admins and members. */
 
-import type { MemberFinanceOut } from "@superdl/api-client";
+import type { BalanceTransferOut, MemberFinanceOut } from "@superdl/api-client";
 import { formatDateTime, space, useFormat } from "@superdl/ui";
 import { KpiGrid, StatCard, TableErrorEmpty } from "@superdl/ui/components";
-import { Card, Space, Table, Typography } from "antd";
+import { Card, Space, Table, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { useOrgFinance } from "../../api/queries";
+import { useOrgFinance, useOrgTransfers } from "../../api/queries";
+
+/** Allocations to and reclaims from members, newest first (spend-only money; the ledger of each side records the move). */
+function TransfersCard() {
+  const { t } = useTranslation();
+  const { formatMoney } = useFormat();
+  const q = useOrgTransfers();
+  return (
+    <Card size="small" title={t("org.balance.historyTitle")}>
+      {q.isError ? (
+        <TableErrorEmpty isError compact onRetry={() => void q.refetch()} />
+      ) : (
+        <Table<BalanceTransferOut>
+          rowKey="uuid"
+          size="small"
+          loading={q.isLoading}
+          pagination={(q.data?.length ?? 0) > 20 ? { pageSize: 20 } : false}
+          scroll={{ x: 720 }}
+          dataSource={q.data ?? []}
+          locale={{ emptyText: t("org.balance.historyEmpty") }}
+          columns={[
+            { title: t("org.balance.colTime"), render: (_, r) => formatDateTime(r.created_at) },
+            {
+              title: t("org.balance.colKind"),
+              render: (_, r) =>
+                r.kind === "allocate" ? (
+                  <Tag color="green" variant="filled">
+                    {t("org.balance.allocate")}
+                  </Tag>
+                ) : (
+                  <Tag variant="filled">{t("org.balance.reclaim")}</Tag>
+                ),
+            },
+            { title: t("org.members.colMember"), render: (_, r) => r.member_label },
+            { title: t("org.balance.amount"), align: "right", render: (_, r) => formatMoney(r.amount) },
+            { title: t("org.balance.colBy"), render: (_, r) => r.actor_label },
+          ]}
+        />
+      )}
+    </Card>
+  );
+}
 
 /** Below a day of runway the row is flagged. */
 const LOW_HOURS = 24;
@@ -87,6 +128,7 @@ export function FinanceTab() {
           {t("org.finance.note")}
         </Typography.Paragraph>
       </Card>
+      <TransfersCard />
     </Space>
   );
 }

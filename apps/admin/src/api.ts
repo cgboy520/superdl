@@ -56,6 +56,8 @@ import {
   adminCreateImageApiAdminV1ImagesPost,
   adminCreateSkuApiAdminV1SkusPost,
   adminDeleteImageApiAdminV1ImagesImageIdDelete,
+  adminDeleteCustomImageApiAdminV1CustomImagesUuidDelete,
+  adminListCustomImagesApiAdminV1CustomImagesGet,
   adminImageNodesApiAdminV1ImagesImageIdNodesGet,
   adminListEnrollmentsApiAdminV1NodeEnrollmentsGet,
   adminListImagesApiAdminV1ImagesGet,
@@ -477,6 +479,18 @@ export function useAdminImages(options?: { refetchInterval?: number | false }) {
     refetchInterval: options?.refetchInterval,
   });
 }
+
+/** Images users uploaded (every state), optionally one user's. */
+export function useAdminCustomImages(params?: { user_id?: number }, options?: { refetchInterval?: number | false }) {
+  return useKeyedQuery(
+    ["admin", "custom-images", params ?? null],
+    () => adminListCustomImagesApiAdminV1CustomImagesGet(params),
+    { refetchInterval: options?.refetchInterval },
+  );
+}
+export const useAdminDeleteCustomImage = adminMutation((v: { uuid: string; reason: string }) =>
+  adminDeleteCustomImageApiAdminV1CustomImagesUuidDelete(v.uuid, { reason: v.reason }),
+);
 
 export function useImageNodes(imageId: number, options?: { refetchInterval?: number }) {
   return useQuery({

@@ -7,8 +7,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal, Protocol
 
-INSTANCE_DISK_STORAGE_CLASS = "topolvm-provisioner"
-DATA_DISK_STORAGE_CLASS = "superdl-cephfs"
+# Every tenant volume is a static PV of the external CephFS cluster mounted by ceph-csi's node
+# plugin (kernel client); the per-volume cephx key lives in a Secret next to the PVC.
+CEPH_CSI_DRIVER = "cephfs.csi.ceph.com"
+CEPH_CSI_NODEPLUGIN_SUFFIX = "cephfs-nodeplugin"
+CEPH_VOLUME_LABEL = "superdl.io/ceph-volume"
+# Organization storage objects in a member's namespace carry the mount uuid and its revision.
+ORG_MOUNT_LABEL = "superdl.io/org-mount"
+ORG_MOUNT_REV_LABEL = "superdl.io/org-mount-rev"
 
 WORKSPACE_CONTAINER = "workspace"
 STARTUP_PROBE_PERIOD_SECONDS = 10
@@ -76,13 +82,34 @@ def service_endpoint_service_name(instance_name: str) -> str:
 
 
 def instance_disk_pvc_name(instance_name: str) -> str:
-    """Name of the platform-managed instance disk PVC."""
+    """Name of the system-disk PVC (tenant namespace), mounted at /root."""
     return f"{instance_name}-root"
 
 
 def data_disk_pvc_name(disk_uuid: str) -> str:
     """Name of the data-disk PVC; the caller must pass a valid disk_uuid."""
     return f"disk-{disk_uuid}"
+
+
+def ceph_pv_name(subvolume: str) -> str:
+    """Cluster-scoped static PV of one subvolume (also its CSI volumeHandle)."""
+    return f"superdl-{subvolume}"
+
+
+def ceph_secret_name(subvolume: str) -> str:
+    """Secret holding the subvolume's cephx id and key (tenant namespace)."""
+    return f"ceph-{subvolume}"
+
+
+def org_mount_claim_name(mount_uuid: str, revision: int) -> str:
+    """PVC and node-stage Secret (same name) of one organization mount revision in a member's
+    namespace."""
+    return f"om-{mount_uuid}-r{revision}"
+
+
+def org_mount_pv_name(mount_uuid: str, revision: int, namespace: str) -> str:
+    """One static PV per (mount revision, namespace): a PV binds to a single claim."""
+    return f"superdl-om-{mount_uuid}-r{revision}-{namespace}"
 
 
 def netgw_object_name(gateway_uuid: str) -> str:
@@ -145,6 +172,37 @@ class NetgwAttach:
 
 
 @dataclass(frozen=True)
+class CephVolumeSpec:
+    """One static CephFS volume bound into a tenant namespace: Secret (userID / userKey), PV
+    (static, Retain, pre-bound to the PVC) and PVC. size_gb is nominal: the subvolume quota is the
+    real limit and the kernel client reports it as the file-system size."""
+
+    namespace: str
+    pvc_name: str
+    pv_name: str
+    secret_name: str
+    cluster_id: str
+    fs_name: str
+    root_path: str
+    client_id: str
+    client_key: str
+    size_gb: int
+    read_only: bool = False
+    mount_options: str = ""
+    labels: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PodVolumeMount:
+    """A PVC mounted into the workspace container besides the system disk (data disks,
+    organization storage)."""
+
+    pvc_name: str
+    mount_path: str
+    read_only: bool = False
+
+
+@dataclass(frozen=True)
 class InstancePodSpec:
     """K8s parameters of a tenant instance; sensitive environment variables go into secret_env,
     never into env."""
@@ -157,14 +215,14 @@ class InstancePodSpec:
     host_users: bool
     vcpu: int
     mem_gb: int
-    disk_gb: int
+    system_disk_pvc: str
     ssh_node_port: int | None
     jupyter_host: str
     env: dict[str, str] = field(default_factory=dict)
     secret_env: dict[str, str] = field(default_factory=dict)
     authorized_keys: tuple[str, ...] = ()
     node_selector: dict[str, str] = field(default_factory=dict)
-    data_disk_pvc: str | None = None
+    extra_mounts: tuple[PodVolumeMount, ...] = ()
     scheduler_name: str | None = None
     annotations: dict[str, str] = field(default_factory=dict)
     image_pull_secret: str | None = None
@@ -396,7 +454,7 @@ class ClusterProbe:
     cert_manager_ready: bool = False
     nodes_ready: int = 0
     nodes_total: int = 0
-    storage_classes: tuple[str, ...] = ()
+    ceph_csi_ready: bool = False
     pools: dict[str, int] = field(default_factory=dict)
     pools_ready: dict[str, int] = field(default_factory=dict)
     component_facts: dict[str, ComponentFacts] = field(default_factory=dict)
@@ -439,7 +497,8 @@ class K8sOrchestrator(Protocol):
         ...
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
-        """Create the instance disk, env Secret, Pod, Services and HTTPRoute, replay-safe.
+        """Create the env Secret, Pod, Services and HTTPRoute, replay-safe; every PVC the spec
+        names must exist already (ensure_ceph_volume).
 
         Secret and SSH port converge; a Pod / SSH Service that is being deleted must vanish before
         the retry.
@@ -448,15 +507,38 @@ class K8sOrchestrator(Protocol):
 
     async def delete_instance(self, namespace: str, name: str, *, force: bool = False) -> None:
         """Delete the instance Pod, Services, HTTPRoute and env Secret; missing objects are ignored,
-        the instance disk is kept.
+        volumes are kept.
         force=True deletes with zero grace period, only used when the node is lost.
         """
         ...
 
-    async def delete_instance_disk(self, namespace: str, name: str) -> None:
-        """Delete the instance disk PVC. Only on instance termination (release / reclamation /
-        creating timeout); never on stop, restart or pod_lost;
-        the call site must confirm the Pod is gone first. Missing = skipped."""
+    async def ensure_ceph_volume(self, spec: CephVolumeSpec) -> None:
+        """Create or converge the Secret, static PV and bound PVC of one CephFS volume
+        (idempotent; the Secret is overwritten so a rotated key lands)."""
+        ...
+
+    async def delete_ceph_volume(
+        self, namespace: str, *, pvc_name: str, pv_name: str, secret_name: str
+    ) -> None:
+        """Delete PVC, PV and Secret of one volume; missing objects count as success. A PVC still
+        mounted by a Pod finishes deleting when the Pod is gone (pvc-protection)."""
+        ...
+
+    async def pvc_exists(self, namespace: str, name: str) -> bool:
+        """Whether the PVC object still exists (terminating included): a deleted volume whose
+        PVC lingers is still mounted by some Pod."""
+        ...
+
+    async def delete_org_mount_volumes(
+        self,
+        *,
+        namespace: str | None = None,
+        mount_uuid: str | None = None,
+        keep_revision: int | None = None,
+    ) -> int:
+        """Delete organization mount objects (PVC, its same-named Secret, PV) in one namespace or
+        all of them, for one mount or every mount, except those of keep_revision; returns the
+        number of claims deleted. Claims still mounted finish when their Pod is gone."""
         ...
 
     async def get_status(self, namespace: str, name: str) -> PodStatus: ...
@@ -479,17 +561,6 @@ class K8sOrchestrator(Protocol):
 
     async def used_node_ports(self) -> set[int]:
         """NodePorts held by every Service in the cluster, non-platform objects included."""
-        ...
-
-    async def ensure_data_disk(self, namespace: str, name: str, size_gb: int) -> None:
-        """Create or grow the data-disk PVC (idempotent): create when missing, grow when smaller.
-        The PVC capacity is the hard quota, nothing else is applied. An unsupported grow raises for
-        the outbox to retry."""
-        ...
-
-    async def delete_data_disk(self, namespace: str, name: str) -> None:
-        """Delete the data-disk PVC (reclaimPolicy=Delete, the CSI destroys the subvolume).
-        Missing PVC or vanished ns count as success."""
         ...
 
     async def list_nodes(
@@ -609,3 +680,4 @@ class NodeInfo:
     driver_version_label: str = ""
     cuda_version_label: str = ""
     infra: bool = False
+    arch: str = ""

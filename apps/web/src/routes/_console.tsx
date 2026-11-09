@@ -6,12 +6,15 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Grid, Layout, theme } from "antd";
 
+import { useMe } from "../api/queries";
 import { CommandPalette } from "../components/CommandPalette";
+import { ForcedPasswordChange } from "../components/account/ChangePasswordModal";
 import { EmailClaimBanner } from "../components/layout/EmailClaimBanner";
 import { AppTopBar } from "../components/layout/AppTopBar";
 import { ConsoleNavMenu } from "../components/layout/ConsoleNavMenu";
 import { TopBarUser } from "../components/layout/TopBarUser";
 import { useGlobalHotkeys } from "../lib/useGlobalHotkeys";
+import { useIsLoggedIn } from "../stores/auth";
 import { useThemeMode } from "../stores/theme";
 
 export const Route = createFileRoute("/_console")({
@@ -23,6 +26,8 @@ function ConsoleLayout() {
   const { token } = theme.useToken();
   const mode = useThemeMode();
   const screens = Grid.useBreakpoint();
+  const loggedIn = useIsLoggedIn();
+  const { data: me } = useMe({ enabled: loggedIn });
   useGlobalHotkeys();
 
   return (
@@ -55,6 +60,7 @@ function ConsoleLayout() {
         </Layout>
       </Layout>
       <CommandPalette />
+      <ForcedPasswordChange required={loggedIn && me?.password_change_required === true} />
     </div>
   );
 }

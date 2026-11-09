@@ -141,9 +141,9 @@ export async function pickSharedStandardSku(page: Page): Promise<void> {
   await skuRow.getByRole("radio").check();
 }
 
-/** 填写自定义镜像并勾选 e2e 公钥,不提交表单。 */
+/** 在「镜像地址」页签填写镜像并勾选 e2e 公钥,不提交表单。 */
 export async function fillCustomImageForm(page: Page): Promise<void> {
-  await page.getByText("自定义镜像").click();
+  await page.getByRole("tab", { name: "镜像地址" }).click();
   await page.getByPlaceholder("registry.example.com/your/image:tag").fill("registry.superdl.local/pytorch:2.9.0-cu128");
   await page.getByRole("checkbox", { name: /e2e-key/ }).check();
 }

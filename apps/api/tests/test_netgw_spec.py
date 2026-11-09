@@ -310,7 +310,7 @@ class TestL3Objects:
             host_users=False,
             vcpu=1,
             mem_gb=1,
-            disk_gb=10,
+            system_disk_pvc=f"{INSTANCE_UUID}-root",
             ssh_node_port=31001,
             jupyter_host="x.app.example.com",
             netgw=attach,

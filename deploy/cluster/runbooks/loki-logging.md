@@ -9,7 +9,7 @@ RBAC: Alloy's ClusterRole has only read on pods / pods/log / namespaces / servic
 
 ## Retention (compliance baseline)
 
-- **Loki `retention_period: 4320h` (180 days)**, `values/loki.yaml` (compactor `retention_enabled`); disk 50Gi CephFS on the full tier, 10Gi TopoLVM on light.
+- **Loki `retention_period: 4320h` (180 days)**, `values/loki.yaml` (compactor `retention_enabled`); disk 50Gi on the full tier, 10Gi on light, both TopoLVM on the infra-storage nodes.
 - DB `audit_log` table: 365 days (`SUPERDL_AUDIT_RETENTION_DAYS`), the primary source of structured audit; Loki is the second retention path for request chains / exceptions / apiserver audit.
 
 ## Querying

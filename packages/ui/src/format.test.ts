@@ -19,6 +19,7 @@ import {
   formatPeriodPrice,
   formatReclaimCountdown,
   formatSizeGb,
+  formatBytes,
   formatSpotDiscount,
   maskHandle,
   minorUnitsOf,
@@ -201,6 +202,16 @@ describe("formatSizeGb", () => {
     expect(formatSizeGb(100)).toBe("100 GB");
     expect(formatSizeGb(1024)).toBe("1 TB");
     expect(formatSizeGb(1536)).toBe("1.5 TB");
+  });
+});
+
+describe("formatBytes", () => {
+  it("binary units, one decimal under 100, none for bytes", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(1023)).toBe("1023 B");
+    expect(formatBytes(1536 * 1024 * 1024)).toBe("1.5 GB");
+    expect(formatBytes(100 * 1024 ** 3)).toBe("100 GB");
+    expect(formatBytes(2 * 1024 ** 4)).toBe("2 TB");
   });
 });
 

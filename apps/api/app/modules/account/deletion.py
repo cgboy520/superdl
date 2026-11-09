@@ -15,7 +15,7 @@ from app.core.servercopy import copy as server_copy
 from app.core.timeutil import now_utc
 from app.modules.account.models import AccountDeletionRequest, User
 from app.modules.account.schemas import AdminDeletionRequestOut
-from app.modules.account.service import get_user
+from app.modules.account.service import get_user, scrub_deleted_account
 from app.modules.billing import service as billing_service
 from app.modules.orchestrator import queries as orchestrator_queries
 from app.modules.orgs import service as orgs_service
@@ -40,7 +40,10 @@ async def request_deletion(
     session: AsyncSession, user: User, *, handle: str, reason: str
 ) -> AccountDeletionRequest:
     """The retyped handle must be one of the account's own; the owner of an organization with
-    other members is refused; an existing pending request is returned unchanged."""
+    other members is refused, an account created by a tenant admin is deleted by its tenant; an
+    existing pending request is returned unchanged."""
+    if user.managed_org_id is not None:
+        raise conflict(key="account.deletionManaged")
     if handle not in (user.email, user.phone):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="account.deletionHandleMismatch")
     others = await orgs_service.owned_org_other_members(session, user.id)
@@ -254,17 +257,7 @@ async def approve_deletion(
         await session.commit()
         raise conflict(key="account.deletionOrgOwner", params={"members": others})
     await orgs_service.drop_deleted_user(session, user.id)
-    user.email = None
-    user.email_verified_at = None
-    user.phone = None
-    user.kyc_name = None
-    user.kyc_identity_masked = None
-    user.kyc_provider = None
-    user.kyc_ref = None
-    user.kyc_verified_at = None
-    user.kyc_status = "unverified"
-    user.token_version += 1
-    user.status = "deleted"
+    scrub_deleted_account(user)
     req.status = "completed"
     req.processed_by = admin_id
     req.processed_at = now_utc()

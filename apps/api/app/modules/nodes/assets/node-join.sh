@@ -7,7 +7,6 @@ STATE_DIR="${SUPERDL_JOIN_STATE_DIR:-/var/lib/superdl-node-join}"
 LOG_FILE="${SUPERDL_JOIN_LOG_FILE:-/var/log/superdl-node-join.log}"
 ETC_DIR="${SUPERDL_JOIN_ETC_DIR:-/etc}"
 RANCHER_STATE_DIR="${SUPERDL_JOIN_RANCHER_STATE_DIR:-/var/lib/rancher}"
-LVM_IMG_DIR="${SUPERDL_JOIN_LVM_DIR:-/var/lib/superdl-lvm}"
 IOMMU_GROUPS_DIR="${SUPERDL_JOIN_IOMMU_DIR:-/sys/kernel/iommu_groups}"
 OS_RELEASE_FILE="${SUPERDL_JOIN_OS_RELEASE:-/etc/os-release}"
 CPUINFO_FILE="${SUPERDL_JOIN_CPUINFO:-/proc/cpuinfo}"
@@ -67,8 +66,6 @@ if [[ "$UNINSTALL" == "1" ]]; then
   fi
   systemctl disable "${RESUME_UNIT}.service" 2>/dev/null || true
   rm -f "$ETC_DIR/systemd/system/${RESUME_UNIT}.service"
-  systemctl disable superdl-nvme-loop.service 2>/dev/null || true
-  rm -f "$ETC_DIR/systemd/system/superdl-nvme-loop.service"
   systemctl daemon-reload || true
   rm -f "$ETC_DIR/sysctl.d/99-superdl.conf"
   sysctl --system >/dev/null || true
@@ -87,7 +84,7 @@ if [[ "$UNINSTALL" == "1" ]]; then
   fi
   rm -rf "$STATE_DIR"
   echo "==== uninstall complete: agent removed; delete the node from the cluster on the platform side (kubectl delete node) ===="
-  echo "-- note: the superdl-nvme VG and loop image are business data and were left in place; NVIDIA driver / container-toolkit untouched"
+  echo "-- note: NVIDIA driver / container-toolkit untouched"
   exit 0
 fi
 
@@ -271,6 +268,8 @@ step_precheck() {
   check_kernel || return 1
   command -v python3 >/dev/null || { echo "python3 is missing"; return 1; }
   command -v systemctl >/dev/null || { echo "systemd is required"; return 1; }
+  # Instance storage is CephFS mounted by the host kernel (ceph-csi kernel mounter).
+  modinfo ceph >/dev/null 2>&1 || { echo "the kernel has no ceph module (CephFS client): install the distribution's extra kernel modules for $KERNEL_RELEASE"; return 1; }
   if is_cpu_pool; then
     echo "-- cpu pool: skipping NVIDIA GPU detection"
   else
@@ -392,74 +391,6 @@ step_nvidia_toolkit() {
     echo "-- this host is $SERVER_UNIT; restarting it to detect the nvidia runtime"
     systemctl restart "$SERVER_UNIT"
   fi
-}
-
-step_nvme_vg() {
-  local devices
-  devices="$(cfg_get nvme_devices)"
-  if [[ -z "$devices" ]]; then
-    echo "!! no NVMe devices registered: the superdl-nvme VG is not created, nothing guessed." \
-         "This node has no local instance-disk capability; for TopoLVM local disks, issue a new" \
-         "enrollment token with NVMe devices registered and rerun with --force."
-    report nvme_vg running \
-      "no NVMe devices registered: skipping the instance-disk VG (superdl-nvme), nothing guessed. No TopoLVM local instance disks on this node yet; issue a token with NVMe registered and rerun with --force to add them."
-    return 0
-  fi
-  step_lvm_discards
-  if vgs superdl-nvme >/dev/null 2>&1; then echo "-- VG already exists, skipping"; return 0; fi
-  local dev size pvs=()
-  for dev in $devices; do
-    if [[ "$dev" == loop:* ]]; then
-      size="${dev#loop:}"; size="${size%[Gg]}"
-      mkdir -p "$LVM_IMG_DIR"
-      [[ -f "$LVM_IMG_DIR/superdl-nvme.img" ]] || truncate -s "${size}G" "$LVM_IMG_DIR/superdl-nvme.img"
-      pvs+=("$(losetup --find --show "$LVM_IMG_DIR/superdl-nvme.img")")
-      _write_loop_unit
-      echo "-- per registration: loop file as the instance disk (${size}G; testing only, not dedicated-disk performance)"
-    else
-      if [[ ! -b "$dev" ]]; then
-        echo "!! NVMe device not found: $dev (wrong registration? check the node's NVMe registration in the admin console)" >&2
-        return 1
-      fi
-      if wipefs -n "$dev" 2>/dev/null | grep -q .; then
-        echo "!! $dev carries existing signatures (not an empty disk); refusing pvcreate:" >&2
-        wipefs -n "$dev" >&2
-        echo "!! once confirmed empty, run wipefs -a $dev and rerun; if a data disk was registered by mistake, fix the registration" >&2
-        return 1
-      fi
-      pvs+=("$dev")
-    fi
-  done
-  pvcreate -f "${pvs[@]}"
-  vgcreate superdl-nvme "${pvs[@]}"
-}
-
-step_lvm_discards() {
-  local conf="$ETC_DIR/lvm/lvm.conf"
-  if grep -q "^[[:space:]]*issue_discards[[:space:]]*=" "$conf" 2>/dev/null; then
-    echo "-- lvm.conf already sets issue_discards, skipping"
-    return 0
-  fi
-  mkdir -p "$ETC_DIR/lvm"
-  printf '\n# superdl: TRIM NVMe on instance-disk destruction (cross-tenant data remanence protection)\ndevices {\n    issue_discards = 1\n}\n' >> "$conf"
-}
-
-_write_loop_unit() {
-  cat > "$ETC_DIR/systemd/system/superdl-nvme-loop.service" <<EOF
-[Unit]
-Description=SuperDL TopoLVM loop-backed VG (superdl-nvme)
-DefaultDependencies=no
-After=local-fs.target
-Before=${AGENT_UNIT}
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/sbin/losetup --find $LVM_IMG_DIR/superdl-nvme.img
-[Install]
-WantedBy=local-fs.target
-EOF
-  systemctl daemon-reload
-  systemctl enable superdl-nvme-loop.service
 }
 
 maybe_reboot() {
@@ -677,7 +608,6 @@ run_step sysctl step_sysctl
 run_step iommu step_iommu
 run_step driver step_driver
 run_step nvidia_toolkit step_nvidia_toolkit
-run_step nvme_vg step_nvme_vg
 maybe_reboot
 run_step registries step_registries
 run_step agent_config step_agent_config

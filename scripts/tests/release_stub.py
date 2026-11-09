@@ -8,7 +8,7 @@ import sys
 
 WRITERS = (
     "superdl-api", "superdl-worker", "superdl-worker-tenant-mgr",
-    "superdl-worker-node-mgr", "superdl-worker-prewarm", "superdl-worker-disk-ops",
+    "superdl-worker-node-mgr", "superdl-worker-prewarm", "superdl-worker-image-ops",
 )
 DIGESTS = dict(zip(("api", "web", "admin"), ("sha256:" + c * 64 for c in "abc")))
 state_path = Path(os.environ["RELEASE_TEST_STATE"])

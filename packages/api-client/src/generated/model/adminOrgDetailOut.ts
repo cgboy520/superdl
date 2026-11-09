@@ -7,13 +7,19 @@
 import type { AdminOrgDetailOutStatus } from './adminOrgDetailOutStatus';
 import type { AdminOrgInvitationOut } from './adminOrgInvitationOut';
 import type { AdminOrgMemberOut } from './adminOrgMemberOut';
+import type { OrgMountOut } from './orgMountOut';
 
+/**
+ * mounts carry the Ceph path and user (never the key).
+ */
 export interface AdminOrgDetailOut {
+  code: string;
   created_at: string;
   dissolved_at: string | null;
   invitations: AdminOrgInvitationOut[];
   member_list: AdminOrgMemberOut[];
   members: number;
+  mounts: OrgMountOut[];
   name: string;
   owner_email_masked: string | null;
   owner_user_id: number | null;

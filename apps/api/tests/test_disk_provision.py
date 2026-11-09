@@ -1,4 +1,4 @@
-"""Data-disk PVC creation, growth and failure re-dispatch."""
+"""Data-disk subvolume creation, growth and failure re-dispatch."""
 
 from datetime import timedelta
 
@@ -6,16 +6,15 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select, update
 
-from app.core.k8s.base import data_disk_pvc_name
 from app.core.outbox import OutboxTask
 from app.core.timeutil import now_utc
-from tests.helpers import create_disk, create_user_with_key, drain, fund_wallet
+from tests.helpers import create_disk, create_user_with_key, data_disk_gb, drain, fund_wallet
 
 pytestmark = pytest.mark.usefixtures("fake")
 
 
 class TestProvisionDispatch:
-    async def test_expand_redispatches_new_capacity(self, client: AsyncClient, sm, fake):
+    async def test_expand_redispatches_new_capacity(self, client: AsyncClient, sm, fake, ceph):
         headers, user_id, _key = await create_user_with_key(client)
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers, size_gb=100)
@@ -33,16 +32,18 @@ class TestProvisionDispatch:
                 await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
             ).scalar_one()
             assert row.provisioned is True
-        assert fake.data_disks[(f"tenant-{user_id}", data_disk_pvc_name(disk["uuid"]))] == 200
+            assert row.ceph_path is not None
+        assert data_disk_gb(ceph, user_id, disk["uuid"]) == 200
+        assert (f"tenant-{user_id}", f"disk-{disk['uuid']}") in fake.ceph_volumes
 
 
 class TestProvisionFailureAndReconcile:
     async def test_failure_keeps_unprovisioned_then_retry_recovers(
-        self, client: AsyncClient, sm, fake
+        self, client: AsyncClient, sm, fake, ceph
     ):
         headers, user_id, _key = await create_user_with_key(client)
         await fund_wallet(sm, user_id)
-        fake.fail_next_disk = True
+        fake.fail_next_volume = True
         disk = await create_disk(client, headers, size_gb=100)
         await drain(sm)
         from app.modules.orchestrator.models import DataDisk
@@ -52,7 +53,8 @@ class TestProvisionFailureAndReconcile:
                 await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
             ).scalar_one()
             assert row.provisioned is False
-            assert fake.data_disks == {}
+            assert row.ceph_path is None
+            assert fake.ceph_volumes == {}
             await session.execute(
                 update(OutboxTask)
                 .where(OutboxTask.type == "disk.provision")
@@ -65,9 +67,10 @@ class TestProvisionFailureAndReconcile:
                 await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
             ).scalar_one()
             assert row.provisioned is True
-        assert fake.data_disks[(f"tenant-{user_id}", data_disk_pvc_name(disk["uuid"]))] == 100
+        assert data_disk_gb(ceph, user_id, disk["uuid"]) == 100
+        assert (f"tenant-{user_id}", f"disk-{disk['uuid']}") in fake.ceph_volumes
 
-    async def test_discarded_dead_letter_not_revived(self, client: AsyncClient, sm, fake):
+    async def test_discarded_dead_letter_not_revived(self, client: AsyncClient, sm, fake, ceph):
         """A manually discarded disk.provision is not revived by the reconcile loop: the reconciler
         re-dispatches dead only."""
         from app.modules.orchestrator.reconciler import reconcile_once
@@ -95,9 +98,10 @@ class TestProvisionFailureAndReconcile:
                 .all()
             )
         assert statuses == ["discarded"]
-        assert fake.data_disks == {}
+        assert fake.ceph_volumes == {}
+        assert ceph.subvolumes == {}
 
-    async def test_reconciler_redrives_dead_provision(self, client: AsyncClient, sm, fake):
+    async def test_reconciler_redrives_dead_provision(self, client: AsyncClient, sm, fake, ceph):
         """Provisioning dead letters older than 1 hour are re-dispatched (one task when none is in
         flight for the disk)."""
         from app.modules.orchestrator.models import DataDisk
@@ -122,4 +126,4 @@ class TestProvisionFailureAndReconcile:
         counts = await reconcile_once(sm)
         assert counts["provision_redriven"] == 1
         await drain(sm)
-        assert fake.data_disks[(f"tenant-{user_id}", data_disk_pvc_name(disk["uuid"]))] == 100
+        assert data_disk_gb(ceph, user_id, disk["uuid"]) == 100

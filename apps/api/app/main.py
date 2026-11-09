@@ -126,7 +126,13 @@ def create_app() -> FastAPI:
         allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Requested-With"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "X-Chunk-Sha256",
+            "X-Requested-With",
+        ],
         expose_headers=["X-Request-ID", "X-Idempotent-Replay"],
     )
     app.add_middleware(EdgeGuardMiddleware)
@@ -193,6 +199,7 @@ def _register_module_routers(app: FastAPI) -> None:
     from app.modules.billing.router import router as billing_router
     from app.modules.billing.webhooks_router import router as webhooks_router
     from app.modules.catalog.router import router as catalog_router
+    from app.modules.customimages.router import router as custom_images_router
     from app.modules.legal.router import router as legal_router
     from app.modules.metering.router import router as metering_router
     from app.modules.netgw.router import org_router as netgw_org_router, router as netgw_router
@@ -209,6 +216,7 @@ def _register_module_routers(app: FastAPI) -> None:
     app.include_router(catalog_router, prefix="/api/v1")
     app.include_router(orchestrator_router, prefix="/api/v1")
     app.include_router(disks_router, prefix="/api/v1")
+    app.include_router(custom_images_router, prefix="/api/v1")
     app.include_router(services_router, prefix="/api/v1")
     app.include_router(netgw_router, prefix="/api/v1")
     app.include_router(netgw_org_router, prefix="/api/v1")

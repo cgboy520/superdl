@@ -2,11 +2,13 @@
 The models.py of a new module must be imported here."""
 
 from app.core import audit, outbox, platform_config, ratelimit
+from app.core.ceph import status as ceph_status
 from app.core.db import Base
 from app.modules.account import models as account_models
 from app.modules.adminapi import models as adminapi_models
 from app.modules.billing import models as billing_models
 from app.modules.catalog import models as catalog_models
+from app.modules.customimages import models as customimages_models
 from app.modules.legal import models as legal_models
 from app.modules.metering import models as metering_models
 from app.modules.netgw import models as netgw_models
@@ -24,6 +26,8 @@ __all__ = [
     "audit",
     "billing_models",
     "catalog_models",
+    "ceph_status",
+    "customimages_models",
     "legal_models",
     "metering_models",
     "netgw_models",

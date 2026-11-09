@@ -7,6 +7,12 @@
 
 export interface DiskCreate {
   /**
+     * Mount point inside every instance of the user: /data, /data<suffix>, /workspace<suffix> or /mnt/<name> (not /mnt/org)
+     * @minLength 2
+     * @maxLength 64
+     */
+  mount_path?: string;
+  /**
      * @minLength 1
      * @maxLength 64
      */

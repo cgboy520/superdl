@@ -46,7 +46,7 @@ class BalanceLedger(Base):
         CheckConstraint(
             "ref_type IS NULL OR ref_type IN"
             " ('bill_hourly', 'bill_daily_disk', 'order', 'adjustment', 'refund_request',"
-            " 'subscription')",
+            " 'subscription', 'org_transfer')",
             name="ref_type",
         ),
         Index("ix_balance_ledger_user_id_id", "user_id", "id"),

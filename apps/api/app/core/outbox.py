@@ -269,22 +269,35 @@ async def process_one(
     return await _process_one(sm, worker_id, task_types) is not None
 
 
+def running_timeout(task_type: str) -> timedelta:
+    """How long a task may stay claimed before the reaper revives it: twice its handler timeout,
+    never below RUNNING_TIMEOUT."""
+    policy = retry_policy_for(task_type)
+    return max(RUNNING_TIMEOUT, timedelta(seconds=2 * (policy.timeout_seconds or 0)))
+
+
 async def reap_stuck_running(sm: async_sessionmaker[AsyncSession]) -> int:
     """Return timed-out running tasks to pending (scheduled job); a revival counts one failure, an
     exhausted budget goes dead."""
+    now = now_utc()
     async with sm() as session:
-        rows = list(
+        candidates = list(
             (
                 await session.execute(
                     select(OutboxTask)
                     .where(
                         OutboxTask.status == "running",
-                        OutboxTask.locked_at < now_utc() - RUNNING_TIMEOUT,
+                        OutboxTask.locked_at < now - RUNNING_TIMEOUT,
                     )
                     .with_for_update(skip_locked=True)
                 )
             ).scalars()
         )
+        rows = [
+            t
+            for t in candidates
+            if t.locked_at is not None and ensure_utc(t.locked_at) < now - running_timeout(t.type)
+        ]
         for task in rows:
             policy = retry_policy_for(task.type)
             attempt = task.retries + 1

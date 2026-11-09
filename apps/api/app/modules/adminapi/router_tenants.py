@@ -115,6 +115,7 @@ async def admin_list_tenants(
                 id=u.id,
                 email_masked=mask_handle(u.email) if u.email else None,
                 phone_masked=mask_handle(u.phone) if u.phone else None,
+                username=u.username,
                 status=u.status,
                 balance=money_str(as_amount(balances.get(u.id, 0))),
                 total_consumed=money_str(as_amount(consumed.get(u.id, 0))),

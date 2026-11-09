@@ -24,6 +24,8 @@ class LockKey(IntEnum):
     SUBSCRIPTION_PATROL = 1013
     PLATFORM_CONFIG_WRITE = 1014
     NETGW_PATROL = 1015
+    STORAGE_PATROL = 1016
+    CUSTOM_IMAGE_PATROL = 1017
 
 
 @asynccontextmanager

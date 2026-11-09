@@ -31,6 +31,7 @@ import {
 } from "../api/mutations";
 import { useMe, useMyDeletionRequest, usePolicies, useSiteConfig, useSshKeys } from "../api/queries";
 import { WarnThresholdField } from "../components/WarnThresholdField";
+import { ChangePasswordModal } from "../components/account/ChangePasswordModal";
 import { requireAuth } from "../lib/guard";
 import { useHashScroll } from "../lib/useHashScroll";
 import { CodeField } from "../components/CodeField";
@@ -70,7 +71,7 @@ function SettingsPage() {
   const { data: me } = meQ;
   const { data: policies } = usePolicies();
   const siteQ = useSiteConfig();
-  const kycAvailable = kycTabAvailable(siteQ.isSuccess, siteQ.data?.kyc_form);
+  const kycAvailable = kycTabAvailable(siteQ.isSuccess, siteQ.data?.kyc_form) && !me?.managed;
   useHashScroll({ highlight: true });
   const requested: SettingsTab = tab ?? tabOfHash(hash) ?? "ssh";
   const activeTab: SettingsTab = requested === "realname" && !kycAvailable ? "ssh" : requested;
@@ -218,12 +219,14 @@ function SshTab() {
   );
 }
 
-/** Account tab: email / phone handles (add, change, remove phone) / set or change password /
- *  log out (L0) / log out everywhere (L2) / danger zone deletion. */
+/** Account tab: tenant username (accounts a tenant created) / email / phone handles (add, change,
+ *  remove phone) / change the password with the current one or reset it with a code / log out (L0) /
+ *  log out everywhere (L2) / danger zone deletion (not for tenant-created accounts). */
 function AccountTab({ me }: { me: UserOut | undefined }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const [pwdOpen, setPwdOpen] = useState(false);
+  const [changeOpen, setChangeOpen] = useState(false);
   const [handleKind, setHandleKind] = useState<"email" | "phone" | null>(null);
   const logout = useLogout();
   const confirm = useConfirm();
@@ -242,6 +245,17 @@ function AccountTab({ me }: { me: UserOut | undefined }) {
         <Space orientation="vertical" size={space.md}>
           {me ? (
             <>
+              {me.username && (
+                <Space size={space.sm} wrap>
+                  <Typography.Text>{t("settings.usernameLine")}</Typography.Text>
+                  <Typography.Text code>{me.username}</Typography.Text>
+                  {me.managed && (
+                    <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                      {t("settings.managedNote")}
+                    </Typography.Text>
+                  )}
+                </Space>
+              )}
               <Space size={space.sm} wrap>
                 <Typography.Text>
                   {me.email ? t("settings.emailLine", { email: maskHandle(me.email) }) : t("settings.noEmail")}
@@ -283,8 +297,13 @@ function AccountTab({ me }: { me: UserOut | undefined }) {
           ) : (
             <Skeleton.Input active size="small" style={{ width: 200 }} />
           )}
-          <Space>
-            <Button onClick={() => setPwdOpen(true)}>{t("settings.changePassword")}</Button>
+          <Space wrap>
+            <Button onClick={() => setChangeOpen(true)}>{t("settings.changePassword")}</Button>
+            {primary && (
+              <Button type="link" onClick={() => setPwdOpen(true)}>
+                {t("settings.resetWithCode")}
+              </Button>
+            )}
             <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
               {t("settings.changePasswordHint")}
             </Typography.Text>
@@ -309,7 +328,12 @@ function AccountTab({ me }: { me: UserOut | undefined }) {
           <Button onClick={() => void logout()}>{t("settings.logout")}</Button>
         </Space>
       </Card>
-      <DeletionZone handle={primary} />
+      {me?.managed ? (
+        <Typography.Text type="secondary">{t("settings.managedDeletionNote")}</Typography.Text>
+      ) : (
+        <DeletionZone handle={primary} />
+      )}
+      <ChangePasswordModal open={changeOpen} onClose={() => setChangeOpen(false)} />
       <PasswordModal open={pwdOpen} handle={primary} onClose={() => setPwdOpen(false)} />
       <HandleModal kind={handleKind} dialCodes={site?.phone_dial_codes ?? []} onClose={() => setHandleKind(null)} />
     </Space>
@@ -402,7 +426,7 @@ function PasswordModal({ open, handle, onClose }: { open: boolean; handle: strin
 
   return (
     <Modal
-      title={t("settings.changePassword")}
+      title={t("settings.resetWithCode")}
       open={open}
       onCancel={onClose}
       okText={t("settings.savePassword")}

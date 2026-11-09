@@ -112,7 +112,6 @@ class InstanceCreate(BaseModel):
     image_ref: str = Field(min_length=1, max_length=256)
     ssh_key_ids: list[int] = Field(min_length=1, max_length=MAX_SSH_KEYS_PER_REQUEST)
     name: str | None = Field(default=None, max_length=64)
-    data_disk_id: int | None = None
 
     market: Literal["on_demand", "subscription", "spot"] = MARKET_ON_DEMAND
     period: Literal["day", "week", "month", "year"] | None = None
@@ -143,7 +142,16 @@ class InstanceOut(BaseModel):
     ssh_port: int | None
     service_slug: str | None = None
     service_revision: int | None = None
-    data_disk_id: int | None
+    data_disk_ids: list[int] = Field(
+        default_factory=list,
+        description="Data disks the instance's current (or next) Pod mounts, each at its mount"
+        " point",
+    )
+    system_disk_bytes_used: int | None = Field(
+        default=None,
+        description="Bytes stored on the system disk (size = spec.disk_gb), refreshed by the"
+        " storage patrol",
+    )
     frozen_deadline: datetime | None
     created_at: datetime
 

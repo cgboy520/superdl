@@ -7,10 +7,16 @@
 import type { AdminOrgMemberOutRole } from './adminOrgMemberOutRole';
 import type { AdminOrgMemberOutStatus } from './adminOrgMemberOutStatus';
 
+/**
+ * managed = created by the tenant (signs in with username, no email).
+ */
 export interface AdminOrgMemberOut {
   email_masked: string;
   joined_at: string;
+  login_disabled?: boolean;
+  managed?: boolean;
   role: AdminOrgMemberOutRole;
   status: AdminOrgMemberOutStatus;
   user_id: number;
+  username?: string | null;
 }

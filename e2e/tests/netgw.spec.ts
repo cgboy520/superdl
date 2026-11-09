@@ -50,7 +50,10 @@ test("private network gateway lifecycle", async ({ page }) => {
   const confirm = page.getByRole("dialog", { name: "删除私网网关" });
   await confirm.getByRole("textbox").fill("corp");
   await confirm.getByRole("button", { name: "确认删除" }).click();
-  await expect(page.getByRole("row", { name: /corp/ })).toContainText("删除中");
+  // The deleting row, or the empty list once the teardown already finished.
+  await expect(
+    page.getByRole("row", { name: /corp/ }).filter({ hasText: "删除中" }).or(page.getByText("还没有私网网关")),
+  ).toBeVisible();
 });
 
 test("private network whole-subnet access: attach and detach an instance", async ({ page }) => {

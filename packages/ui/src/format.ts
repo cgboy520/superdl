@@ -398,6 +398,19 @@ export function formatSizeGb(gb: number): string {
   return `${gb} GB`;
 }
 
+/** Byte count → "512 MB" / "12.5 GB" / "1.2 TB" (binary units, the same GB as formatSizeGb). */
+export function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let value = Math.max(0, bytes);
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  const text = unit === 0 || value >= 100 ? String(Math.round(value)) : String(Number(value.toFixed(1)));
+  return `${text} ${units[unit]}`;
+}
+
 /** Mask a login handle the way the API does: email → first local-part character + `***@domain`;
  *  phone (E.164 or bare digits) → first 3 + `****` + last 4; anything else → `***`. */
 export function maskHandle(handle: string | null | undefined): string {

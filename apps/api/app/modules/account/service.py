@@ -1,10 +1,11 @@
+import re
 import secrets
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from fastapi import status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +13,7 @@ from app.core.compliance import current_profile
 from app.core.config import get_settings
 from app.core.crypto import hash_kyc_identity_candidates
 from app.core.errors import AppError, ErrorCode, conflict, not_found, unauthorized
-from app.core.handles import Handle, mask_handle, ratelimit_key
+from app.core.handles import USERNAME_RE, Handle, mask_handle, ratelimit_key
 from app.core.locale import DEFAULT_LOCALE, Locale
 from app.core.logging import get_logger
 from app.core.loginguard import LoginBucket, login_attempt, login_failed, login_succeeded
@@ -50,6 +51,7 @@ from app.modules.account.schemas import TokenPair, UserOut
 from app.modules.legal import service as legal_service
 
 logger = get_logger(__name__)
+_USERNAME = re.compile(USERNAME_RE)
 
 REFRESH_REPLAY_GRACE_SECONDS = 10.0
 
@@ -75,6 +77,13 @@ def _issue_tokens(
     )
 
 
+def _require_contact(handle: Handle) -> None:
+    """Codes travel by email or SMS: a tenant username has neither channel (its tenant's admins
+    reset the password)."""
+    if handle.kind == "username":
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="account.usernameNoCode")
+
+
 async def send_verification_code(
     session: AsyncSession,
     handle: Handle,
@@ -84,6 +93,7 @@ async def send_verification_code(
     captcha_token: str | None = None,
     locale: Locale = DEFAULT_LOCALE,
 ) -> None:
+    _require_contact(handle)
     await verification.send_code(
         session, handle, purpose, client_ip=client_ip, captcha_token=captcha_token, locale=locale
     )
@@ -92,8 +102,8 @@ async def send_verification_code(
 async def _user_by_handle(
     session: AsyncSession, handle: Handle, *, for_update: bool = False
 ) -> User | None:
-    column = User.email if handle.kind == "email" else User.phone
-    stmt = select(User).where(column == handle.value)
+    columns = {"email": User.email, "phone": User.phone, "username": User.username}
+    stmt = select(User).where(columns[handle.kind] == handle.value)
     if for_update:
         stmt = stmt.with_for_update()
     return (await session.execute(stmt)).scalar_one_or_none()
@@ -211,6 +221,7 @@ async def _verify_credentials(
     _LoginFailed (indistinguishable to the caller)."""
     user = await _user_by_handle(session, handle)
     if code is not None:
+        _require_contact(handle)
         try:
             await verification.consume_code(session, handle, code, "login")
         except AppError as exc:
@@ -288,6 +299,12 @@ async def login(
         raise AppError(
             ErrorCode.USER_FROZEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
         )
+    if user.login_disabled:
+        raise AppError(
+            ErrorCode.USER_FROZEN,
+            key="account.loginDisabled",
+            http_status=status.HTTP_403_FORBIDDEN,
+        )
     return _issue_tokens(user)
 
 
@@ -302,6 +319,7 @@ async def reset_password(
     """Set a new password with a verification code (first set, change and recovery share this
     path). The code is checked before the account row is locked; success bumps token_version,
     revoking every other session, and issues a fresh token pair."""
+    _require_contact(handle)
     await check_rate_limit(
         f"password-reset:{client_ip or '-'}:{ratelimit_key(handle.value)}",
         max_attempts=5,
@@ -322,11 +340,82 @@ async def reset_password(
             ErrorCode.USER_FROZEN, key="account.userFrozen", http_status=status.HTTP_403_FORBIDDEN
         )
     user.password_hash = await hash_password(new_password)
+    user.password_change_required = False
     user.token_version += 1
     await session.commit()
     await session.refresh(user)
     logger.info("password_reset", user_id=user.id)
     return _issue_tokens(user)
+
+
+async def change_password(
+    session: AsyncSession, user: User, current_password: str, new_password: str
+) -> TokenPair:
+    """Signed-in change with the current password (the only way for a tenant username, which
+    has no code channel). Bumps token_version (other sessions end) and issues a fresh pair."""
+    await check_rate_limit(f"password-change:{user.id}", max_attempts=10, window_seconds=3600.0)
+    locked = await session.get(User, user.id, with_for_update=True)
+    assert locked is not None
+    stored = locked.password_hash or dummy_password_hash()
+    if locked.password_hash is None or not await verify_password(current_password, stored):
+        await session.rollback()
+        raise AppError(ErrorCode.VALIDATION_ERROR, key="account.currentPasswordWrong")
+    locked.password_hash = await hash_password(new_password)
+    locked.password_change_required = False
+    locked.token_version += 1
+    await session.commit()
+    await session.refresh(locked)
+    logger.info("password_changed", user_id=locked.id)
+    return _issue_tokens(locked)
+
+
+async def create_managed_user(
+    session: AsyncSession, *, username: str, password_hash: str, org_id: int
+) -> User:
+    """An account created by a tenant admin: signs in with its username, must set its own password
+    at first sign-in, skips identity verification; no commit (the caller owns the transaction and
+    turns a username collision into a conflict)."""
+    user = User(
+        username=username,
+        managed_org_id=org_id,
+        password_hash=password_hash,
+        password_change_required=True,
+    )
+    session.add(user)
+    await session.flush()
+    return user
+
+
+async def set_managed_password(user: User, password: str) -> None:
+    """Tenant admin reset: new password, every session ends, the user picks a new one at next
+    sign-in. No commit."""
+    user.password_hash = await hash_password(password)
+    user.password_change_required = True
+    user.token_version += 1
+
+
+def set_login_disabled(user: User, disabled: bool) -> None:
+    """Tenant admin switch; disabling ends every session at once. No commit."""
+    if disabled and not user.login_disabled:
+        user.token_version += 1
+    user.login_disabled = disabled
+
+
+def scrub_deleted_account(user: User) -> None:
+    """Mark the account deleted: clear every handle and the KYC name / masked identity, end every
+    session; the identity digest and bills are kept. No commit."""
+    user.email = None
+    user.email_verified_at = None
+    user.phone = None
+    user.username = None
+    user.kyc_name = None
+    user.kyc_identity_masked = None
+    user.kyc_provider = None
+    user.kyc_ref = None
+    user.kyc_verified_at = None
+    user.kyc_status = "unverified"
+    user.token_version += 1
+    user.status = "deleted"
 
 
 async def request_handle_code(
@@ -339,6 +428,7 @@ async def request_handle_code(
 ) -> None:
     """Code for binding / replacing a handle on a signed-in account (no CAPTCHA); a phone must
     satisfy the compliance profile's dial-code rule."""
+    _require_contact(handle)
     if handle.kind == "phone":
         _check_phone_policy(handle.value)
     logger.info("handle_code_requested", user_id=user.id, kind=handle.kind)
@@ -354,6 +444,7 @@ async def request_handle_code(
 
 async def confirm_handle(session: AsyncSession, user: User, handle: Handle, code: str) -> User:
     """Consume the bind code, then set the handle if no other account owns it (409 otherwise)."""
+    _require_contact(handle)
     await verification.consume_code(session, handle, code, "bind_handle")
     owner = await _user_by_handle(session, handle)
     if owner is not None and owner.id != user.id:
@@ -601,6 +692,64 @@ async def user_statuses(session: AsyncSession, user_ids: Iterable[int]) -> dict[
     return dict(rows.all())
 
 
+@dataclass(frozen=True)
+class AccountProfile:
+    """What a tenant's member list shows about an account."""
+
+    email: str | None
+    username: str | None
+    managed_org_id: int | None
+    login_disabled: bool
+    status: str
+
+
+async def profiles_by_user(
+    session: AsyncSession, user_ids: Iterable[int]
+) -> dict[int, AccountProfile]:
+    """user_id → profile; unknown ids are absent."""
+    ids = list(user_ids)
+    if not ids:
+        return {}
+    rows = await session.execute(
+        select(
+            User.id,
+            User.email,
+            User.username,
+            User.managed_org_id,
+            User.login_disabled,
+            User.status,
+        ).where(User.id.in_(ids))
+    )
+    return {r[0]: AccountProfile(*r[1:]) for r in rows.all()}
+
+
+async def managed_account_count(session: AsyncSession, org_id: int) -> int:
+    """Accounts a tenant created that are not deleted."""
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.managed_org_id == org_id, User.status != "deleted")
+        )
+        or 0
+    )
+
+
+async def lock_user(session: AsyncSession, user_id: int) -> User:
+    user = await session.get(User, user_id, with_for_update=True, populate_existing=True)
+    if user is None:
+        raise not_found(key="account.userNotFound")
+    return user
+
+
+async def username_taken(session: AsyncSession, usernames: Iterable[str]) -> list[str]:
+    names = list(usernames)
+    if not names:
+        return []
+    rows = await session.scalars(select(User.username).where(User.username.in_(names)))
+    return sorted(n for n in rows.all() if n)
+
+
 async def emails_by_user(session: AsyncSession, user_ids: Iterable[int]) -> dict[int, str | None]:
     """user_id → email (None once removed or anonymised); unknown ids are absent."""
     ids = list(user_ids)
@@ -621,7 +770,10 @@ async def active_user_id_by_verified_email(session: AsyncSession, email: str) ->
 
 async def require_real_name_if_required(session: AsyncSession, user: User, *, key: str) -> None:
     """With real_name_required_for_recharge=true, unverified users get 403 — only when the
-    compliance profile offers a KYC form (no form, no gate)."""
+    compliance profile offers a KYC form (no form, no gate). Accounts created by a tenant admin
+    are vouched for by their tenant and never gated."""
+    if user.managed_org_id is not None:
+        return
     cfg = await get_runtime_config(session)
     if (
         cfg.real_name_required_for_recharge
@@ -674,10 +826,11 @@ async def admin_list_users(
     limit: int | None = None,
     order: str = "desc",
 ) -> RawPage[User]:
-    """Tenants by id cursor; order='asc' ascending, otherwise descending.
+    """Users by id cursor; order='asc' ascending, otherwise descending.
 
     q (trimmed): containing `@` → exact email; starting with `+` → exact E.164 phone; digits →
-    phone suffix; anything else → email prefix.
+    phone suffix; a tenant username (<code>.<name>) → that account or the email prefix; anything
+    else → email prefix.
     """
     lim = clamp_limit(limit)
     ascending = order == "asc"
@@ -692,6 +845,13 @@ async def admin_list_users(
             stmt = stmt.where(User.phone == q)
         elif q.isdigit():
             stmt = stmt.where(User.phone.like(f"%{like_escape(q)}", escape="\\"))
+        elif _USERNAME.fullmatch(q.lower()):
+            stmt = stmt.where(
+                or_(
+                    User.username == q.lower(),
+                    User.email.like(f"{like_escape(q.lower())}%", escape="\\"),
+                )
+            )
         else:
             stmt = stmt.where(User.email.like(f"{like_escape(q.lower())}%", escape="\\"))
     last_id = decode_cursor_int(cursor)

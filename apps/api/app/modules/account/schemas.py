@@ -59,12 +59,27 @@ class UserOut(BaseModel):
     email: str | None
     email_verified_at: datetime | None
     phone: str | None
+    username: str | None = Field(
+        default=None, description="Sign-in name of an account created by a tenant admin"
+    )
+    managed: bool = Field(
+        default=False,
+        description="Created by a tenant admin: no identity verification, managed by the tenant",
+    )
+    password_change_required: bool = False
     status: str
     low_balance_warn_hours: int
     kyc_status: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class PasswordChange(BaseModel):
+    """Change the password of the signed-in account with the current one."""
+
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: PasswordStr
 
 
 class TokenPair(BaseModel):

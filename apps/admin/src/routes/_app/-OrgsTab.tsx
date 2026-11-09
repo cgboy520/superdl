@@ -93,7 +93,7 @@ export function OrgsTab() {
               <Space orientation="vertical" size={0}>
                 <span>{o.name}</span>
                 <Typography.Text type="secondary">
-                  <Mono truncate={8}>{o.uuid}</Mono>
+                  <Mono>{o.code}</Mono> · <Mono truncate={8}>{o.uuid}</Mono>
                 </Typography.Text>
               </Space>
             ),

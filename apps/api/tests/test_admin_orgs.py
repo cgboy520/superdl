@@ -33,6 +33,38 @@ class TestAdminOrgs:
         assert all("***@" in m["email_masked"] for m in detail["member_list"])
         assert org_email(1) not in str(detail)
 
+    async def test_detail_shows_code_created_accounts_and_mounts_without_the_key(
+        self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
+    ):
+        """Fails when admins cannot tell created accounts or the tenant's storage apart, or when
+        the cephx key leaks into the admin view."""
+        owner, _ = await org_user(client, 1)
+        uuid = (await create_org(client, owner, "Acme Lab", code="acme"))["org"]["uuid"]
+        created = await client.post("/api/v1/org/users", json={"names": ["alice"]}, headers=owner)
+        assert created.status_code == 201, created.text
+        key = "AQDorgSecretKeyForTestsOnly0123456789=="
+        mount = await client.post(
+            "/api/v1/org/mounts",
+            json={
+                "name": "datasets",
+                "ceph_path": "/volumes/team/datasets",
+                "ceph_user": "client.team-a",
+                "ceph_key": key,
+            },
+            headers=owner,
+        )
+        assert mount.status_code == 201, mount.text
+        admin = await admin_headers(sm, client, "readonly")
+        page = (await client.get("/api/admin/v1/orgs", params={"q": "acme"}, headers=admin)).json()
+        assert [(o["uuid"], o["code"]) for o in page["items"]] == [(uuid, "acme")]
+        detail = (await client.get(f"/api/admin/v1/orgs/{uuid}", headers=admin)).json()
+        managed = [m for m in detail["member_list"] if m["managed"]]
+        assert [m["username"] for m in managed] == ["acme.alice"]
+        assert [(m["mount_path"], m["ceph_user"]) for m in detail["mounts"]] == [
+            ("/mnt/org/datasets", "team-a")
+        ]
+        assert key not in str(detail)
+
     async def test_dissolve_and_remove(
         self, client: AsyncClient, sm: async_sessionmaker[AsyncSession]
     ):

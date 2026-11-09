@@ -45,8 +45,32 @@ spec:
         (request.resource.group == '' && request.resource.resource == 'namespaces') ||
         (has(request.namespace) &&
          (request.namespace in ['superdl', 'superdl-netgw'] || request.namespace.startsWith('tenant-'))) ||
-        (!has(request.namespace) && request.resource.group == '' && request.resource.resource == 'nodes')
-      message: "platform SA writes are limited to the superdl/superdl-netgw/tenant-* namespaces and nodes"
+        (!has(request.namespace) && request.resource.group == '' &&
+         request.resource.resource in ['nodes', 'persistentvolumes'])
+      message: "platform SA writes are limited to the superdl/superdl-netgw/tenant-* namespaces, nodes and persistentvolumes"
+    # Tenant volumes are static PVs of the external CephFS cluster; a PV is the one cluster-scoped
+    # object that could hand a tenant Pod host storage or another namespace's Secret, so only this
+    # exact shape is writable.
+    - expression: >-
+        !(request.resource.group == '' && request.resource.resource == 'persistentvolumes') ||
+        request.operation == 'DELETE' ||
+        (has(object.spec.csi) && object.spec.csi.driver == 'cephfs.csi.ceph.com' &&
+         has(object.spec.csi.volumeAttributes) &&
+         'staticVolume' in object.spec.csi.volumeAttributes &&
+         object.spec.csi.volumeAttributes['staticVolume'] == 'true' &&
+         has(object.spec.csi.nodeStageSecretRef) &&
+         object.spec.csi.nodeStageSecretRef.namespace.startsWith('tenant-') &&
+         !has(object.spec.csi.nodePublishSecretRef) && !has(object.spec.csi.controllerPublishSecretRef) &&
+         !has(object.spec.csi.controllerExpandSecretRef) && !has(object.spec.csi.nodeExpandSecretRef) &&
+         has(object.spec.claimRef) && object.spec.claimRef.namespace == object.spec.csi.nodeStageSecretRef.namespace &&
+         has(object.spec.persistentVolumeReclaimPolicy) && object.spec.persistentVolumeReclaimPolicy == 'Retain')
+      message: "platform SAs may only write static CephFS PVs (cephfs.csi.ceph.com, Retain) whose node-stage Secret and claim live in the same tenant-* namespace"
+    - expression: >-
+        !(request.resource.group == '' && request.resource.resource == 'persistentvolumes') ||
+        request.operation != 'DELETE' ||
+        (has(oldObject.metadata.labels) && 'superdl.io/managed' in oldObject.metadata.labels &&
+         oldObject.metadata.labels['superdl.io/managed'] == 'true')
+      message: "platform SAs may only delete PVs labelled superdl.io/managed=true"
     - expression: >-
         !(request.resource.group == 'rbac.authorization.k8s.io' &&
           (request.resource.resource == 'roles' || request.resource.resource == 'rolebindings')) ||
@@ -276,7 +300,7 @@ spec:
       matchExpressions:
         - key: kubernetes.io/metadata.name
           operator: NotIn
-          values: ["kube-system", "gpu-operator", "monitoring", "envoy-gateway-system", "topolvm-system", "rook-ceph"]
+          values: ["kube-system", "gpu-operator", "monitoring", "envoy-gateway-system", "topolvm-system", "ceph-csi-cephfs"]
     resourceRules:
       - apiGroups: [""]
         apiVersions: ["*"]

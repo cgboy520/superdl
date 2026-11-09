@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface DiskExpand {
-  /** @minimum 1 */
-  size_gb: number;
+export interface CustomImageUpdate {
+  description?: string | null;
+  shared_with_org?: boolean | null;
 }

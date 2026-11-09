@@ -4,7 +4,6 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode
 from app.core.k8s import (
@@ -12,7 +11,6 @@ from app.core.k8s import (
     ensure_registry_pull_secret,
     get_orchestrator,
 )
-from app.core.k8s.base import data_disk_pvc_name
 from app.core.logging import get_logger
 from app.core.money import hourly_cost
 from app.core.outbox import OutboxTask, RetryPolicy, outbox_handler
@@ -25,6 +23,13 @@ from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent
 from app.modules.orchestrator.ports import block_port, ensure_port
 from app.modules.orchestrator.queries import lock_instance
 from app.modules.orchestrator.service import build_pod_spec_with_cluster
+from app.modules.orchestrator.storage import (
+    ensure_data_volume,
+    ensure_system_volume,
+    release_data_volume,
+    release_system_volume,
+    tenant_namespace,
+)
 from app.modules.orchestrator.transitions import transition
 
 logger = get_logger(__name__)
@@ -45,6 +50,7 @@ async def _create_with_port_recovery(session: AsyncSession, instance: Instance) 
         instance.ssh_port = await ensure_port(session, instance)
     await orch.ensure_namespace(instance.k8s_namespace)
     pull_secret = await ensure_registry_pull_secret(session, instance.k8s_namespace)
+    await ensure_system_volume(session, instance)
     try:
         await orch.create_instance(
             await build_pod_spec_with_cluster(session, instance, image_pull_secret=pull_secret)
@@ -206,46 +212,41 @@ async def handle_release(session: AsyncSession, task: OutboxTask) -> None:
 
 @outbox_handler("instance.disk_cleanup", retry=RetryPolicy(max_retries=12, backoff_base_seconds=30))
 async def handle_instance_disk_cleanup(session: AsyncSession, task: OutboxTask) -> None:
-    """Deferred instance-disk reclamation (FAILED after a first_boot failure / RELEASED wrap-up):
-    raise for retry while the Pod still exists;
-    dead letters are re-dispatched by the reconciler."""
+    """Deferred system-disk reclamation (FAILED after a first_boot failure / RELEASED wrap-up):
+    raise for retry while the Pod still exists; dead letters are re-dispatched by the reconciler.
+    A failed instance started again later gets a fresh, empty system disk."""
     instance = await _load(session, task)
     if instance is None or instance.status not in (sm_def.FAILED, sm_def.RELEASED):
         return
-    orch = get_orchestrator()
-    st = await orch.get_status(instance.k8s_namespace, instance.uuid)
+    st = await get_orchestrator().get_status(instance.k8s_namespace, instance.uuid)
     if st.exists:
         raise RuntimeError(f"pod {instance.uuid} still exists; disk cleanup resumes on retry")
-    await orch.delete_instance_disk(instance.k8s_namespace, instance.uuid)
+    await release_system_volume(session, instance)
 
 
 @outbox_handler("disk.provision", retry=RetryPolicy(max_retries=8, backoff_base_seconds=30))
 async def handle_disk_provision(session: AsyncSession, task: OutboxTask) -> None:
-    """Create or grow the data-disk PVC (capacity is the hard quota), mark provisioned on success;
-    dead letters are re-dispatched by the reconciler."""
+    """Create the data disk's subvolume (quota = size, the hard limit) and bind it into the
+    owner's namespace, or apply a grown size; mark provisioned on success. Dead letters are
+    re-dispatched by the reconciler."""
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status in ("deleting", "deleted"):
         return
-    namespace = f"{get_settings().k8s_namespace_prefix}{disk.user_id}"
-    await get_orchestrator().ensure_data_disk(
-        namespace, data_disk_pvc_name(disk.uuid), disk.size_gb
-    )
+    await get_orchestrator().ensure_namespace(tenant_namespace(disk.user_id))
+    await ensure_data_volume(session, disk)
     disk.provisioned = True
     logger.info("disk_provisioned", disk_id=disk.id, capacity_gb=disk.size_gb)
 
 
 @outbox_handler(
     "disk.deprovision",
-    retry=RetryPolicy(max_retries=12, backoff_base_seconds=30, timeout_seconds=120),
+    retry=RetryPolicy(max_retries=12, backoff_base_seconds=30, timeout_seconds=180),
 )
 async def handle_disk_deprovision(session: AsyncSession, task: OutboxTask) -> None:
-    """Delete the data-disk PVC (reclaimPolicy=Delete, the CSI destroys the subvolume), then mark
-    deleted."""
+    """Unbind the data disk and remove its subvolume with the data, then mark deleted."""
     disk = await session.get(DataDisk, task.payload["disk_id"])
     if disk is None or disk.status != "deleting":
         return
-    namespace = f"{get_settings().k8s_namespace_prefix}{disk.user_id}"
-    await get_orchestrator().delete_data_disk(namespace, data_disk_pvc_name(disk.uuid))
+    await release_data_volume(session, disk)
     logger.info("disk_deprovisioned", disk_id=disk.id)
     disk.status = "deleted"
-    disk.mounted_instance_id = None

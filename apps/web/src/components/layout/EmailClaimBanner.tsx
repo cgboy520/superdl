@@ -1,5 +1,6 @@
 /** Accounts created before email became the primary handle have no address yet: prompt them to
- *  add one (sign-in and password recovery depend on it). */
+ *  add one (sign-in and password recovery depend on it). Tenant-created accounts sign in with
+ *  their username and are not prompted. */
 
 import { space } from "@superdl/ui";
 import { useNavigate } from "@tanstack/react-router";
@@ -14,7 +15,7 @@ export function EmailClaimBanner() {
   const navigate = useNavigate();
   const loggedIn = useIsLoggedIn();
   const { data: me } = useMe({ enabled: loggedIn });
-  if (!me || me.email) return null;
+  if (!me || me.email || me.managed) return null;
   return (
     <Alert
       type="warning"

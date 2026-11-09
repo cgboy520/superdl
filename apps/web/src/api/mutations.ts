@@ -21,6 +21,20 @@ import {
   acceptInvitationApiV1OrgInvitationsReceivedUuidAcceptPost,
   attachOrgInstanceApiV1OrgNetgwGatewaysUuidAttachmentsPost,
   createOrgApiV1OrgPost,
+  createMountApiV1OrgMountsPost,
+  createUsersApiV1OrgUsersPost,
+  deleteMemberAccountApiV1OrgMembersMemberIdAccountDelete,
+  deleteMountApiV1OrgMountsUuidDelete,
+  moveMemberBalanceApiV1OrgMembersMemberIdBalancePost,
+  recheckMountApiV1OrgMountsUuidCheckPost,
+  resetMemberPasswordApiV1OrgMembersMemberIdPasswordPost,
+  setMemberLoginApiV1OrgMembersMemberIdLoginPatch,
+  updateMountApiV1OrgMountsUuidPatch,
+  changePasswordApiV1MePasswordPost,
+  completeUploadApiV1CustomImagesUuidCompletePost,
+  deleteImageApiV1CustomImagesUuidDelete,
+  startUploadApiV1CustomImagesPost,
+  updateImageApiV1CustomImagesUuidPatch,
   createOrgGatewayApiV1OrgNetgwGatewaysPost,
   declineInvitationApiV1OrgInvitationsReceivedUuidDeclinePost,
   deleteOrgGatewayApiV1OrgNetgwGatewaysUuidDelete,
@@ -45,7 +59,7 @@ import {
   deleteServiceApiV1ServicesSlugDelete,
   deleteDiskApiV1DisksUuidDelete,
   deleteSshKeyApiV1SshKeysKeyIdDelete,
-  expandDiskApiV1DisksUuidPatch,
+  updateDiskApiV1DisksUuidPatch,
   loginApiV1AuthLoginPost,
   logoutAllApiV1AuthLogoutAllPost,
   logoutApiV1AuthLogoutPost,
@@ -77,14 +91,30 @@ import type {
   ApiKeyCreateOut,
   DeletionRequestCreate,
   DiskCreate,
-  DiskExpand,
+  DiskUpdate,
   GatewayIn,
   GatewayOut,
   InvitationCreate,
   InvitationOut,
+  BalanceTransferCreate,
+  BalanceTransferOut,
+  CustomImageCreate,
+  CustomImageOut,
+  CustomImageUpdate,
+  ManagedPasswordOut,
+  ManagedPasswordReset,
+  ManagedUserCreatedOut,
+  ManagedUsersCreate,
   MemberOut,
   MemberUpdate,
   MyOrgOut,
+  OrgCreate,
+  OrgMountCreate,
+  OrgMountOut,
+  OrgMountUpdate,
+  OrgRename,
+  PasswordChange,
+  TokenPairOut,
   OrgGatewayOut,
   InstanceForwardIn,
   IntranetForwardIn,
@@ -168,6 +198,9 @@ export const useRegister = (o?: CallerOpts) =>
   useApiMutation((body: RegisterRequest) => registerApiV1AuthRegisterPost(body), { ...o, invalidates: [] });
 export const useLogin = (o?: CallerOpts) =>
   useApiMutation((body: LoginRequest) => loginApiV1AuthLoginPost(body), { ...o, invalidates: [] });
+/** Change the password of the signed-in account with the current one; returns a fresh token pair (other sessions end). */
+export const useChangePassword = (o?: CallerOpts<TokenPairOut>) =>
+  useApiMutation((body: PasswordChange) => changePasswordApiV1MePasswordPost(body), { ...o, invalidates: [keys.me] });
 /** Set, change or recover the password with a handle and a verification code. */
 export const useResetPassword = (o?: CallerOpts) =>
   useApiMutation((body: PasswordResetRequest) => resetPasswordApiV1AuthPasswordResetPost(body), {
@@ -357,10 +390,34 @@ export const useCreateDisk = (o?: { onSuccess?: () => void }) =>
       createDiskApiV1DisksPost(body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: [keys.disks, keys.wallet] },
   );
-export const useExpandDisk = (o?: { onSuccess?: () => void }) =>
-  useApiMutation(({ uuid, body }: { uuid: string; body: DiskExpand }) => expandDiskApiV1DisksUuidPatch(uuid, body), {
+/** Expand and/or move a disk; a new mount path reaches instances at their next start. */
+export const useUpdateDisk = (o?: { onSuccess?: () => void }) =>
+  useApiMutation(({ uuid, body }: { uuid: string; body: DiskUpdate }) => updateDiskApiV1DisksUuidPatch(uuid, body), {
     ...o,
-    invalidates: [keys.disks, keys.wallet],
+    invalidates: [keys.disks, keys.wallet, keys.instances.all],
+  });
+
+/** Uploaded images: the upload session carries an idempotency key; chunks go through api/imageUpload.ts. */
+export const useStartImageUpload = (o?: CallerOpts<CustomImageOut>) =>
+  useApiMutation(
+    ({ body, idempotencyKey }: { body: CustomImageCreate; idempotencyKey: string }) =>
+      startUploadApiV1CustomImagesPost(body, { "Idempotency-Key": idempotencyKey }),
+    { ...o, invalidates: [keys.customImages.all] },
+  );
+export const useCompleteImageUpload = (o?: CallerOpts<CustomImageOut>) =>
+  useApiMutation((uuid: string) => completeUploadApiV1CustomImagesUuidCompletePost(uuid), {
+    ...o,
+    invalidates: [keys.customImages.all],
+  });
+export const useUpdateCustomImage = (o?: CallerOpts<CustomImageOut>) =>
+  useApiMutation(
+    ({ uuid, body }: { uuid: string; body: CustomImageUpdate }) => updateImageApiV1CustomImagesUuidPatch(uuid, body),
+    { ...o, invalidates: [keys.customImages.all] },
+  );
+export const useDeleteCustomImage = (o?: CallerOpts) =>
+  useApiMutation((uuid: string) => deleteImageApiV1CustomImagesUuidDelete(uuid), {
+    ...o,
+    invalidates: [keys.customImages.all],
   });
 export const useDeleteDisk = (o?: { onSuccess?: () => void }) =>
   useApiMutation((uuid: string) => deleteDiskApiV1DisksUuidDelete(uuid), {
@@ -488,12 +545,12 @@ export const useDetachOwn = (o?: CallerOpts) =>
 const ORG_ALL = [keys.org.all, keys.netgw.orgGateways, keys.netgw.orgInstances, keys.netgw.myAttachments] as const;
 export const useCreateOrg = (o?: CallerOpts<MyOrgOut>) =>
   useApiMutation(
-    ({ name, idempotencyKey }: { name: string; idempotencyKey: string }) =>
-      createOrgApiV1OrgPost({ name }, { "Idempotency-Key": idempotencyKey }),
+    ({ body, idempotencyKey }: { body: OrgCreate; idempotencyKey: string }) =>
+      createOrgApiV1OrgPost(body, { "Idempotency-Key": idempotencyKey }),
     { ...o, invalidates: ORG_ALL },
   );
 export const useRenameOrg = (o?: CallerOpts<MyOrgOut>) =>
-  useApiMutation((name: string) => renameOrgApiV1OrgPatch({ name }), { ...o, invalidates: ORG_ALL });
+  useApiMutation((body: OrgRename) => renameOrgApiV1OrgPatch(body), { ...o, invalidates: ORG_ALL });
 export const useTransferOrg = (o?: CallerOpts<MyOrgOut>) =>
   useApiMutation((memberId: number) => transferOwnerApiV1OrgTransferPost({ member_id: memberId }), {
     ...o,
@@ -537,4 +594,57 @@ export const useDeclineInvitation = (o?: CallerOpts) =>
   useApiMutation((uuid: string) => declineInvitationApiV1OrgInvitationsReceivedUuidDeclinePost(uuid), {
     ...o,
     invalidates: [keys.org.all],
+  });
+
+/** Tenant-created accounts: the passwords come back only in these responses (no idempotent replay stores them). */
+export const useCreateTenantUsers = (o?: CallerOpts<ManagedUserCreatedOut[]>) =>
+  useApiMutation((body: ManagedUsersCreate) => createUsersApiV1OrgUsersPost(body), {
+    ...o,
+    invalidates: [keys.org.all],
+  });
+export const useResetMemberPassword = (o?: CallerOpts<ManagedPasswordOut>) =>
+  useApiMutation(
+    ({ memberId, body }: { memberId: number; body: ManagedPasswordReset }) =>
+      resetMemberPasswordApiV1OrgMembersMemberIdPasswordPost(memberId, body),
+    { ...o, invalidates: [] },
+  );
+export const useSetMemberLogin = (o?: CallerOpts<MemberOut>) =>
+  useApiMutation(
+    ({ memberId, disabled }: { memberId: number; disabled: boolean }) =>
+      setMemberLoginApiV1OrgMembersMemberIdLoginPatch(memberId, { login_disabled: disabled }),
+    { ...o, invalidates: [keys.org.members] },
+  );
+export const useDeleteMemberAccount = (o?: CallerOpts) =>
+  useApiMutation((memberId: number) => deleteMemberAccountApiV1OrgMembersMemberIdAccountDelete(memberId), {
+    ...o,
+    invalidates: ORG_ALL,
+  });
+/** Allocate to / reclaim from a member; one idempotency key per confirmed dialog. */
+export const useMoveMemberBalance = (o?: CallerOpts<BalanceTransferOut>) =>
+  useApiMutation(
+    ({ memberId, body, idempotencyKey }: { memberId: number; body: BalanceTransferCreate; idempotencyKey: string }) =>
+      moveMemberBalanceApiV1OrgMembersMemberIdBalancePost(memberId, body, { "Idempotency-Key": idempotencyKey }),
+    { ...o, invalidates: [keys.org.transfers, keys.org.finance, keys.wallet, keys.ledger.all] },
+  );
+
+/** Tenant storage mounts: every write returns the mount with its check state. */
+export const useCreateOrgMount = (o?: CallerOpts<OrgMountOut>) =>
+  useApiMutation((body: OrgMountCreate) => createMountApiV1OrgMountsPost(body), {
+    ...o,
+    invalidates: [keys.org.mounts],
+  });
+export const useUpdateOrgMount = (o?: CallerOpts<OrgMountOut>) =>
+  useApiMutation(
+    ({ uuid, body }: { uuid: string; body: OrgMountUpdate }) => updateMountApiV1OrgMountsUuidPatch(uuid, body),
+    { ...o, invalidates: [keys.org.mounts] },
+  );
+export const useRecheckOrgMount = (o?: CallerOpts<OrgMountOut>) =>
+  useApiMutation((uuid: string) => recheckMountApiV1OrgMountsUuidCheckPost(uuid), {
+    ...o,
+    invalidates: [keys.org.mounts],
+  });
+export const useDeleteOrgMount = (o?: CallerOpts) =>
+  useApiMutation((uuid: string) => deleteMountApiV1OrgMountsUuidDelete(uuid), {
+    ...o,
+    invalidates: [keys.org.mounts],
   });

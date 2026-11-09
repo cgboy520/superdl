@@ -119,10 +119,11 @@ class TestGpuRequest:
 class TestPodSpec:
     def test_cpu_instance_does_not_scale_vcpu_mem(self):
         """The CPU tier multiplier is always 1."""
-        pod = build_pod_spec(make_instance(spec=_cpu_spec(), gpu_count=0))
+        inst = make_instance(spec=_cpu_spec(), gpu_count=0)
+        pod = build_pod_spec(inst)
         assert pod.vcpu == 8 and pod.mem_gb == 16
         assert pod.gpu_resources == {}
-        assert pod.disk_gb == 100
+        assert pod.system_disk_pvc == f"{inst.uuid}-root"
 
 
 class TestBillingUnits:

@@ -44,7 +44,6 @@ export interface EnrollFormValues {
   pool: Pool;
   hostname: string;
   note?: string;
-  nvme_devices?: string[];
   ttl_hours: number;
 }
 
@@ -132,9 +131,6 @@ export function AddNodeModal({ open, onClose }: { open: boolean; onClose: () => 
           </Form.Item>
           <Form.Item name="note" label={t("nodes.noteLabel")}>
             <Input placeholder={t("nodes.notePlaceholder")} maxLength={128} />
-          </Form.Item>
-          <Form.Item name="nvme_devices" label={t("nodes.nvmeLabel")} extra={t("nodes.nvmeExtra")}>
-            <Select mode="tags" placeholder={t("nodes.nvmePlaceholder")} open={false} />
           </Form.Item>
           <Form.Item name="ttl_hours" label={t("nodes.ttlLabel")} rules={[{ required: true }]}>
             <InputNumber min={1} max={168} style={{ width: "100%" }} />

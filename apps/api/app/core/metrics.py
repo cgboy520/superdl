@@ -45,8 +45,17 @@ RECONCILE_LEAKED_TOTAL = Counter(
 )
 DISK_PROVISION_FAILED_TOTAL = Counter(
     "superdl_disk_provision_failed_total",
-    "data-disk PVC create / grow dead letters (counted before each re-dispatch; an unprovisioned"
-    " disk cannot be mounted)",
+    "data-disk subvolume create / resize dead letters (counted before each re-dispatch; an"
+    " unprovisioned disk cannot be mounted)",
+)
+CEPH_REACHABLE = Gauge(
+    "superdl_ceph_reachable",
+    "1 when the last storage patrol reached the external Ceph cluster, else 0",
+)
+CEPH_GROUP_BYTES = Gauge(
+    "superdl_ceph_group_bytes",
+    "subvolume group usage seen by the last successful storage patrol",
+    ["kind"],
 )
 INSTANCE_NODE_LOST_TOTAL = Counter(
     "superdl_instance_node_lost_total",

@@ -1,6 +1,7 @@
-"""In-memory K8s backend; supports Pods, nodes, prewarming and fault injection.
+"""In-memory K8s backend; supports Pods, CephFS volume objects, nodes, prewarming and fault
+injection.
 
-fail_next_disk and fail_next_logs reset once consumed; fail_probe stays until cleared explicitly.
+fail_next_volume and fail_next_logs reset once consumed; fail_probe stays until cleared explicitly.
 """
 
 from dataclasses import dataclass, field
@@ -8,11 +9,13 @@ from datetime import datetime
 
 from app.core.k8s import health
 from app.core.k8s.base import (
-    DATA_DISK_STORAGE_CLASS,
+    CEPH_CSI_DRIVER,
     GPU_MODEL_NODE_LABEL,
-    INSTANCE_DISK_STORAGE_CLASS,
     MANAGED_LABEL,
+    ORG_MOUNT_LABEL,
+    ORG_MOUNT_REV_LABEL,
     POOL_NODE_LABEL,
+    CephVolumeSpec,
     ClusterProbe,
     ComponentDetail,
     ComponentFact,
@@ -27,10 +30,10 @@ from app.core.k8s.base import (
     derive_distro,
 )
 from app.core.k8s.health import (
+    CsiDriverRow,
     ListenerRow,
     NodeRow,
     RuntimeClassRow,
-    StorageClassRow,
     WorkloadRow,
 )
 from app.core.timeutil import now_utc
@@ -58,12 +61,6 @@ _FAKE_LISTENERS = (
 )
 
 
-_FAKE_PROVISIONERS = {
-    INSTANCE_DISK_STORAGE_CLASS: "topolvm.io",
-    DATA_DISK_STORAGE_CLASS: "rook-ceph.cephfs.csi.ceph.com",
-}
-
-
 def _fake_ds(name: str, ready: int, desired: int, image: str = "") -> WorkloadRow:
     return WorkloadRow(name, "gpu-operator", ready, desired, image)
 
@@ -88,10 +85,10 @@ class FakeOrchestrator:
     )
     pods: dict[tuple[str, str], _FakePod] = field(default_factory=dict)
     namespaces: set[str] = field(default_factory=set)
-    instance_disks: dict[tuple[str, str], str] = field(default_factory=dict)
-    data_disks: dict[tuple[str, str], int] = field(default_factory=dict)
-    deleted_data_disks: list[tuple[str, str]] = field(default_factory=list)
-    fail_next_disk: bool = False
+    ceph_volumes: dict[tuple[str, str], CephVolumeSpec] = field(default_factory=dict)
+    terminating_volumes: dict[tuple[str, str], CephVolumeSpec] = field(default_factory=dict)
+    deleted_ceph_volumes: list[tuple[str, str]] = field(default_factory=list)
+    fail_next_volume: bool = False
     job_pods: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
     prewarm_jobs: dict[tuple[str, str], str] = field(default_factory=dict)
     prewarm_pull_secrets: dict[tuple[str, str], str | None] = field(default_factory=dict)
@@ -108,10 +105,7 @@ class FakeOrchestrator:
     probe_hami_ready: bool = True
     probe_gpu_operand_ready: int | None = None
     probe_unprogrammed_listeners: tuple[str, ...] = ()
-    probe_storage_classes: tuple[str, ...] = (
-        INSTANCE_DISK_STORAGE_CLASS,
-        DATA_DISK_STORAGE_CLASS,
-    )
+    probe_ceph_csi_ready: bool = True
     detail_pods: dict[str, tuple[ComponentObject, ...]] = field(default_factory=dict)
     detail_events: dict[str, tuple[ComponentObject, ...]] = field(default_factory=dict)
     probe_k8s_version: str = _FAKE_K8S_VERSION
@@ -123,6 +117,7 @@ class FakeOrchestrator:
     netgw_deleted: list[str] = field(default_factory=list)
     netgw_logs: dict[str, str] = field(default_factory=dict)
     fail_next_netgw: bool = False
+    node_arch: str = "amd64"
 
     async def ensure_namespace(self, namespace: str) -> None:
         self.namespaces.add(namespace)
@@ -154,14 +149,10 @@ class FakeOrchestrator:
             cert_manager_ready=True,
             nodes_ready=sum(pools_ready.values()),
             nodes_total=len(rows.nodes),
-            storage_classes=tuple(r.name for r in rows.storage_classes),
+            ceph_csi_ready=self.probe_ceph_csi_ready,
             pools=pools,
             pools_ready=pools_ready,
-            component_facts=health.build_facts(
-                rows,
-                instance_disk_sc=INSTANCE_DISK_STORAGE_CLASS,
-                data_disk_sc=DATA_DISK_STORAGE_CLASS,
-            ),
+            component_facts=health.build_facts(rows, csi_driver=CEPH_CSI_DRIVER),
             error=None,
         )
 
@@ -238,10 +229,14 @@ class FakeOrchestrator:
                 RuntimeClassRow("nvidia", "nvidia"),
                 RuntimeClassRow("kata-qemu", "kata-qemu"),
             ],
-            storage_classes=[
-                StorageClassRow(name, _FAKE_PROVISIONERS.get(name, "fake.io"), "Immediate")
-                for name in self.probe_storage_classes
-            ],
+            csi_drivers=[CsiDriverRow(CEPH_CSI_DRIVER)] if self.probe_ceph_csi_ready else [],
+            ceph_nodeplugin=WorkloadRow(
+                "ceph-csi-cephfs-nodeplugin",
+                "ceph-csi-cephfs",
+                len(nodes) if self.probe_ceph_csi_ready else 0,
+                len(nodes),
+                "cephcsi:v3.15.0",
+            ),
             gateway_programmed=True,
             gateway_address="10.0.0.1",
             listeners=[
@@ -260,15 +255,77 @@ class FakeOrchestrator:
             driver_version="580.173.02",
         )
 
-    async def ensure_data_disk(self, namespace: str, name: str, size_gb: int) -> None:
-        if self.fail_next_disk:
-            self.fail_next_disk = False
-            raise RuntimeError("fake: ensure_data_disk failed (injected)")
-        self.data_disks[(namespace, name)] = max(self.data_disks.get((namespace, name), 0), size_gb)
+    async def ensure_ceph_volume(self, spec: CephVolumeSpec) -> None:
+        if self.fail_next_volume:
+            self.fail_next_volume = False
+            raise RuntimeError("fake: ensure_ceph_volume failed (injected)")
+        key = (spec.namespace, spec.pvc_name)
+        if key in self.terminating_volumes:
+            raise RuntimeError(f"fake: pvc {key} is terminating")
+        self.ceph_volumes[key] = spec
 
-    async def delete_data_disk(self, namespace: str, name: str) -> None:
-        self.data_disks.pop((namespace, name), None)
-        self.deleted_data_disks.append((namespace, name))
+    def _claims_of(self, spec: InstancePodSpec) -> list[str]:
+        return [spec.system_disk_pvc, *(m.pvc_name for m in spec.extra_mounts)]
+
+    def _claim_in_use(self, namespace: str, pvc_name: str) -> bool:
+        return any(
+            ns == namespace and pvc_name in self._claims_of(pod.spec)
+            for (ns, _name), pod in self.pods.items()
+        )
+
+    def _reap_terminating(self) -> None:
+        """pvc-protection: a deleted claim disappears once no Pod mounts it."""
+        for key in list(self.terminating_volumes):
+            if not self._claim_in_use(*key):
+                del self.terminating_volumes[key]
+                self.deleted_ceph_volumes.append(key)
+
+    async def pvc_exists(self, namespace: str, name: str) -> bool:
+        key = (namespace, name)
+        return key in self.ceph_volumes or key in self.terminating_volumes
+
+    async def delete_org_mount_volumes(
+        self,
+        *,
+        namespace: str | None = None,
+        mount_uuid: str | None = None,
+        keep_revision: int | None = None,
+    ) -> int:
+        doomed = [
+            (ns, pvc)
+            for (ns, pvc), spec in self.ceph_volumes.items()
+            if ORG_MOUNT_LABEL in spec.labels
+            and (namespace is None or ns == namespace)
+            and (mount_uuid is None or spec.labels[ORG_MOUNT_LABEL] == mount_uuid)
+            and (
+                keep_revision is None or spec.labels.get(ORG_MOUNT_REV_LABEL) != str(keep_revision)
+            )
+        ]
+        for ns, pvc in doomed:
+            await self.delete_ceph_volume(ns, pvc_name=pvc, pv_name="", secret_name=pvc)
+        return len(doomed)
+
+    async def delete_ceph_volume(
+        self,
+        namespace: str,
+        *,
+        pvc_name: str,
+        pv_name: str,  # noqa: ARG002
+        secret_name: str,  # noqa: ARG002
+    ) -> None:
+        key = (namespace, pvc_name)
+        spec = self.ceph_volumes.pop(key, None)
+        if spec is None:
+            return
+        if self._claim_in_use(namespace, pvc_name):
+            self.terminating_volumes[key] = spec
+            return
+        self.deleted_ceph_volumes.append(key)
+
+    def _require_claims(self, spec: InstancePodSpec) -> None:
+        missing = [c for c in self._claims_of(spec) if (spec.namespace, c) not in self.ceph_volumes]
+        if missing:
+            raise RuntimeError(f"fake: pod {spec.name} references missing claims {missing}")
 
     async def create_instance(self, spec: InstancePodSpec) -> None:
         if spec.with_ssh and spec.ssh_node_port is None:
@@ -277,10 +334,10 @@ class FakeOrchestrator:
             raise RuntimeError(f"fake: instance {spec.name} has service_port but no service_host")
         if spec.ssh_node_port is not None and spec.ssh_node_port in self.external_node_ports:
             raise NodePortTaken(spec.ssh_node_port)
+        self._require_claims(spec)
         key = (spec.namespace, spec.name)
         if spec.secret_env:
             self.instance_secrets[key] = dict(spec.secret_env)
-        self.instance_disks.setdefault(key, f"lv-{spec.name}")
         existing = self.pods.get(key)
         if existing is not None:
             if existing.deleting:
@@ -304,10 +361,12 @@ class FakeOrchestrator:
         self.pods.pop((namespace, name), None)
         self.instance_secrets.pop((namespace, name), None)
         self.endpoints.discard((namespace, name))
+        self._reap_terminating()
 
     def finish_delete(self, namespace: str, name: str) -> None:
-        """Remove the in-memory Pod; endpoints, Secret and instance disk records are kept."""
+        """Remove the in-memory Pod; endpoints, Secret and volume records are kept."""
         self.pods.pop((namespace, name), None)
+        self._reap_terminating()
 
     async def list_instance_endpoints(self) -> list[tuple[str, str]]:
         return sorted(self.endpoints)
@@ -320,9 +379,6 @@ class FakeOrchestrator:
     def inject_external_port(self, port: int) -> None:
         """Test injection: a non-platform object in the cluster holds this NodePort."""
         self.external_node_ports.add(port)
-
-    async def delete_instance_disk(self, namespace: str, name: str) -> None:
-        self.instance_disks.pop((namespace, name), None)
 
     async def get_status(self, namespace: str, name: str) -> PodStatus:
         pod = self.pods.get((namespace, name))
@@ -412,6 +468,7 @@ class FakeOrchestrator:
     def kill_pod(self, namespace: str, name: str) -> None:
         """Simulate a Pod vanishing unexpectedly (node failure)."""
         self.pods.pop((namespace, name), None)
+        self._reap_terminating()
 
     def mark_unready(self, namespace: str, name: str) -> None:
         """Simulate node loss: kubelet unreachable, Ready turns False while the phase stays Running
@@ -471,6 +528,7 @@ class FakeOrchestrator:
                     model_label_current=self.node_labels.get(name, {}).get(
                         GPU_MODEL_NODE_LABEL, ""
                     ),
+                    arch=self.node_arch,
                 )
             )
         if include_unlabeled:
@@ -492,6 +550,7 @@ class FakeOrchestrator:
                 driver_version_label=n.driver_version_label,
                 cuda_version_label=n.cuda_version_label,
                 infra=n.infra,
+                arch=n.arch or self.node_arch,
             )
             for n in nodes
             if n.name not in self.deleted_nodes

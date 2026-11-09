@@ -8,7 +8,7 @@ K8S_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../deploy/app/k8s" && pwd)"
 NS=superdl
 IMAGES=(api web admin)
 WRITERS=(superdl-api superdl-worker superdl-worker-tenant-mgr superdl-worker-node-mgr
-  superdl-worker-prewarm superdl-worker-disk-ops)
+  superdl-worker-prewarm superdl-worker-image-ops)
 WRITER_SELECTOR='app in (superdl-api,superdl-worker)'
 CHECKPOINT=superdl-release-maintenance
 STOP_TIMEOUT="${SUPERDL_RELEASE_STOP_TIMEOUT:-900}"

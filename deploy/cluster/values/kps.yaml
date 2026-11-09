@@ -18,7 +18,6 @@ prometheusOperator:
     additional:
       - superdl
       - kube-system
-      - rook-ceph
       - gpu-operator
       - envoy-gateway-system
       - cert-manager
@@ -72,8 +71,8 @@ prometheus:
     storageSpec:
       volumeClaimTemplate:
         spec:
-          storageClassName: superdl-cephfs
-          accessModes: ["ReadWriteMany"]
+          storageClassName: topolvm-provisioner
+          accessModes: ["ReadWriteOnce"]
           resources:
             requests: {storage: 50Gi}
     replicas: 1
@@ -311,8 +310,8 @@ alertmanager:
     storage:
       volumeClaimTemplate:
         spec:
-          storageClassName: superdl-cephfs
-          accessModes: ["ReadWriteMany"]
+          storageClassName: topolvm-provisioner
+          accessModes: ["ReadWriteOnce"]
           resources:
             requests: {storage: 2Gi}
     secrets:
@@ -346,11 +345,16 @@ additionalPrometheusRulesMap:
             for: 30m
             labels: {severity: warning}
             annotations: {summary: "Shared pool node saturated continuously (oversell lower-threshold reference 85%)"}
-          - alert: CephUnhealthy
-            expr: ceph_health_status > 0
-            for: 15m
+          - alert: CephUnreachable
+            expr: max(superdl_ceph_reachable) == 0
+            for: 5m
             labels: {severity: critical}
-            annotations: {summary: "Ceph cluster not HEALTH_OK for over 15 minutes, data disk availability affected", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/cluster-validation.md#d-storage"}
+            annotations: {summary: "The platform cannot reach the external Ceph cluster: instance starts and disk changes are refused until it answers", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/ceph-storage.md#unreachable"}
+          - alert: CephGroupNearlyFull
+            expr: max(superdl_ceph_group_bytes{kind="used"}) / max(superdl_ceph_group_bytes{kind="quota"}) > 0.85
+            for: 30m
+            labels: {severity: warning}
+            annotations: {summary: "The Ceph subvolume group holding tenant disks is over 85% of its quota: at the quota every tenant volume stops accepting writes", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/ceph-storage.md#capacity"}
           - alert: HamiSchedulerDown
             expr: absent(up{job="hami-scheduler"} == 1)
             for: 5m
@@ -512,7 +516,7 @@ additionalPrometheusRulesMap:
           - alert: DiskProvisionFailed
             expr: increase(superdl_disk_provision_failed_total[15m]) > 0
             labels: {severity: warning}
-            annotations: {summary: "Data disk PVC create/expand dead-lettered (re-dispatched by the reconciler periodically): unready disks cannot be mounted, check the disk-ops worker logs and the CephFS CSI"}
+            annotations: {summary: "Data disk subvolume create/resize dead-lettered (re-dispatched by the reconciler periodically): unready disks cannot be mounted, check the tenant-mgr worker logs and the Ceph cluster", runbook_url: "https://github.com/CHANGE_ME_ORG/superdl/blob/main/deploy/cluster/runbooks/ceph-storage.md#unreachable"}
           - alert: ReconcileStuckInstances
             expr: max(superdl_reconcile_stuck_instances) > 0
             for: 15m

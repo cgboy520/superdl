@@ -290,25 +290,36 @@ async def count_instances_by_status(session: AsyncSession) -> dict[str, int]:
     return {str(status): int(n) for status, n in rows}
 
 
+POD_STATUSES = (
+    sm_def.CREATING,
+    sm_def.STARTING,
+    sm_def.RUNNING,
+    sm_def.STOPPING,
+    sm_def.RELEASING,
+)
+
+
 async def count_active_instances_on_node(session: AsyncSession, node_name: str) -> int:
-    """Instances on the node with status != released, stopped/frozen/failed/releasing included."""
+    """Instances whose Pod lives (or is going away) on the node. Stopped, frozen and failed
+    instances hold nothing there: their disks are on the storage cluster and they start on any
+    node of their pool."""
     return int(
         (
             await session.execute(
                 select(func.count())
                 .select_from(Instance)
-                .where(Instance.node_name == node_name, Instance.status != sm_def.RELEASED)
+                .where(Instance.node_name == node_name, Instance.status.in_(POD_STATUSES))
             )
         ).scalar_one()
     )
 
 
 async def count_active_instances_by_node(session: AsyncSession) -> dict[str, int]:
-    """Node name → unreleased instance count; same definition as count_active_instances_on_node."""
+    """Node name → instances with a Pod there; same definition as count_active_instances_on_node."""
     rows = (
         await session.execute(
             select(Instance.node_name, func.count())
-            .where(Instance.node_name.is_not(None), Instance.status != sm_def.RELEASED)
+            .where(Instance.node_name.is_not(None), Instance.status.in_(POD_STATUSES))
             .group_by(Instance.node_name)
         )
     ).all()
@@ -497,4 +508,17 @@ async def arrears_chain_disk_user_ids(session: AsyncSession) -> list[int]:
                 .distinct()
             )
         ).scalars()
+    )
+
+
+async def count_unreleased_by_image_ref(session: AsyncSession, image_ref: str) -> int:
+    """Instances that are not released and may start again from this image reference."""
+    return int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Instance)
+                .where(Instance.image_ref == image_ref, Instance.status != sm_def.RELEASED)
+            )
+        ).scalar_one()
     )

@@ -25,13 +25,13 @@ Deployment guides and runbooks for operators live under [`deploy/`](../deploy/RE
 | File                                                 | Scope                                                                                                                                     |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | [account.md](./reference/account.md)                 | Registration and login, JWT sessions, SSH keys, identity verification, account deletion                                                   |
-| [orgs.md](./reference/orgs.md)                       | Organizations: membership and roles, email invitations and consent, the read-only member finance view                                     |
+| [orgs.md](./reference/orgs.md)                       | Tenants: membership and roles, email invitations and consent, member finance, created accounts, balance moves, storage mounts             |
 | [catalog.md](./reference/catalog.md)                 | SKUs, platform image catalog, approximate inventory                                                                                       |
 | [orchestrator.md](./reference/orchestrator.md)       | Instance state machine, outbox orchestration, reconciler, SSH / JupyterLab access, K8s abstraction                                        |
 | [services.md](./reference/services.md)               | Online-service aggregate: data model and derived state, deploy / stop / delete contracts, domain rules, gateway API-key auth, rate limits |
-| [disks.md](./reference/disks.md)                     | Data-disk lifecycle, quotas, expansion and daily settlement                                                                               |
+| [disks.md](./reference/disks.md)                     | Data-disk lifecycle on Ceph, mount paths and auto-mount, quotas, expansion and daily settlement                                           |
 | [netgw.md](./reference/netgw.md)                     | Private-network gateways: tenant VPN tunnels, forwards and SOCKS, gateway objects, network boundary, enabling                             |
-| [images.md](./reference/images.md)                   | Image catalog management, in-cluster P2P cache and per-node prewarming                                                                    |
+| [images.md](./reference/images.md)                   | Image catalog management, in-cluster P2P cache, per-node prewarming and the images users upload                                           |
 | [billing.md](./reference/billing.md)                 | Wallet, ledger, hourly settlement, subscription and spot pricing, arrears reclamation, policy parameters                                  |
 | [payment.md](./reference/payment.md)                 | Top-up orders, payment channels (registry, Stripe, WeChat Pay, Alipay), callbacks and lookups, refunds and invoices                       |
 | [metering.md](./reference/metering.md)               | Prometheus proxy queries, usage_hourly aggregation, reconciliation                                                                        |

@@ -185,7 +185,7 @@ export function TenantsTab() {
             title: tt("tenants.colAccount"),
             fixed: "left",
             width: 170,
-            render: (_, r) => r.email_masked ?? r.phone_masked ?? "-",
+            render: (_, r) => r.email_masked ?? r.phone_masked ?? r.username ?? "-",
           },
           {
             title: tt("tenants.colBalance"),

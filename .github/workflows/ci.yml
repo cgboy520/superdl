@@ -197,10 +197,10 @@ jobs:
           need superdl-prewarm list nodes
           deny superdl-prewarm list pods --all-namespaces
           need superdl-api get pods --subresource=log
-          for sa in superdl-worker superdl-tenant-mgr superdl-node-mgr superdl-prewarm superdl-disk-ops; do
+          for sa in superdl-worker superdl-tenant-mgr superdl-node-mgr superdl-prewarm superdl-image-ops; do
             deny "$sa" get pods --subresource=log
           done
-          for sa in superdl-api superdl-worker superdl-tenant-mgr superdl-node-mgr superdl-prewarm superdl-disk-ops; do
+          for sa in superdl-api superdl-worker superdl-tenant-mgr superdl-node-mgr superdl-prewarm superdl-image-ops; do
             deny "$sa" create pods --subresource=exec
           done
 
@@ -227,18 +227,21 @@ jobs:
             deny superdl-node-mgr $pair
           done
 
-          for pair in "get persistentvolumeclaims" "create persistentvolumeclaims" \
-                      "patch persistentvolumeclaims" "delete persistentvolumeclaims"; do
+          for pair in "create persistentvolumes" "delete persistentvolumes" "get persistentvolumes"; do
             # shellcheck disable=SC2086
-            need superdl-disk-ops $pair
+            need superdl-tenant-mgr $pair
           done
-          for pair in "create jobs.batch" "delete jobs.batch" "create pods" \
-                      "get secrets" "list secrets" "get persistentvolumes"; do
+          for sa in superdl-api superdl-worker superdl-node-mgr superdl-prewarm superdl-image-ops; do
+            deny "$sa" create persistentvolumes
+            deny "$sa" delete persistentvolumes
+          done
+          for pair in "get persistentvolumeclaims" "create pods" "get secrets" "list secrets" \
+                      "get persistentvolumes" "list nodes"; do
             # shellcheck disable=SC2086
-            deny superdl-disk-ops $pair
+            deny superdl-image-ops $pair
           done
 
-          for sa in superdl-api superdl-worker superdl-tenant-mgr superdl-prewarm superdl-disk-ops; do
+          for sa in superdl-api superdl-worker superdl-tenant-mgr superdl-prewarm superdl-image-ops; do
             deny "$sa" delete nodes
             deny "$sa" patch nodes
           done
@@ -506,29 +509,6 @@ jobs:
           exit "$fail"
       - name: Delete the admission policies
         run: kubectl delete -f deploy/cluster/admission/tenant-restrictions.yaml
-      - name: Preset the data disk StorageClass and static PVs (kind has no Rook/CephFS; expansion needs a bound PVC and an SC that allows it)
-        run: |
-          kubectl apply -f - <<'EOF'
-          apiVersion: storage.k8s.io/v1
-          kind: StorageClass
-          metadata: {name: superdl-cephfs}
-          provisioner: kubernetes.io/no-provisioner
-          allowVolumeExpansion: true
-          volumeBindingMode: Immediate
-          EOF
-          for i in 1 2 3 4; do
-            kubectl apply -f - <<EOF
-          apiVersion: v1
-          kind: PersistentVolume
-          metadata: {name: smoke-data-$i}
-          spec:
-            storageClassName: superdl-cephfs
-            capacity: {storage: 100Gi}
-            accessModes: [ReadWriteMany]
-            persistentVolumeReclaimPolicy: Retain
-            hostPath: {path: /tmp/smoke-data-$i}
-          EOF
-          done
       - name: Generate the restricted superdl-tenant-mgr kubeconfig
         run: |
           TOKEN=$(kubectl create token superdl-tenant-mgr -n superdl --duration=1h)

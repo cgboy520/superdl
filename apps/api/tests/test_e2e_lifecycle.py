@@ -19,7 +19,7 @@ from tests.helpers import (
 )
 
 
-async def test_full_lifecycle_drill(client, sm, fake):
+async def test_full_lifecycle_drill(client, sm, fake, ceph):
     phone = "u13411112222@test.local"
     await client.post(
         "/api/v1/auth/verification-code",
@@ -68,7 +68,6 @@ async def test_full_lifecycle_drill(client, sm, fake):
                 "sku_id": sku_id,
                 "image_ref": IMAGE_PYTORCH,
                 "ssh_key_ids": [key["id"]],
-                "data_disk_id": disk["id"],
             },
             headers={**h, "Idempotency-Key": "drill-1"},
         )
@@ -97,7 +96,10 @@ async def test_full_lifecycle_drill(client, sm, fake):
     pod_spec = fake.pods[(f"tenant-{user_id}", uuid)].spec
     assert pod_spec.gpu_resources["nvidia.com/gpucores"] == "50"
     assert pod_spec.host_users is False
-    assert pod_spec.data_disk_pvc == f"disk-{disk['uuid']}"
+    assert pod_spec.system_disk_pvc == f"{uuid}-root"
+    assert [(m.pvc_name, m.mount_path) for m in pod_spec.extra_mounts] == [
+        (f"disk-{disk['uuid']}", "/data")
+    ]
 
     expected_secs = await backdate_running_event(sm, uuid, 30)
     await client.post(f"/api/v1/instances/{uuid}/stop", headers=h)
@@ -123,7 +125,9 @@ async def test_full_lifecycle_drill(client, sm, fake):
     assert events[0]["to_status"] == "released"
 
     disks = (await client.get("/api/v1/disks", headers=h)).json()
-    assert disks[0]["status"] == "active" and disks[0]["mounted_instance_id"] is None
+    assert disks[0]["status"] == "active" and disks[0]["mounted_by"] == []
+    await drain(sm)
+    assert f"u{user_id}-sys-{uuid}" in ceph.removed
 
     wallet = (await client.get("/api/v1/wallet", headers=h)).json()
     async with sm() as session:

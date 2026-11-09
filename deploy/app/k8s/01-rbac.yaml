@@ -28,11 +28,13 @@ metadata:
   name: superdl-prewarm
   namespace: superdl
 ---
+# Image import worker: no Role or RoleBinding (it talks to PostgreSQL and Harbor only).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: superdl-disk-ops
+  name: superdl-image-ops
   namespace: superdl
+automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -49,7 +51,7 @@ rules:
     resources: ["deployments", "daemonsets", "statefulsets"]
     verbs: ["get", "list"]
   - apiGroups: ["storage.k8s.io"]
-    resources: ["storageclasses"]
+    resources: ["csidrivers"]
     verbs: ["get", "list"]
   - apiGroups: ["node.k8s.io"]
     resources: ["runtimeclasses"]
@@ -90,6 +92,11 @@ rules:
     verbs: ["get", "create", "patch"]
   - apiGroups: [""]
     resources: ["pods", "persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "delete"]
+  # Static CephFS PVs of system / data disks and organization storage (shape pinned by admission
+  # policy 1).
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
     verbs: ["get", "list", "create", "delete"]
   - apiGroups: [""]
     resources: ["nodes"]
@@ -236,28 +243,6 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: superdl-prewarm
-    namespace: superdl
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: superdl-disk-ops
-rules:
-  - apiGroups: [""]
-    resources: ["persistentvolumeclaims"]
-    verbs: ["get", "create", "patch", "delete"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: superdl-disk-ops
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: superdl-disk-ops
-subjects:
-  - kind: ServiceAccount
-    name: superdl-disk-ops
     namespace: superdl
 ---
 apiVersion: rbac.authorization.k8s.io/v1

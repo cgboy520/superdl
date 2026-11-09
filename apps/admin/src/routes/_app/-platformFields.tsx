@@ -82,6 +82,19 @@ export const FIELD_LABELS = {
   registry_ca_pem: "platform.field.registry_ca_pem",
   registry_proxy_projects: "platform.field.registry_proxy_projects",
   image_allowed_registries: "platform.field.image_allowed_registries",
+  registry_user_project: "platform.field.registry_user_project",
+  registry_push_robot_name: "platform.field.registry_push_robot_name",
+  registry_push_robot_secret: "platform.field.registry_push_robot_secret",
+  ceph_fsid: "platform.field.ceph_fsid",
+  ceph_mon_host: "platform.field.ceph_mon_host",
+  ceph_fs_name: "platform.field.ceph_fs_name",
+  ceph_subvolume_group: "platform.field.ceph_subvolume_group",
+  ceph_pool_layout: "platform.field.ceph_pool_layout",
+  ceph_namespace_isolated: "platform.field.ceph_namespace_isolated",
+  ceph_admin_id: "platform.field.ceph_admin_id",
+  ceph_admin_key: "platform.field.ceph_admin_key",
+  ceph_auth_prefix: "platform.field.ceph_auth_prefix",
+  ceph_mount_options: "platform.field.ceph_mount_options",
 } as const satisfies Record<string, string>;
 export type FieldLabelKey = (typeof FIELD_LABELS)[keyof typeof FIELD_LABELS];
 
@@ -149,6 +162,7 @@ export const GROUP_INTRO_KEYS = {
   support: "platform.groupIntro.support",
   compliance: "platform.groupIntro.compliance",
   cluster: "platform.groupIntro.cluster",
+  storage: "platform.groupIntro.storage",
 } as const satisfies Record<Group, string>;
 
 /** Field-level guidance copy: locale lookup (fieldExtra.*) + server hint joined on one line. */

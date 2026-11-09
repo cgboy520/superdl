@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from testcontainers.community.postgres import PostgresContainer
 
 if TYPE_CHECKING:
+    from app.core.ceph import FakeCephAdmin
     from app.core.k8s.fake import FakeOrchestrator
 
 os.environ["SUPERDL_ENVIRONMENT"] = "test"
@@ -83,11 +84,9 @@ def _audit_log_prune_ddl() -> str:
 
 async def _seed_baseline(smaker: async_sessionmaker[AsyncSession]) -> None:
     """Write the cluster capability cache and the preset legal documents."""
-    from app.core.k8s.base import (
-        DATA_DISK_STORAGE_CLASS,
-        INSTANCE_DISK_STORAGE_CLASS,
-        ClusterProbe,
-    )
+    from app.core.ceph import GroupUsage
+    from app.core.ceph.status import save_storage_status
+    from app.core.k8s.base import ClusterProbe
     from app.modules.nodes.service import save_cluster_probe
     from tests.legal_preset import seed_preset_docs
 
@@ -100,8 +99,11 @@ async def _seed_baseline(smaker: async_sessionmaker[AsyncSession]) -> None:
                 distro="rke2",
                 hami_ready=True,
                 kata_runtimeclass=True,
-                storage_classes=(INSTANCE_DISK_STORAGE_CLASS, DATA_DISK_STORAGE_CLASS),
+                ceph_csi_ready=True,
             ),
+        )
+        await save_storage_status(
+            session, usage=GroupUsage(bytes_used=0, bytes_quota=100 * 1024**4), error=None
         )
         await seed_preset_docs(session)
         await session.commit()
@@ -181,6 +183,17 @@ def fake() -> Iterator["FakeOrchestrator"]:
 def fake_auto_ready() -> Iterator["FakeOrchestrator"]:
     """FakeOrchestrator whose Pods become ready automatically."""
     yield from _inject_fake(auto_ready=True)
+
+
+@pytest.fixture(autouse=True)
+def ceph() -> Iterator["FakeCephAdmin"]:
+    """A fresh in-memory Ceph admin per test (subvolumes, keys, injected failures)."""
+    from app.core.ceph import FakeCephAdmin, set_ceph_admin
+
+    admin = FakeCephAdmin()
+    set_ceph_admin(admin)
+    yield admin
+    set_ceph_admin(None)
 
 
 @pytest.fixture(autouse=True)

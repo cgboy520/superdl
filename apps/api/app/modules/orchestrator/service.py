@@ -31,7 +31,13 @@ from app.core.idempotency import (
     request_fingerprint,
 )
 from app.core.k8s import InstancePodSpec, get_orchestrator
-from app.core.k8s.base import STARTUP_PROBE_PERIOD_SECONDS, NetgwAttach, data_disk_pvc_name
+from app.core.k8s.base import (
+    STARTUP_PROBE_PERIOD_SECONDS,
+    NetgwAttach,
+    PodVolumeMount,
+    data_disk_pvc_name,
+    instance_disk_pvc_name,
+)
 from app.core.logging import get_logger
 from app.core.money import hourly_cost, money_str
 from app.core.outbox import enqueue
@@ -52,6 +58,7 @@ from app.core.timeutil import now_utc
 from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.catalog import service as catalog_service
+from app.modules.customimages import service as customimages_service
 from app.modules.netgw import service as netgw_service
 from app.modules.nodes import service as nodes_service
 from app.modules.notify import service as notify_service
@@ -71,6 +78,7 @@ from app.modules.orchestrator.schemas import (
     InstanceOut,
     InstanceSubscriptionOut,
 )
+from app.modules.orchestrator.storage import ensure_data_volume, org_storage_mounts
 from app.modules.orchestrator.transitions import transition
 
 if TYPE_CHECKING:
@@ -78,6 +86,8 @@ if TYPE_CHECKING:
     from app.modules.nodes.models import NodeSpec
 
 logger = get_logger(__name__)
+
+ARCH_NODE_LABEL = "kubernetes.io/arch"
 
 
 @dataclass(frozen=True)
@@ -103,7 +113,6 @@ class InstanceRequest:
     image_ref: str
     ssh_key_ids: tuple[int, ...]
     name: str | None = None
-    data_disk_id: int | None = None
     container_command: tuple[str, ...] | None = None
     container_args: tuple[str, ...] | None = None
     env: dict[str, str] | None = None
@@ -139,7 +148,6 @@ class InstanceRequest:
             self.image_ref,
             sorted(self.ssh_key_ids),
             self.name,
-            self.data_disk_id,
             self.workload_type,
             self.container_command,
             self.container_args,
@@ -197,23 +205,19 @@ def _snapshot_spec(sku: "Sku") -> dict[str, Any]:
 
 
 async def _require_cluster_for_pool(
-    session: AsyncSession,
-    pool_label: str | None,
-    gpu_count: int,
-    *,
-    with_data_disk: bool = False,
+    session: AsyncSession, pool_label: str | None, gpu_count: int
 ) -> None:
     """Missing cluster capability → 409; gpu_count == 0 skips the pool check.
 
-    hami checks HAMi, kata the RuntimeClass; the StorageClass is always checked, data disks on
-    demand.
+    hami checks HAMi, kata the RuntimeClass; the CephFS storage (CSI node plugin + Ceph cluster)
+    is always checked, every instance mounts its system disk from it.
     """
     if gpu_count > 0:
         if pool_label == POOL_HAMI:
             await nodes_service.require_hami_ready(session)
         elif pool_label == POOL_KATA:
             await nodes_service.require_kata_runtimeclass(session)
-    await nodes_service.require_storage_classes(session, with_data_disk=with_data_disk)
+    await nodes_service.require_storage_ready(session)
 
 
 def _encode_token(plaintext: str, *, instance_uuid: str) -> str:
@@ -266,24 +270,29 @@ def _new_jupyter_ticket(instance: Instance, token_plain: str) -> str:
 
 
 async def _validate_image_ref(
-    session: AsyncSession, image_ref: str, *, require_pinned: bool = False
-) -> None:
-    """Image reference validation: shape (core.registry.is_valid_image_ref) → source allow-list (the
-    single gate;
-    an empty image_allowed_registries = unrestricted, the Harbor address and the platform image
-    catalog always pass).
+    session: AsyncSession, user_id: int, image_ref: str, *, require_pinned: bool = False
+) -> str | None:
+    """Image reference validation: shape (core.registry.is_valid_image_ref) → uploaded images
+    (the registry's user project: only the caller's own or a tenant-shared ready image) → source
+    allow-list (an empty image_allowed_registries = unrestricted, the Harbor address and the
+    platform image catalog always pass). Returns the CPU architecture of an uploaded image.
     """
     if not is_valid_image_ref(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefInvalid")
     if require_pinned and not is_pinned_image_ref(image_ref):
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.imageRefNotPinned")
-    allowed = (await get_runtime_config(session)).image_allowlist()
+    cfg = await get_runtime_config(session)
+    prefix = customimages_service.user_project_prefix(cfg)
+    if prefix and image_ref.startswith(prefix):
+        image = await customimages_service.require_usable(session, user_id, image_ref)
+        return image.architecture
+    allowed = cfg.image_allowlist()
     if not allowed:
-        return
-    if any(image_ref.startswith(prefix) for prefix in allowed):
-        return
+        return None
+    if any(image_ref.startswith(p) for p in allowed):
+        return None
     if await catalog_service.is_catalog_image(session, image_ref):
-        return
+        return None
     raise AppError(
         ErrorCode.VALIDATION_ERROR,
         key="orchestrator.imageRefNotAllowed",
@@ -480,13 +489,12 @@ async def create_instance_row(
             return existing, False
 
     sku = await catalog_service.get_on_sale_sku(session, req.sku_id)
-    await _validate_request(session, req, sku)
+    image_arch = await _validate_request(session, user_id, req, sku)
     await _admit(session, user_id, req, sku, exclude_instance_id=exclude_instance_id)
     policies = await get_runtime_config(session)
     unit_price = price_for(
         sku.price_hourly, market=req.market, policies=policies, period=req.period
     )
-    disk_id = await _lock_disk(session, user_id, req.data_disk_id)
     authorized_keys = await _reserve_funds_and_quota(
         session, user_id, req, sku, unit_price, exclude_instance_id=exclude_instance_id
     )
@@ -496,7 +504,8 @@ async def create_instance_row(
         sku,
         unit_price=unit_price,
         authorized_keys=authorized_keys,
-        disk_id=disk_id,
+        disk_ids=await disks_service.mountable_disk_ids(session, user_id),
+        image_arch=image_arch,
         idempotency_key=idempotency_key,
         fingerprint=fingerprint,
         service=service,
@@ -516,10 +525,12 @@ async def create_instance_row(
     return instance, True
 
 
-async def _validate_request(session: AsyncSession, req: InstanceRequest, sku: "Sku") -> None:
+async def _validate_request(
+    session: AsyncSession, user_id: int, req: InstanceRequest, sku: "Sku"
+) -> str | None:
     """Spec pairings the contract layer cannot catch: card count vs SKU form, image shape and
-    source,
-    purchase mode vs SKU switches."""
+    source (an uploaded image must match a CPU architecture of the pool), purchase mode vs SKU
+    switches. Returns the uploaded image's architecture."""
     if sku.max_gpus_per_instance == 0:
         if req.gpu_count != 0:
             raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.cpuSkuNoGpu")
@@ -529,11 +540,19 @@ async def _validate_request(session: AsyncSession, req: InstanceRequest, sku: "S
             key="orchestrator.gpuCountRange",
             params={"max": sku.max_gpus_per_instance},
         )
-    await _validate_image_ref(session, req.image_ref, require_pinned=req.is_service)
+    arch = await _validate_image_ref(session, user_id, req.image_ref, require_pinned=req.is_service)
     if req.market == MARKET_SPOT and not sku.spot_enabled:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.spotNotEnabled")
     if req.market == MARKET_SUBSCRIPTION and not sku.period_enabled:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orchestrator.periodNotEnabled")
+    if arch:
+        archs = await nodes_service.pool_archs(session, sku.pool_label)
+        if archs and arch not in archs:
+            raise conflict(
+                key="customImages.archUnavailable",
+                params={"arch": arch, "archs": ", ".join(sorted(archs))},
+            )
+    return arch
 
 
 async def _admit(
@@ -547,9 +566,7 @@ async def _admit(
     """Dispatch gate (cluster capability) + capacity soft admission (preempt spot instances first
     when
     short, same transaction as the creation)."""
-    await _require_cluster_for_pool(
-        session, sku.pool_label, req.gpu_count, with_data_disk=req.data_disk_id is not None
-    )
+    await _require_cluster_for_pool(session, sku.pool_label, req.gpu_count)
     await _soft_admit_capacity(
         session,
         sku,
@@ -558,14 +575,6 @@ async def _admit(
         user_id=user_id,
         freeing_slots=await _freeing_slots_of(session, exclude_instance_id, sku),
     )
-
-
-async def _lock_disk(session: AsyncSession, user_id: int, data_disk_id: int | None) -> int | None:
-    """Lock the disk row before mounting (lock order disk → wallet, same direction as the delete /
-    expand chains); attach re-enters this lock after the insert in the same transaction."""
-    if data_disk_id is None:
-        return None
-    return (await disks_service.lock_disk_for_attach(session, user_id, data_disk_id)).id
 
 
 async def _reserve_funds_and_quota(
@@ -610,7 +619,8 @@ def _build_row(
     *,
     unit_price: Decimal,
     authorized_keys: list[str],
-    disk_id: int | None,
+    disk_ids: list[int],
+    image_arch: str | None,
     idempotency_key: str | None,
     fingerprint: str,
     service: ServiceBinding | None,
@@ -623,7 +633,7 @@ def _build_row(
         user_id=user_id,
         name=req.name or f"instance-{uuid4().hex[:6]}",
         sku_id=sku.id,
-        spec=_snapshot_spec(sku),
+        spec={**_snapshot_spec(sku), **({"image_arch": image_arch} if image_arch else {})},
         price_hourly=unit_price,
         gpu_count=req.gpu_count,
         market=req.market,
@@ -632,7 +642,7 @@ def _build_row(
         k8s_namespace=f"{get_settings().k8s_namespace_prefix}{user_id}",
         jupyter_token=_encode_token(secrets.token_urlsafe(24), instance_uuid=instance_uuid),
         authorized_keys=authorized_keys,
-        data_disk_id=disk_id,
+        data_disk_ids=disk_ids,
         idempotency_key=idempotency_key,
         request_fingerprint=fingerprint,
         workload_type=req.workload_type,
@@ -678,10 +688,6 @@ async def _post_insert(
             idempotency_key=None,
         )
         await billing_service.assert_can_afford(session, user_id)
-    if instance.data_disk_id is not None:
-        await disks_service.attach_for_instance(
-            session, user_id, instance.data_disk_id, instance.id
-        )
     session.add(
         InstanceEvent(
             instance_id=instance.id,
@@ -945,20 +951,6 @@ async def stop_instance(session: AsyncSession, user_id: int, uuid: str) -> Insta
     return instance
 
 
-async def _rebind_data_disk(session: AsyncSession, instance: Instance) -> None:
-    """(Re-)occupy the data disk: lock the disk and validate the mount via attach_for_instance when
-    it exists, drop the mount point when deleted."""
-    if instance.data_disk_id is None:
-        return
-    disk = await session.get(DataDisk, instance.data_disk_id, with_for_update=True)
-    if disk is None or disk.status == "deleted":
-        instance.data_disk_id = None
-        await session.flush()
-        return
-
-    await disks_service.attach_for_instance(session, instance.user_id, disk.id, instance.id)
-
-
 async def lock_instance_row(session: AsyncSession, instance: Instance) -> Instance:
     """FOR UPDATE on an already fetched instance row and re-read (it cannot vanish within the
     transaction)."""
@@ -968,35 +960,21 @@ async def lock_instance_row(session: AsyncSession, instance: Instance) -> Instan
 
 
 async def start_instance_row(session: AsyncSession, user_id: int, instance: Instance) -> Instance:
-    """Row-level core of start: lock the instance → frozen / status / node / cluster / subscription
-    /
-    data disk / balance gates in turn
-    → starting + outbox, **no commit**."""
+    """Row-level core of start: lock the instance → frozen / status / cluster / subscription /
+    data disk / balance gates in turn → starting + outbox, **no commit**. Disks live on the
+    storage cluster, so the instance starts on any node of its pool."""
     instance = await lock_instance_row(session, instance)
     if instance.status == sm_def.FROZEN:
         raise AppError(ErrorCode.INSTANCE_FROZEN, key="orchestrator.frozenNeedsRecharge")
     recovered = instance.status == sm_def.FAILED
     if instance.status != sm_def.STOPPED and not recovered:
         raise AppError(ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.startNeedsStopped")
-    if instance.node_name:
-        node = await nodes_service.get_node_spec(session, instance.node_name)
-        if node is not None and node.status == "Missing":
-            raise AppError(
-                ErrorCode.INSTANCE_INVALID_TRANSITION,
-                key="orchestrator.nodeUnreachable",
-                http_status=409,
-            )
-    await _require_cluster_for_pool(
-        session,
-        instance.spec.get("pool_label"),
-        instance.gpu_count,
-        with_data_disk=instance.data_disk_id is not None,
-    )
+    await _require_cluster_for_pool(session, instance.spec.get("pool_label"), instance.gpu_count)
     if instance.market == MARKET_SUBSCRIPTION:
         await billing_service.assert_subscription_active(session, instance.id)
     if recovered:
         await transition(session, instance, sm_def.STOPPED, reason="failed_recover", actor="user")
-    await _rebind_data_disk(session, instance)
+    instance.data_disk_ids = await disks_service.mountable_disk_ids(session, instance.user_id)
     if instance.market != MARKET_SUBSCRIPTION:
         estimate = hourly_cost(instance.price_hourly, instance.gpu_count)
         await billing_service.assert_can_afford(session, user_id, additional_hourly=estimate)
@@ -1021,13 +999,9 @@ async def restart_instance(session: AsyncSession, user_id: int, uuid: str) -> In
         raise AppError(
             ErrorCode.INSTANCE_INVALID_TRANSITION, key="orchestrator.restartNeedsRunning"
         )
-    await _require_cluster_for_pool(
-        session,
-        instance.spec.get("pool_label"),
-        instance.gpu_count,
-        with_data_disk=instance.data_disk_id is not None,
-    )
+    await _require_cluster_for_pool(session, instance.spec.get("pool_label"), instance.gpu_count)
     event = await transition(session, instance, sm_def.STOPPING, reason="restart", actor="user")
+    instance.data_disk_ids = await disks_service.mountable_disk_ids(session, instance.user_id)
     enqueue(session, "instance.restart", {"instance_id": instance.id, "restart_event_id": event.id})
     await session.commit()
     return instance
@@ -1260,12 +1234,11 @@ def build_pod_spec(
     instance: Instance,
     *,
     distro: str | None = None,
-    data_disk_pvc: str | None = None,
+    mounts: tuple[PodVolumeMount, ...] = (),
     image_pull_secret: str | None = None,
     netgw: NetgwAttach | None = None,
 ) -> InstancePodSpec:
-    """Build the Pod spec. data_disk_pvc is computed by the caller from the disk uuid
-    (data_disk_pvc_name);
+    """Build the Pod spec. mounts (data disks, organization storage) are resolved by the caller;
     image_pull_secret is the pull-credential Secret name in that ns; the service form reads the
     snapshot columns of the instance row only. netgw (an L3 attachment) only lands on
     user-namespaced dev Pods.
@@ -1301,14 +1274,21 @@ def build_pod_spec(
         host_users=gpu_req.host_users,
         vcpu=instance.spec["vcpu"] * spec_n,
         mem_gb=instance.spec["mem_gb"] * spec_n,
-        disk_gb=instance.spec["disk_gb"],
+        system_disk_pvc=instance_disk_pvc_name(instance.uuid),
         ssh_node_port=instance.ssh_port,
         jupyter_host=jupyter_host(instance.uuid, settings),
         env=env,
         secret_env=secrets_,
         authorized_keys=tuple(instance.authorized_keys),
-        node_selector=gpu_req.node_selector,
-        data_disk_pvc=data_disk_pvc,
+        node_selector={
+            **gpu_req.node_selector,
+            **(
+                {ARCH_NODE_LABEL: instance.spec["image_arch"]}
+                if instance.spec.get("image_arch")
+                else {}
+            ),
+        },
+        extra_mounts=mounts,
         scheduler_name=gpu_req.scheduler_name,
         annotations={**gpu_req.annotations, **bandwidth_annotations(settings)},
         image_pull_secret=image_pull_secret,
@@ -1328,6 +1308,30 @@ def build_pod_spec(
     )
 
 
+async def data_disk_mounts(session: AsyncSession, instance: Instance) -> tuple[PodVolumeMount, ...]:
+    """Mounts of the instance's disk snapshot (worker side): deleted / deleting / frozen disks are
+    skipped, a grace disk mounts read-only, a disk whose subvolume is not provisioned yet (created
+    together with the instance) is provisioned here first."""
+    out: list[PodVolumeMount] = []
+    for disk_id in instance.data_disk_ids or ():
+        disk = await session.get(DataDisk, disk_id)
+        if disk is None or disk.user_id != instance.user_id:
+            continue
+        if disk.status not in disks_service.MOUNTED_STATUSES:
+            continue
+        if disk.ceph_path is None:
+            await ensure_data_volume(session, disk)
+            disk.provisioned = True
+        out.append(
+            PodVolumeMount(
+                pvc_name=data_disk_pvc_name(disk.uuid),
+                mount_path=disk.mount_path,
+                read_only=disk.status == "grace",
+            )
+        )
+    return tuple(out)
+
+
 def startup_failure_threshold(creating_timeout_seconds: int) -> int:
     """startupProbe failure threshold: total (threshold × period) below the platform creating
     timeout, at least 3."""
@@ -1337,19 +1341,14 @@ def startup_failure_threshold(creating_timeout_seconds: int) -> int:
 async def build_pod_spec_with_cluster(
     session: AsyncSession, instance: Instance, *, image_pull_secret: str | None = None
 ) -> InstancePodSpec:
-    """For outbox handlers: with the cluster distribution context, the data-disk subPath (read
-    from the disk record) and the instance's L3 attachment."""
+    """For outbox handlers: with the cluster distribution context, the data-disk mounts of the
+    instance's snapshot and the instance's L3 attachment."""
     row = await nodes_service.get_cluster_status(session)
-    disk_pvc: str | None = None
-    if instance.data_disk_id is not None:
-        disk = await session.get(DataDisk, instance.data_disk_id)
-        if disk is None:
-            raise RuntimeError(f"data disk {instance.data_disk_id} missing for {instance.uuid}")
-        disk_pvc = data_disk_pvc_name(disk.uuid)
     return build_pod_spec(
         instance,
         distro=row.distro if row else None,
-        data_disk_pvc=disk_pvc,
+        mounts=await data_disk_mounts(session, instance)
+        + await org_storage_mounts(session, instance),
         image_pull_secret=image_pull_secret,
         netgw=await netgw_service.instance_attach(session, instance),
     )

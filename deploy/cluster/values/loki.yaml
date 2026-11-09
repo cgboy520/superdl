@@ -30,8 +30,8 @@ singleBinary:
   automountServiceAccountToken: false
   persistence:
     enabled: true
-    storageClass: superdl-cephfs
-    accessModes: ["ReadWriteMany"]
+    storageClass: topolvm-provisioner
+    accessModes: ["ReadWriteOnce"]
     size: 50Gi
   resources:
     requests: {cpu: 100m, memory: 512Mi}

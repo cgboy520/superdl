@@ -73,9 +73,11 @@ spec:
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
             - {name: db-ca, mountPath: /etc/superdl/db-ca, readOnly: true}
+            - {name: uploads, mountPath: /var/lib/superdl/uploads}
       volumes:
         - {name: tmp, emptyDir: {}}
         - {name: db-ca, configMap: {name: superdl-db-ca, optional: true}}
+        - {name: uploads, persistentVolumeClaim: {claimName: superdl-uploads}}
 ---
 apiVersion: v1
 kind: Service

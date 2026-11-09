@@ -76,6 +76,9 @@ class PoliciesOut(BaseModel):
     recharge_min: MoneyOut
     recharge_max: MoneyOut
     recharge_presets: list[MoneyOut]
+    custom_image_max_count: int
+    custom_image_max_total_gb: int
+    custom_image_max_upload_gb: int
 
 
 class SubscriptionQuoteOut(BaseModel):
@@ -178,8 +181,8 @@ class RefundableOrderOut(BaseModel):
     An order may be partially refunded several times: max_amount = min(order remainder,
     non-negative available balance, refundable ledger balance).
     Remainder = order amount − Σ paid refunds; available balance = balance − frozen.
-    The refundable ledger balance is the net ledger excluding positive adjustments, floored at
-    zero.
+    The refundable ledger balance is the net ledger excluding positive adjustments and tenant
+    balance moves, floored at zero.
     """
 
     order_no: str

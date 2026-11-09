@@ -53,13 +53,9 @@ class ListenerRow:
 
 
 @dataclass(frozen=True)
-class StorageClassRow:
+class CsiDriverRow:
     name: str
-    provisioner: str = ""
-    binding_mode: str = ""
-    expandable: bool = False
-    reclaim: str = ""
-    is_default: bool = False
+    attach_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -280,41 +276,39 @@ def _runtime_class_objects(rows: Sequence[RuntimeClassRow]) -> tuple[ComponentOb
 
 
 def storage_facts(
-    rows: Sequence[StorageClassRow], instance_disk_sc: str, data_disk_sc: str
+    drivers: Sequence[CsiDriverRow], nodeplugin: WorkloadRow, csi_driver: str
 ) -> ComponentFacts:
-    """ok when the instance-disk SC exists, otherwise down; a missing data-disk SC only marks a
-    warning fact."""
-    names = {r.name for r in rows}
-    instance_ok = instance_disk_sc in names
-    data_ok = data_disk_sc in names
-    state: ComponentState = "ok" if instance_ok else "down"
+    """The CephFS CSI driver is registered and its node plugin runs on every node: ok; node plugin
+    partly ready: degraded; driver missing or no node plugin: down. Ceph reachability is merged
+    in from the storage status by the nodes module."""
+    driver_ok = any(d.name == csi_driver for d in drivers)
+    plugin_ok = nodeplugin.desired > 0 and nodeplugin.ready >= nodeplugin.desired
+    state: ComponentState
+    if not driver_ok or nodeplugin.ready == 0:
+        state = "down"
+    elif not plugin_ok:
+        state = "degraded"
+    else:
+        state = "ok"
     return ComponentFacts(
         state=state,
-        headline=ComponentFact(key="count", value=str(len(rows))),
+        headline=ComponentFact(key="nodePlugin", value=f"{nodeplugin.ready}/{nodeplugin.desired}"),
         facts=(
             ComponentFact(
-                key="instanceDisk",
-                value=instance_disk_sc if instance_ok else "-",
-                tone="normal" if instance_ok else "bad",
+                key="csiDriver",
+                value=csi_driver if driver_ok else "-",
+                tone="normal" if driver_ok else "bad",
             ),
             ComponentFact(
-                key="dataDisk",
-                value=data_disk_sc if data_ok else "-",
-                tone="normal" if data_ok else "warn",
+                key="nodePlugin",
+                value=f"{nodeplugin.ready}/{nodeplugin.desired}",
+                tone="normal" if plugin_ok else ("bad" if nodeplugin.ready == 0 else "warn"),
             ),
         ),
         objects=tuple(
-            ComponentObject(
-                name=r.name,
-                fields={
-                    "provisioner": r.provisioner,
-                    "bindingMode": r.binding_mode,
-                    "expandable": "true" if r.expandable else "false",
-                    "reclaim": r.reclaim,
-                    "default": "true" if r.is_default else "false",
-                },
-            )
-            for r in sorted(rows, key=lambda r: r.name)[:MAX_OBJECTS]
+            ComponentObject(name=r.name, fields={"namespace": r.namespace, "image": r.image})
+            for r in (nodeplugin,)
+            if r.desired > 0
         ),
     )
 
@@ -425,7 +419,8 @@ class ProbeRows:
     prometheus: WorkloadRow = WorkloadRow("prometheus")
     alertmanager: WorkloadRow = WorkloadRow("alertmanager")
     runtime_classes: Sequence[RuntimeClassRow] = ()
-    storage_classes: Sequence[StorageClassRow] = ()
+    csi_drivers: Sequence[CsiDriverRow] = ()
+    ceph_nodeplugin: WorkloadRow = WorkloadRow("ceph-csi-cephfs-nodeplugin")
     gateway_programmed: bool = False
     gateway_address: str = ""
     listeners: Sequence[ListenerRow] = ()
@@ -446,9 +441,7 @@ def pool_counts(nodes: Sequence[NodeRow]) -> tuple[dict[str, int], dict[str, int
     return pools, ready
 
 
-def build_facts(
-    rows: ProbeRows, *, instance_disk_sc: str, data_disk_sc: str
-) -> dict[str, ComponentFacts]:
+def build_facts(rows: ProbeRows, *, csi_driver: str) -> dict[str, ComponentFacts]:
     """Facts of the ten health-check items. Keys map one to one to the nodes module's
     ComponentKey."""
     _, pools_ready = pool_counts(rows.nodes)
@@ -464,7 +457,7 @@ def build_facts(
             rows.kata_deploy,
             [n for n in rows.nodes if n.pool == "kata"],
         ),
-        "storage": storage_facts(rows.storage_classes, instance_disk_sc, data_disk_sc),
+        "storage": storage_facts(rows.csi_drivers, rows.ceph_nodeplugin, csi_driver),
         "gateway": gateway_facts(
             rows.gateway_programmed, rows.gateway_address, rows.listeners, rows.gateway_reason
         ),

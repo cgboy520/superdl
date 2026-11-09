@@ -7,6 +7,7 @@
 import type { AdminOrgOutStatus } from './adminOrgOutStatus';
 
 export interface AdminOrgOut {
+  code: string;
   created_at: string;
   dissolved_at: string | null;
   members: number;

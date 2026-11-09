@@ -11,7 +11,6 @@ import type { ServiceCreatePeriod } from './serviceCreatePeriod';
 export interface ServiceCreate {
   container_args?: string[] | null;
   container_command?: string[] | null;
-  data_disk_id?: number | null;
   env?: ServiceCreateEnv;
   env_secret_keys?: string[] | null;
   /**

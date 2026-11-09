@@ -63,7 +63,7 @@ The instance layer exposes only read-only and purchase-mode endpoints for a serv
 3. New revision → failed: the listener clears `rollout_instance_id` and sends an in-app notification (type `service`, target = slug); the old revision stays stopped, and the user's "start" is the rollback (`revision` does not go back).
 4. User-visible window: between the old Pod's deletion and the new Pod becoming Ready the gateway answers 503; slug / URL / API keys do not change.
 5. Zero double charging: the old revision's tail bill is issued once by the billing listener on running→stopping; the new revision is a new instance_id; a retire replay against a releasing row is a no-op.
-6. Data disks do not follow revisions: the old revision holds the mount until it is released, the new revision's `data_disk_id` can only mount an idle disk, and the frontend never sends one.
+6. Data disks are not part of a revision: like every instance of the owner, each revision mounts all of the owner's data disks at their mount paths (snapshotted when its instance is created), and CephFS lets the old and the new revision mount them at the same time during the switch.
 
 ### Domain rules
 

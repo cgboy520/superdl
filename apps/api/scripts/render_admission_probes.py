@@ -1,6 +1,7 @@
-"""Export the instance Pod, the prewarm Job and its Pod template, and the private-network gateway
-objects as admission probe manifests, plus deny-*.yaml variants of an L3-attached instance Pod the
-tenant Pod baseline policy must refuse.
+"""Export the instance Pod, the prewarm Job and its Pod template, the private-network gateway
+objects and a static CephFS PV as admission probe manifests, plus deny-*.yaml variants of an
+L3-attached instance Pod the tenant Pod baseline policy must refuse and of the PV the platform SA
+write scope must refuse.
 
 Usage: uv run python scripts/render_admission_probes.py <output dir>
 Output: <name>.yaml (object) and <name>.as (the --as identity for dry-run; empty = current
@@ -23,11 +24,13 @@ from app.core.gpu_adapter import POOL_HAMI, POOL_KATA, POOL_MIG, build_gpu_reque
 from app.core.k8s.base import (
     NETGW_NAMESPACE,
     PRIVATE_CIDRS,
+    CephVolumeSpec,
     InstancePodSpec,
     NetgwAttach,
     NetgwInstanceForward,
     NetgwIntranetForward,
     NetgwSpec,
+    PodVolumeMount,
 )
 from app.core.k8s.netgw import (
     build_netgw_deployment,
@@ -37,6 +40,7 @@ from app.core.k8s.netgw import (
     build_tenant_services,
 )
 from app.core.k8s.real import (
+    build_ceph_pv,
     build_instance_pod,
     build_prewarm_job,
 )
@@ -75,7 +79,7 @@ def _instance_spec(name: str, gpu_req: object) -> InstancePodSpec:
         host_users=req.host_users,  # type: ignore[attr-defined]
         vcpu=1,
         mem_gb=1,
-        disk_gb=1,
+        system_disk_pvc=f"{name}-root",
         ssh_node_port=31999,
         jupyter_host=f"{name}.app.example.invalid",
         secret_env={"JUPYTER_TOKEN": "probe"},
@@ -151,7 +155,7 @@ def _deny_probes(attached: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
         "attach-env": _set(f"{init}.env", [{"name": "X", "value": "1"}]),
         "attach-sidecar": _set(f"{init}.restartPolicy", "Always"),
         "attach-extra-mount": _set(
-            f"{init}.volumeMounts", [{"name": "instance-disk", "mountPath": "/root"}]
+            f"{init}.volumeMounts", [{"name": "system-disk", "mountPath": "/root"}]
         ),
         "netadmin-other-init": _set(f"{init}.name", "setup"),
         "workspace-netadmin": _set(
@@ -174,6 +178,58 @@ def _deny_probes(attached: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
         pod["metadata"]["name"] = f"deny-{name}"
         mutate(pod)
         out.append((f"deny-{name}", pod))
+    return out
+
+
+CEPH_PV_PROBE = CephVolumeSpec(
+    namespace=TENANT_NS,
+    pvc_name="disk-probe",
+    pv_name="superdl-u0-disk-probe",
+    secret_name="ceph-u0-disk-probe",
+    cluster_id="00000000-0000-0000-0000-000000000000",
+    fs_name="cephfs",
+    root_path="/volumes/probe/u0-disk-probe/0",
+    client_id="probe.u0-disk-probe",
+    client_key="AQBprobe==",
+    size_gb=1,
+    mount_options="ms_mode=prefer-crc",
+)
+
+
+def _drop(path: str) -> Callable[[dict[str, Any]], None]:
+    def mutate(obj: dict[str, Any]) -> None:
+        *parents, leaf = path.split(".")
+        node: Any = obj
+        for part in parents:
+            node = node[part]
+        node.pop(leaf)
+
+    return mutate
+
+
+def _pv_deny_probes(pv: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Variants of the static CephFS PV, each breaking one rule of the platform SA PV scope."""
+    csi = "spec.csi"
+    cases: dict[str, Callable[[dict[str, Any]], None]] = {
+        "pv-hostpath": lambda d: (
+            d["spec"].pop("csi"),
+            d["spec"].__setitem__("hostPath", {"path": "/"}),
+        ),
+        "pv-other-driver": _set(f"{csi}.driver", "rbd.csi.ceph.com"),
+        "pv-dynamic": _drop(f"{csi}.volumeAttributes.staticVolume"),
+        "pv-secret-elsewhere": _set(f"{csi}.nodeStageSecretRef.namespace", "kube-system"),
+        "pv-claim-elsewhere": _set("spec.claimRef.namespace", "superdl"),
+        "pv-delete-policy": _set("spec.persistentVolumeReclaimPolicy", "Delete"),
+        "pv-publish-secret": _set(
+            f"{csi}.nodePublishSecretRef", {"name": "x", "namespace": TENANT_NS}
+        ),
+    }
+    out: list[tuple[str, dict[str, Any]]] = []
+    for name, mutate in cases.items():
+        obj = copy.deepcopy(pv)
+        obj["metadata"]["name"] = f"deny-{name}"
+        mutate(obj)
+        out.append((f"deny-{name}", obj))
     return out
 
 
@@ -216,7 +272,13 @@ def main(out_dir: pathlib.Path) -> None:
         )
 
     disk_spec = _instance_spec("instance-with-disk", shapes["instance-hami-k3s"])
-    disk_spec = replace(disk_spec, data_disk_pvc="disk-probe")
+    disk_spec = replace(
+        disk_spec,
+        extra_mounts=(
+            PodVolumeMount("disk-probe", "/data"),
+            PodVolumeMount("orgmount-probe", "/mnt/org/probe", read_only=True),
+        ),
+    )
     objects.append(
         (
             "instance-with-disk",
@@ -244,6 +306,7 @@ def main(out_dir: pathlib.Path) -> None:
     )
 
     objects.extend(_netgw_objects())
+    objects.append(("ceph-pv", build_ceph_pv(CEPH_PV_PROBE), SA + "superdl-tenant-mgr"))
 
     kinds = {
         client.V1Pod: ("v1", "Pod"),
@@ -252,6 +315,7 @@ def main(out_dir: pathlib.Path) -> None:
         client.V1Secret: ("v1", "Secret"),
         client.V1Service: ("v1", "Service"),
         client.V1NetworkPolicy: ("networking.k8s.io/v1", "NetworkPolicy"),
+        client.V1PersistentVolume: ("v1", "PersistentVolume"),
     }
     rendered: list[tuple[str, dict[str, Any], str]] = []
     for name, obj, as_user in objects:
@@ -261,6 +325,8 @@ def main(out_dir: pathlib.Path) -> None:
     rendered.extend(
         (name, pod, SA + "superdl-tenant-mgr") for name, pod in _deny_probes(attached_dict)
     )
+    pv_dict = next(d for n, d, _ in rendered if n == "ceph-pv")
+    rendered.extend((name, pv, SA + "superdl-tenant-mgr") for name, pv in _pv_deny_probes(pv_dict))
     for name, data, as_user in rendered:
         (out_dir / f"{name}.yaml").write_text(yaml.safe_dump(data, sort_keys=False))
         (out_dir / f"{name}.as").write_text(as_user)

@@ -63,12 +63,12 @@ async def _switch_tasks(sm) -> list[OutboxTask]:
         )
 
 
-async def test_stopped_instance_blocks_switch(sm):
-    """A stopped instance blocks the pool switch."""
+async def test_running_instance_blocks_switch(sm):
+    """A running instance blocks the pool switch."""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-1", pool_label="hami", gpu_count=8)
-    await seed_instance(sm, status="stopped", node_name="sw-1")
+    await seed_instance(sm, status="running", node_name="sw-1")
 
     with pytest.raises(AppError) as e:
         await _switch(sm, "sw-1", "kata")
@@ -80,12 +80,14 @@ async def test_stopped_instance_blocks_switch(sm):
         assert (await session.execute(select(NodeEnrollment))).scalars().all() == []
 
 
-async def test_released_instance_does_not_block(sm):
-    """A released instance does not block the pool switch."""
+async def test_stopped_and_released_instances_do_not_block(sm):
+    """Stopped and released instances hold nothing on the node (disks live on the storage
+    cluster), so they do not block the pool switch."""
     await _cluster_configured(sm)
     await _probe(sm)
     await seed_node_spec(sm, node_name="sw-2", pool_label="hami", gpu_count=8)
     await seed_instance(sm, status="released", node_name="sw-2")
+    await seed_instance(sm, status="stopped", node_name="sw-2")
 
     await _switch(sm, "sw-2", "kata")
     assert (await _spec(sm, "sw-2")).desired_pool == "kata"
@@ -304,9 +306,9 @@ async def test_reconciler_honours_desired_pool_over_enrollment(sm, fake_auto_rea
 
 
 async def test_decommission_instance_gate_and_force(sm):
-    """Decommissioning with unreleased instances needs force."""
+    """Decommissioning with running instances needs force."""
     await seed_node_spec(sm, node_name="dec-1", pool_label="hami", gpu_count=8)
-    await seed_instance(sm, status="stopped", node_name="dec-1")
+    await seed_instance(sm, status="running", node_name="dec-1")
 
     async with sm() as session:
         with pytest.raises(AppError) as e:

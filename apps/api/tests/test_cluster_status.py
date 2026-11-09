@@ -169,8 +169,10 @@ class TestGateWiring:
         )
         assert resp2.status_code == 202, resp2.text
 
-    async def test_create_blocked_when_storage_class_missing(self, sm, fake_auto_ready, client):
-        """SCs are checked by name, a mismatch → immediate 409."""
+    async def test_create_blocked_when_storage_not_ready(self, sm, fake_auto_ready, client):
+        """No CephFS CSI node plugin, or a Ceph probe that failed: creation of instances and
+        disks → immediate 409 naming the reason."""
+        from app.core.ceph.status import save_storage_status
         from app.modules.nodes.models import ClusterStatus
 
         await seed_skus(sm)
@@ -178,22 +180,29 @@ class TestGateWiring:
         async with sm() as session:
             row = await session.get(ClusterStatus, 1)
             assert row is not None
-            row.storage_classes = ["local-path"]
+            row.ceph_csi_ready = False
             await session.commit()
         skus = (await client.get("/api/v1/skus")).json()
         images = (await client.get("/api/v1/images")).json()
-        resp = await client.post(
-            "/api/v1/instances",
-            json={
-                "sku_id": next(s for s in skus if s["tier"] == "dedicated")["id"],
-                "gpu_count": 1,
-                "image_ref": images[0]["image_ref"],
-                "ssh_key_ids": [key_id],
-            },
-            headers=headers,
-        )
+        body = {
+            "sku_id": next(s for s in skus if s["tier"] == "dedicated")["id"],
+            "gpu_count": 1,
+            "image_ref": images[0]["image_ref"],
+            "ssh_key_ids": [key_id],
+        }
+        resp = await client.post("/api/v1/instances", json=body, headers=headers)
         assert resp.status_code == 409, resp.text
-        assert resp.json()["detail"]["missing"] == ["topolvm-provisioner"]
+        assert resp.json()["message_key"] == "nodes.storageNotReady"
+        assert resp.json()["detail"]["reason"] == "ceph_csi_missing"
+        async with sm() as session:
+            row = await session.get(ClusterStatus, 1)
+            assert row is not None
+            row.ceph_csi_ready = True
+            await save_storage_status(session, usage=None, error="ceph: timed out after 60s")
+            await session.commit()
+        resp = await client.post("/api/v1/instances", json=body, headers=headers)
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["detail"]["reason"] == "ceph_unreachable"
         resp = await client.post(
             "/api/v1/disks", json={"name": "d", "size_gb": 100}, headers=headers
         )
@@ -400,26 +409,34 @@ class TestClusterEndpoints:
         comp = {c["key"]: c for c in body["components"]}
         assert comp["hami"]["fix_hint"] == "deploy/cluster/apply.sh light -l name=hami"
 
-    async def test_storage_component_uses_the_same_names_as_the_gate(
-        self, sm, fake_auto_ready, client
+    async def test_storage_component_merges_csi_and_ceph_status(
+        self, sm, fake_auto_ready, client, ceph
     ):
-        """The storage component checks SCs by name; only the data-disk SC missing yields a
-        warning."""
+        """The storage item is down without the CSI driver, ok with it and a fresh Ceph probe,
+        and down again when the storage patrol cannot reach Ceph."""
         from app.modules.nodes.patrol import node_spec_patrol
+        from app.modules.orchestrator.storage_patrol import storage_patrol
 
-        fake_auto_ready.probe_storage_classes = ("local-path",)
+        fake_auto_ready.probe_ceph_csi_ready = False
         await node_spec_patrol(sm)
         headers = await admin_headers(sm, client, role="readonly")
         body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
         storage = {c["key"]: c for c in body["components"]}["storage"]
         assert storage["state"] == "down"
-        assert _fact(storage, "instanceDisk") == ("-", "bad")
-        fake_auto_ready.probe_storage_classes = ("local-path", "topolvm-provisioner")
+        assert _fact(storage, "csiDriver") == ("-", "bad")
+        fake_auto_ready.probe_ceph_csi_ready = True
         await node_spec_patrol(sm)
         body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
         storage = {c["key"]: c for c in body["components"]}["storage"]
         assert storage["state"] == "ok"
-        assert _fact(storage, "dataDisk") == ("-", "warn")
+        assert _fact(storage, "csiDriver") == ("cephfs.csi.ceph.com", "normal")
+        assert _fact(storage, "cephCluster") == ("reachable", "normal")
+        ceph.unreachable = True
+        await storage_patrol(sm)
+        body = (await client.get("/api/admin/v1/cluster/status", headers=headers)).json()
+        storage = {c["key"]: c for c in body["components"]}["storage"]
+        assert storage["state"] == "down"
+        assert _fact(storage, "cephCluster") == ("unreachable", "bad")
 
     async def test_kata_with_empty_pool_is_disabled_not_ok(self, sm, fake_auto_ready, client):
         """The kata pool without Ready nodes is disabled."""

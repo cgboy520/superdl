@@ -1,4 +1,4 @@
-"""Fake/Real data-disk contract; Real cases are gated by SUPERDL_TEST_KUBECONFIG."""
+"""Fake/Real CephFS volume contract; Real cases are gated by SUPERDL_TEST_KUBECONFIG."""
 
 import os
 import uuid
@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from kubernetes import client as k8s_client
 
-from app.core.k8s.base import K8sOrchestrator
+from app.core.k8s.base import CephVolumeSpec, K8sOrchestrator, ceph_pv_name, ceph_secret_name
 from app.core.k8s.fake import FakeOrchestrator
 from tests.helpers import use_kubeconfig, wait_pvc_bound
 
@@ -60,41 +60,39 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[Backend]:
             raise
 
 
-class TestDataDiskContract:
-    """Data-disk PVC create, grow and delete are synchronous, idempotent and grow-only."""
+class TestCephVolumeContract:
+    """CephFS volume objects (Secret + static PV + bound PVC): ensure is synchronous and
+    idempotent, delete tolerates missing objects."""
 
-    async def test_create_expand_delete(self, backend: Backend) -> None:
+    async def test_ensure_then_delete(self, backend: Backend) -> None:
         ns = backend.namespace
-        name = f"disk-{uuid.uuid4().hex}"
-        await backend.impl.ensure_data_disk(ns, name, 1)
-        await backend.impl.ensure_data_disk(ns, name, 1)
+        sub = f"u1-disk-{uuid.uuid4().hex}"
+        spec = CephVolumeSpec(
+            namespace=ns,
+            pvc_name=f"disk-{sub[-32:]}",
+            pv_name=ceph_pv_name(sub),
+            secret_name=ceph_secret_name(sub),
+            cluster_id="00000000-0000-0000-0000-000000000000",
+            fs_name="cephfs",
+            root_path=f"/volumes/conf/{sub}/0",
+            client_id=f"conf.{sub}",
+            client_key="AQBconformanceKey==",
+            size_gb=1,
+        )
+        await backend.impl.ensure_ceph_volume(spec)
+        await backend.impl.ensure_ceph_volume(spec)
         if backend.kind == "fake":
             assert backend.fake is not None
-            assert backend.fake.data_disks[(ns, name)] == 1
+            assert backend.fake.ceph_volumes[(ns, spec.pvc_name)] == spec
         else:
-            pvc: Any = backend.real.core.read_namespaced_persistent_volume_claim(name, ns)
-            assert pvc.spec.resources.requests["storage"] == "1Gi"
+            pvc: Any = backend.real.core.read_namespaced_persistent_volume_claim(spec.pvc_name, ns)
             assert pvc.spec.access_modes == ["ReadWriteMany"]
-            await wait_pvc_bound(backend.real.core, ns, name)
+            await wait_pvc_bound(backend.real.core, ns, spec.pvc_name)
 
-        await backend.impl.ensure_data_disk(ns, name, 2)
+        for _ in range(2):
+            await backend.impl.delete_ceph_volume(
+                ns, pvc_name=spec.pvc_name, pv_name=spec.pv_name, secret_name=spec.secret_name
+            )
         if backend.kind == "fake":
             assert backend.fake is not None
-            assert backend.fake.data_disks[(ns, name)] == 2
-        else:
-            grown: Any = backend.real.core.read_namespaced_persistent_volume_claim(name, ns)
-            assert grown.spec.resources.requests["storage"] == "2Gi"
-
-        await backend.impl.ensure_data_disk(ns, name, 1)
-        if backend.kind == "fake":
-            assert backend.fake is not None
-            assert backend.fake.data_disks[(ns, name)] == 2
-        else:
-            same: Any = backend.real.core.read_namespaced_persistent_volume_claim(name, ns)
-            assert same.spec.resources.requests["storage"] == "2Gi"
-
-        await backend.impl.delete_data_disk(ns, name)
-        await backend.impl.delete_data_disk(ns, name)
-        if backend.kind == "fake":
-            assert backend.fake is not None
-            assert (ns, name) not in backend.fake.data_disks
+            assert (ns, spec.pvc_name) not in backend.fake.ceph_volumes

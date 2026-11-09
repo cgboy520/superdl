@@ -47,7 +47,6 @@ async def create_instance(
             image_ref=body.image_ref,
             ssh_key_ids=tuple(body.ssh_key_ids),
             name=body.name,
-            data_disk_id=body.data_disk_id,
             market=body.market,
             period=body.period,
             period_count=body.period_count,

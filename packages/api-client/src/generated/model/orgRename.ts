@@ -5,7 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Omitted fields stay; the code changes only while the tenant has created no accounts.
+ */
 export interface OrgRename {
-  /** @maxLength 80 */
-  name: string;
+  code?: string | null;
+  name?: string | null;
 }
