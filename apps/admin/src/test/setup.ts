@@ -14,8 +14,9 @@ if (typeof globalThis.ResizeObserver === "undefined") {
 }
 
 if (typeof window.matchMedia !== "function") {
-  window.matchMedia = (query: string): MediaQueryList =>
-    ({
+  window.matchMedia = (query: string): MediaQueryList => {
+    // Plain object: the legacy listener pair stays for libraries that still call it.
+    const stub = {
       matches: false,
       media: query,
       onchange: null,
@@ -24,5 +25,7 @@ if (typeof window.matchMedia !== "function") {
       addEventListener: () => {},
       removeEventListener: () => {},
       dispatchEvent: () => false,
-    }) as MediaQueryList;
+    };
+    return stub;
+  };
 }

@@ -7,12 +7,12 @@
 import type { AdminRefundsExportApiAdminV1RefundsExportGetLang } from './adminRefundsExportApiAdminV1RefundsExportGetLang';
 
 export type AdminRefundsExportApiAdminV1RefundsExportGetParams = {
-status?: string | null;
-day?: string | null;
-/**
- * @minimum -720
- * @maximum 840
- */
-tz_offset_minutes?: number;
-lang?: AdminRefundsExportApiAdminV1RefundsExportGetLang;
+  status?: string | null;
+  day?: string | null;
+  /**
+   * @minimum -720
+   * @maximum 840
+   */
+  tz_offset_minutes?: number;
+  lang?: AdminRefundsExportApiAdminV1RefundsExportGetLang;
 };

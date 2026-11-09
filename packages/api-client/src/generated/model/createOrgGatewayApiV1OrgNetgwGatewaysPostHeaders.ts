@@ -6,5 +6,5 @@
  */
 
 export type CreateOrgGatewayApiV1OrgNetgwGatewaysPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

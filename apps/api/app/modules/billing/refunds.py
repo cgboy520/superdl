@@ -312,7 +312,7 @@ async def refundable_orders(session: AsyncSession, user_id: int) -> list[dict]:
 
 def admin_refunds_query(
     *, status: str | None = None, day_range: tuple[datetime, datetime] | None = None
-) -> Select[tuple[RefundRequest]]:
+) -> Select[RefundRequest]:
     """Admin refund request filters (shared by list and CSV): status exact;
     day_range is the [start, end) request-time window."""
     stmt = select(RefundRequest)

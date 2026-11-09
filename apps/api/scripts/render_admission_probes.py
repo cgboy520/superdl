@@ -143,7 +143,7 @@ def _deny_probes(attached: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     init = "spec.initContainers.0"
     cases: dict[str, Callable[[dict[str, Any]], None]] = {
         "attach-as-container": _attach_as_container,
-        "attach-other-image": _set(f"{init}.image", "busybox:1.36"),
+        "attach-other-image": _set(f"{init}.image", "busybox:1.37"),
         "attach-extra-capability": _set(
             f"{init}.securityContext.capabilities.add", ["NET_ADMIN", "SYS_ADMIN"]
         ),

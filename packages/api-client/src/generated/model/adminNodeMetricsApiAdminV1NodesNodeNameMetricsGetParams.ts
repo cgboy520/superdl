@@ -6,5 +6,5 @@
  */
 
 export type AdminNodeMetricsApiAdminV1NodesNodeNameMetricsGetParams = {
-range?: string;
+  range?: string;
 };

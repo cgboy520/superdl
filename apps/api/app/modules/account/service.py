@@ -598,7 +598,7 @@ async def user_statuses(session: AsyncSession, user_ids: Iterable[int]) -> dict[
     if not ids:
         return {}
     rows = await session.execute(select(User.id, User.status).where(User.id.in_(ids)))
-    return dict(rows.tuples().all())
+    return dict(rows.all())
 
 
 async def emails_by_user(session: AsyncSession, user_ids: Iterable[int]) -> dict[int, str | None]:
@@ -607,7 +607,7 @@ async def emails_by_user(session: AsyncSession, user_ids: Iterable[int]) -> dict
     if not ids:
         return {}
     rows = await session.execute(select(User.id, User.email).where(User.id.in_(ids)))
-    return dict(rows.tuples().all())
+    return dict(rows.all())
 
 
 async def active_user_id_by_verified_email(session: AsyncSession, email: str) -> int | None:
@@ -636,14 +636,10 @@ async def get_warn_thresholds(session: AsyncSession, user_ids: list[int]) -> dic
     if not user_ids:
         return {}
     rows = (
-        (
-            await session.execute(
-                select(User.id, User.low_balance_warn_hours).where(User.id.in_(user_ids))
-            )
+        await session.execute(
+            select(User.id, User.low_balance_warn_hours).where(User.id.in_(user_ids))
         )
-        .tuples()
-        .all()
-    )
+    ).all()
     return dict(rows)
 
 

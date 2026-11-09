@@ -6,5 +6,5 @@
  */
 
 export type CreateDiskApiV1DisksPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

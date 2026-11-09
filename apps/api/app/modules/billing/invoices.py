@@ -253,7 +253,7 @@ async def list_my_invoices(
 
 def admin_invoices_query(
     *, status: str | None = None, period: str | None = None
-) -> Select[tuple[InvoiceRequest]]:
+) -> Select[InvoiceRequest]:
     """Admin invoice request filters (shared by list and CSV): status / period exact."""
     stmt = select(InvoiceRequest)
     if status:

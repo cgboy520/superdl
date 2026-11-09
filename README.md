@@ -21,7 +21,7 @@ Full index: [docs/README.md](docs/README.md). Most used:
 
 ## Quick start
 
-Prerequisites: Docker, uv, Python 3.13, Node 24, pnpm 11 (versions in `.python-version`, `package.json` and the CI workflow).
+Prerequisites: Docker, uv, Python 3.13, Node 26, pnpm 12 (versions in `.python-version`, `package.json` and the CI workflow).
 Backend commands start from the repository root; run the API and the worker in separate terminals under `apps/api`. `seed_dev.py` is for dev/test only: it creates SKUs, platform images and an administrator whose password is printed once (`SUPERDL_SEED_ADMIN_PASSWORD` pins it).
 
 ```bash

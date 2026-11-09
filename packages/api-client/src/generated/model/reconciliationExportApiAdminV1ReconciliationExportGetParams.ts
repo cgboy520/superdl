@@ -7,6 +7,6 @@
 import type { ReconciliationExportApiAdminV1ReconciliationExportGetLang } from './reconciliationExportApiAdminV1ReconciliationExportGetLang';
 
 export type ReconciliationExportApiAdminV1ReconciliationExportGetParams = {
-day: string;
-lang?: ReconciliationExportApiAdminV1ReconciliationExportGetLang;
+  day: string;
+  lang?: ReconciliationExportApiAdminV1ReconciliationExportGetLang;
 };

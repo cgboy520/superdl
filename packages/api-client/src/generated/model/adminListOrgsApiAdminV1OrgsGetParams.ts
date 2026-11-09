@@ -6,8 +6,8 @@
  */
 
 export type AdminListOrgsApiAdminV1OrgsGetParams = {
-q?: string | null;
-status?: string | null;
-cursor?: string | null;
-limit?: number | null;
+  q?: string | null;
+  status?: string | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

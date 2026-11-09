@@ -6,5 +6,5 @@
  */
 
 export type GetLegalDocApiV1LegalDocKeyGetParams = {
-lang?: string | null;
+  lang?: string | null;
 };

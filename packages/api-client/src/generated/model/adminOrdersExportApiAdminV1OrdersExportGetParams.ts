@@ -7,14 +7,14 @@
 import type { AdminOrdersExportApiAdminV1OrdersExportGetLang } from './adminOrdersExportApiAdminV1OrdersExportGetLang';
 
 export type AdminOrdersExportApiAdminV1OrdersExportGetParams = {
-status?: string | null;
-order_no?: string | null;
-user_id?: number | null;
-day?: string | null;
-/**
- * @minimum -720
- * @maximum 840
- */
-tz_offset_minutes?: number;
-lang?: AdminOrdersExportApiAdminV1OrdersExportGetLang;
+  status?: string | null;
+  order_no?: string | null;
+  user_id?: number | null;
+  day?: string | null;
+  /**
+   * @minimum -720
+   * @maximum 840
+   */
+  tz_offset_minutes?: number;
+  lang?: AdminOrdersExportApiAdminV1OrdersExportGetLang;
 };

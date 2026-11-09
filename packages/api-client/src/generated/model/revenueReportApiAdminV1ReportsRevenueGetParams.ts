@@ -6,9 +6,9 @@
  */
 
 export type RevenueReportApiAdminV1ReportsRevenueGetParams = {
-/**
- * @minimum -720
- * @maximum 840
- */
-tz_offset_minutes?: number;
+  /**
+   * @minimum -720
+   * @maximum 840
+   */
+  tz_offset_minutes?: number;
 };

@@ -6,5 +6,5 @@
  */
 
 export type AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

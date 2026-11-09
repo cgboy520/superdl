@@ -1,6 +1,6 @@
 # RBAC of kube-prometheus-stack (shipped by the helmfile presync once values/kps.yaml sets global.rbac.create=false).
 # Difference from the chart's version: the operator's configmaps/secrets move from a cluster-wide ClusterRole to a Role in the monitoring namespace;
-# every other rule is copied verbatim from chart 88.0.0. Object names carry the superdl- prefix, so helm deleting the old objects of the same name on upgrade does not affect these.
+# every other rule is copied verbatim from chart 93.1.1. Object names carry the superdl- prefix, so helm deleting the old objects of the same name on upgrade does not affect these.
 # The Prometheus SA has no secrets verbs; no SA outside monitoring may hold secrets read access (CI helm render assertion + preflight can-i).
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -12,34 +12,52 @@ rules:
     resources:
       - alertmanagers
       - alertmanagers/finalizers
-      - alertmanagers/status
-      - alertmanagerconfigs
-      - prometheuses
-      - prometheuses/finalizers
-      - prometheuses/status
       - prometheusagents
       - prometheusagents/finalizers
-      - prometheusagents/status
+      - prometheuses
+      - prometheuses/finalizers
       - thanosrulers
       - thanosrulers/finalizers
-      - thanosrulers/status
-      - scrapeconfigs
-      - scrapeconfigs/status
-      - servicemonitors
-      - servicemonitors/status
-      - podmonitors
+    verbs: ["patch"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources:
+      - alertmanagers/status
+      - alertmanagerconfigs/status
       - podmonitors/status
-      - probes
       - probes/status
-      - prometheusrules
+      - prometheuses/status
+      - prometheusagents/status
       - prometheusrules/status
-    verbs: ["*"]
+      - scrapeconfigs/status
+      - servicemonitors/status
+      - thanosrulers/status
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources:
+      - alertmanagers/finalizers
+      - prometheusagents/finalizers
+      - prometheuses/finalizers
+      - thanosrulers/finalizers
+    verbs: ["update"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources:
+      - alertmanagers
+      - alertmanagerconfigs
+      - podmonitors
+      - probes
+      - prometheusagents
+      - prometheuses
+      - prometheusrules
+      - servicemonitors
+      - scrapeconfigs
+      - thanosrulers
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
-    verbs: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["list", "delete"]
+    verbs: ["list"]
   - apiGroups: [""]
     resources: ["services", "services/finalizers", "endpoints"]
     verbs: ["get", "create", "update", "delete"]
@@ -84,7 +102,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["configmaps", "secrets"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -162,6 +180,10 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["kube-prometheus-stack-admission"]
+    verbs: ["delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

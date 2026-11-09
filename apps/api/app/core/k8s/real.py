@@ -200,7 +200,7 @@ TENANT_SECRETS_CLUSTER_ROLE = "superdl-tenant-secrets"
 TENANT_MGR_SA_NAME = "superdl-tenant-mgr"
 EGRESS_ALLOWED_UDP_PORTS = (53, 443)
 
-WIPE_IMAGE = "busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662"
+WIPE_IMAGE = "busybox:1.37@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec"
 TENANT_EPHEMERAL_REQUEST = "10Gi"
 TENANT_EPHEMERAL_LIMIT = "64Gi"
 
@@ -1029,6 +1029,8 @@ class RealOrchestrator:
     def _create_endpoint_service_sync(self, spec: InstancePodSpec) -> None:
         """ClusterIP Service of the service endpoint; the port is the user-declared container
         port."""
+        if spec.service_port is None:
+            raise ValueError("an endpoint service needs the declared service port")
         svc = client.V1Service(
             metadata=client.V1ObjectMeta(
                 name=service_endpoint_service_name(spec.name),
@@ -1159,9 +1161,9 @@ class RealOrchestrator:
         await self._run(self._delete_instance_sync, namespace, name, force)
 
     def _delete_instance_sync(self, namespace: str, name: str, force: bool = False) -> None:
-        pod_kwargs = {"grace_period_seconds": 0} if force else {}
+        grace = 0 if force else None
         for deleter in (
-            lambda: self.core.delete_namespaced_pod(name, namespace, **pod_kwargs),
+            lambda: self.core.delete_namespaced_pod(name, namespace, grace_period_seconds=grace),
             lambda: self.core.delete_namespaced_service(name, namespace),
             lambda: self.core.delete_namespaced_service(jupyter_service_name(name), namespace),
             lambda: self.core.delete_namespaced_service(

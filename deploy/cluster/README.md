@@ -6,7 +6,7 @@ The distribution is detected by the platform (visible on the admin "Cluster" pag
 
 **The cpu pool is the pool of GPU-less machines**: it carries no GPU components and serves pure CPU instances only (`tier=cpu`); without GPU-less servers CPU specs can also sit on the hami pool, capped per node by the policy `gpu_node_cpu_instance_vcpu_cap` (0 = not allowed). Details in `docs/reference/nodes.md` and `docs/reference/catalog.md`.
 
-Chart versions are pinned in `helmfile.yaml.gotmpl`; the K8s version follows the installer channel (ansible `rke2_channel`, default `latest`); the real-hardware validation checklist was verified against v1.36.x; upgrades go through change review.
+Chart versions are pinned in `helmfile.yaml.gotmpl`; the K8s version is pinned to v1.36.6 (ansible `rke2_version` / `k3s_version`, inside Cilium's supported range); the real-hardware validation checklist was verified against v1.36.x; upgrades go through change review.
 The Gateway API CRDs are managed in one place by `gateway-api-crds.sh`; the channel is fixed at first install, read the "North-south entry" section before installing.
 
 ## Preflight (both tiers)
@@ -53,8 +53,8 @@ The entry's **configuration** is `../app/k8s/04-gateway.yaml` (GatewayClass / 6 
 
 1. **server nodes** (install baseline in `../ansible/`):
    ```bash
-   curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=latest sh -
-   # Mainland China: curl -sfL https://rancher-mirror.rancher.cn/rke2/install.sh | INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_CHANNEL=latest sh -
+   curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION=v1.36.6+rke2r1 sh -
+   # Mainland China: curl -sfL https://rancher-mirror.rancher.cn/rke2/install.sh | INSTALL_RKE2_MIRROR=cn INSTALL_RKE2_VERSION=v1.36.6+rke2r1 sh -
    cp rke2/audit-policy.yaml /etc/rancher/rke2/audit-policy.yaml
    cp rke2/server-config.yaml /etc/rancher/rke2/config.yaml
    systemctl enable --now rke2-server
@@ -108,8 +108,8 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
    ```bash
    mkdir -p /etc/rancher/k3s && cp k3s/server-config.yaml /etc/rancher/k3s/config.yaml
    cp rke2/audit-policy.yaml /etc/rancher/k3s/audit-policy.yaml
-   curl -sfL https://get.k3s.io | sh -s - server
-   # Mainland China: curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn sh -s - server
+   curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.36.6+k3s1 sh -s - server
+   # Mainland China: curl -sfL https://rancher-mirror.rancher.cn/k3s/k3s-install.sh | INSTALL_K3S_MIRROR=cn INSTALL_K3S_VERSION=v1.36.6+k3s1 sh -s - server
    ```
    (The config already contains `disable: traefik`, `embedded-registry: true` = Spegel, and `flannel-backend: none` / `disable-network-policy: true` / `disable-kube-proxy: true`: CNI, NetworkPolicy and kube-proxy all belong to Cilium.
    All of these must be **set at install time**: changing them later restarts k3s cluster-wide and recreates every Pod, see "Switching an existing cluster's CNI" below.)
@@ -119,7 +119,7 @@ kubectl label nodes -l node-role.kubernetes.io/control-plane \
 
    light installs the same component set as full; the differences are only the overrides in `values/light/`:
 
-   - HAMi pins the k3s scheduler image (key `kubeScheduler.image.tag`, change it when upgrading k3s) + devicePlugin `runtimeClassName=nvidia`; the chart default `nvidiaNodeSelector: {gpu: "on"}` is removed with `null`.
+   - HAMi pins the k3s scheduler image (key `kubeScheduler.image.tag`, change it when upgrading k3s) + `devices.nvidia.runtimeClassName=nvidia`; the chart default `nvidiaNodeSelector: {gpu: "on"}` is removed with `null`.
    - gpu-operator turns the toolkit off (the host toolkit is installed by node-join, k3s detects it and generates the RuntimeClass nvidia itself). `nvidia.com/gpu.count` is provided by the GFD bundled with gpu-operator.
    - kps / Loki trimmed (with tight disks the log stack can be turned off in `environments/light.yaml`); releases with ServiceMonitors enabled must `needs: [monitoring/kube-prometheus-stack]`.
    - Envoy Gateway control plane down to 1 replica with the PDB off.
@@ -163,7 +163,7 @@ Restore to a new server (same k3s version, the same `/etc/rancher/k3s/config.yam
 
 ```bash
 mkdir -p /tmp/k3s-state && gpg --batch --decrypt --passphrase-file /etc/superdl/pg/backup-passphrase k3s-state-<host>-<ts>.tar.gz.gpg | tar -xzf - -C /tmp/k3s-state
-curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=<version from the backup, e.g. v1.36.3+k3s1> INSTALL_K3S_SKIP_START=true sh -s - server   # the exact k3s version the snapshot was taken with; mainland China: rancher-mirror.rancher.cn/k3s/k3s-install.sh with INSTALL_K3S_MIRROR=cn
+curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=<version from the backup, e.g. v1.36.6+k3s1> INSTALL_K3S_SKIP_START=true sh -s - server   # the exact k3s version the snapshot was taken with; mainland China: rancher-mirror.rancher.cn/k3s/k3s-install.sh with INSTALL_K3S_MIRROR=cn
 mkdir -p /var/lib/rancher/k3s/server/db && cp -a /tmp/k3s-state/server/{token,agent-token,cred,tls} /var/lib/rancher/k3s/server/
 # etcd: reset from the snapshot (the token must be the one from the backup; the bootstrap data inside the snapshot is decrypted with it); start only after the command finishes
 k3s server --cluster-reset --cluster-reset-restore-path=/tmp/k3s-state/server/db/snapshots/<snapshot file>

@@ -6,6 +6,6 @@
  */
 
 export type ListMyInvoicesApiV1BillingInvoicesGetParams = {
-cursor?: string | null;
-limit?: number | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

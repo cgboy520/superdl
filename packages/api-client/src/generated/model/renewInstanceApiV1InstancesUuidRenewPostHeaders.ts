@@ -6,5 +6,5 @@
  */
 
 export type RenewInstanceApiV1InstancesUuidRenewPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

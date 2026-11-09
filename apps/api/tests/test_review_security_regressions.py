@@ -407,7 +407,7 @@ async def test_valid_metering_samples_only_fill_null_aggregates(monkeypatch, sam
 
 async def test_reconciliation_excludes_missing_hours_but_not_zero(monkeypatch):
     session = _session()
-    session.execute.return_value.tuples.return_value.all.return_value = [(1, 1)]
+    session.execute.return_value.all.return_value = [(1, 1)]
     monkeypatch.setattr(
         metering.billing_service, "billed_by_instance", AsyncMock(return_value={1: Decimal("2.00")})
     )

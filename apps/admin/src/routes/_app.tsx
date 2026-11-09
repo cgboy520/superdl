@@ -386,7 +386,7 @@ function AppLayout() {
               {...(screens.md
                 ? {}
                 : {
-                    dropdownRender: (menu) => (
+                    popupRender: (menu) => (
                       <div
                         style={{
                           background: token.colorBgElevated,

@@ -20,13 +20,13 @@ export function OnboardingSteps() {
         items={[
           {
             title: t("onboarding.step1"),
-            description: hasPaid ? t("onboarding.step1Done") : <Link to="/billing">{t("onboarding.step1Action")}</Link>,
+            content: hasPaid ? t("onboarding.step1Done") : <Link to="/billing">{t("onboarding.step1Action")}</Link>,
           },
           {
             title: t("onboarding.step2"),
-            description: <Link to="/market">{t("onboarding.step2Action")}</Link>,
+            content: <Link to="/market">{t("onboarding.step2Action")}</Link>,
           },
-          { title: t("onboarding.step3"), description: t("onboarding.step3Desc") },
+          { title: t("onboarding.step3"), content: t("onboarding.step3Desc") },
         ]}
       />
       <Link to="/market">

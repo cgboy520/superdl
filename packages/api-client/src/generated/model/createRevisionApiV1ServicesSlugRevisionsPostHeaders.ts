@@ -6,5 +6,5 @@
  */
 
 export type CreateRevisionApiV1ServicesSlugRevisionsPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

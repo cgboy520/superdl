@@ -1,6 +1,7 @@
 scheduler:
   kubeScheduler:
     image:
-      tag: "v1.36.3"
-devicePlugin:
-  runtimeClassName: "nvidia"
+      tag: "v1.36.6"
+devices:
+  nvidia:
+    runtimeClassName: "nvidia"

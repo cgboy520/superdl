@@ -319,7 +319,7 @@ async def _check_user_quota(
     )
     if exclude_instance_id is not None:
         stmt = stmt.where(Instance.id != exclude_instance_id)
-    live = (await session.execute(stmt)).tuples().one()
+    live = (await session.execute(stmt)).one()
     count, gpus, vcpus = live
     if count >= limits.max_instances:
         raise AppError(
@@ -428,18 +428,14 @@ async def _reserved_slots_by_sku(session: AsyncSession, sku_ids: list[int]) -> d
     if not sku_ids:
         return {}
     rows = (
-        (
-            await session.execute(
-                select(Instance.id, Instance.sku_id, Instance.gpu_count).where(
-                    Instance.sku_id.in_(sku_ids),
-                    Instance.market == MARKET_SUBSCRIPTION,
-                    Instance.status.in_((sm_def.STOPPED, sm_def.FROZEN)),
-                )
+        await session.execute(
+            select(Instance.id, Instance.sku_id, Instance.gpu_count).where(
+                Instance.sku_id.in_(sku_ids),
+                Instance.market == MARKET_SUBSCRIPTION,
+                Instance.status.in_((sm_def.STOPPED, sm_def.FROZEN)),
             )
         )
-        .tuples()
-        .all()
-    )
+    ).all()
     if not rows:
         return {}
     reserved_ids = await billing_service.reserved_subscription_instance_ids(

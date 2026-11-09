@@ -19,16 +19,20 @@ await i18n.changeLanguage("zh-CN");
 
 Object.defineProperty(window, "matchMedia", {
   writable: true,
-  value: (query: string): MediaQueryList => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => false,
-  }),
+  value: (query: string): MediaQueryList => {
+    // Plain object: the legacy listener pair stays for libraries that still call it.
+    const stub = {
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    };
+    return stub;
+  },
 });
 
 class ResizeObserverStub implements ResizeObserver {

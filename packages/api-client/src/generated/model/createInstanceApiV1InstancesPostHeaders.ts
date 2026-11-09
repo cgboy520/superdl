@@ -6,5 +6,5 @@
  */
 
 export type CreateInstanceApiV1InstancesPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

@@ -6,6 +6,6 @@
  */
 
 export type AdminTicketsCountApiAdminV1TicketsCountGetParams = {
-status?: string;
-category?: string | null;
+  status?: string;
+  category?: string | null;
 };

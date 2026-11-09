@@ -9,8 +9,8 @@ There is one rulebook: [CLAUDE.md](./CLAUDE.md) (hard rules, gates, commit conve
 | Docker           | any recent release                                                  | local PostgreSQL 18 and pytest (testcontainers) |
 | uv               | latest stable                                                       | backend dependencies and commands               |
 | Python           | 3.13 (`.python-version`)                                            | selected automatically by uv                    |
-| Node.js          | 24 (pinned in CI; `package.json` `engines` is the floor)            | frontends                                       |
-| pnpm             | 11 (`package.json` `packageManager`; `corepack enable` recommended) | frontends                                       |
+| Node.js          | 26 (pinned in CI; `package.json` `engines` is the floor)            | frontends                                       |
+| pnpm             | 12 (`package.json` `packageManager`; `corepack enable` recommended) | frontends                                       |
 | shellcheck, bats | any                                                                 | when changing `node-join.sh`                    |
 
 ## Getting started

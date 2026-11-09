@@ -6,5 +6,5 @@
  */
 
 export type SubscribeInstanceApiV1InstancesUuidSubscribePostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

@@ -3,6 +3,13 @@
 global:
   rbac:
     create: false
+crds:
+  # helm never upgrades crds/: a pre-install / pre-upgrade hook Job applies this chart's CRDs server-side.
+  upgradeJob:
+    enabled: true
+    image:
+      busybox:
+        tag: "1.37"
 prometheusOperator:
   # The operator looks for ServiceMonitor/PodMonitor/PrometheusRule only in these namespaces; the Prometheus/Alertmanager instances and their Secret informers only in monitoring.
   # Secrets referenced by monitors are fetched by name by the operator: monitors referencing credentials always live in the monitoring ns (../../app/k8s/08-monitoring.yaml).
@@ -18,6 +25,7 @@ prometheusOperator:
       - topolvm-system
       - cnpg-system
   prometheusInstanceNamespaces: [monitoring]
+  secretFieldSelector: "type!=kubernetes.io/dockercfg,type!=kubernetes.io/service-account-token,type!=helm.sh/release.v1"
   alertmanagerInstanceNamespaces: [monitoring]
   alertmanagerConfigNamespaces: [monitoring]
   thanosRulerInstanceNamespaces: [monitoring]
@@ -52,6 +60,11 @@ kube-state-metrics:
     - validatingwebhookconfigurations
     - volumeattachments
 prometheus:
+  # Control-plane monitors authenticate with the Pod's projected (rotated) token through a scrape class; no long-lived token Secret.
+  serviceAccount:
+    createTokenSecret: false
+  controlPlaneScrapeClass:
+    enabled: true
   prometheusSpec:
     maximumStartupDurationSeconds: 900
     retention: 15d

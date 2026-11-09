@@ -6,5 +6,5 @@
  */
 
 export type AdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostParams = {
-force?: boolean;
+  force?: boolean;
 };

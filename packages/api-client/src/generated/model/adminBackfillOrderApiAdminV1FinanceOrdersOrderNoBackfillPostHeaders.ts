@@ -6,5 +6,5 @@
  */
 
 export type AdminBackfillOrderApiAdminV1FinanceOrdersOrderNoBackfillPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

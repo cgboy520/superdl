@@ -6,6 +6,6 @@
  */
 
 export type ListMyRefundsApiV1WalletRefundsGetParams = {
-cursor?: string | null;
-limit?: number | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

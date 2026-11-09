@@ -4,13 +4,13 @@ scheduler:
     # Avoid placing several instances on the same card where possible
     gpuSchedulerPolicy: spread
 devicePlugin:
-  runtimeClassName: ""
-  # GB10 (DGX Spark) only: NVML reports no memory for the unified pool and the plugin skips the
-  # device without a pre-configured size (MiB). Per deployment; see runbooks/hardware-notes.md.
-  # preConfiguredDeviceMemory: 86016
   nvidiaNodeSelector:
     gpu: null
     node-restriction.kubernetes.io/superdl-pool: hami
 devices:
   nvidia:
+    runtimeClassName: ""
+    # GB10 (DGX Spark) only: NVML reports no memory for the unified pool and the plugin skips the
+    # device without a pre-configured size (MiB). Per deployment; see runbooks/hardware-notes.md.
+    # preConfiguredDeviceMemory: 86016
     gpuCorePolicy: force

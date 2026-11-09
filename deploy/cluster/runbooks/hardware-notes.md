@@ -11,8 +11,8 @@ page records what differs per platform so nobody re-discovers it on a live node.
   excludes GB10 / GB200, the admin console greys out the `kata` pool for these nodes
   (`NodeOut.supports_passthrough=false`) and the API answers 409 to a forced switch.
 - **GB10 (DGX Spark): unified memory that NVML does not report.** `nvidia-smi` shows the memory
-  as N/A and the HAMi device plugin (pinned 2.9.0) skips such a device unless
-  `devicePlugin.preConfiguredDeviceMemory` is set; `values/hami.yaml` carries it as a commented
+  as N/A and the HAMi device plugin (pinned 2.11.0) skips such a device unless
+  `devices.nvidia.preConfiguredDeviceMemory` is set; `values/hami.yaml` carries it as a commented
   example. Set it per deployment to the share of the unified pool tenants may use (the running
   Spark cluster uses 86016 MiB of 121 GiB, leaving the host and Ceph their reservation) and keep
   `node_specs.vram_gb` in step; a value larger than the pool only hides the host's memory

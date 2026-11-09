@@ -857,13 +857,11 @@ async def org_instances(session: AsyncSession, user_id: int) -> list[OrgInstance
     members = (await orgs_service.active_member_ids(session, [org.id]))[org.id]
     instances = await orchestrator_queries.dev_instances_of_users(session, members)
     labels = await orgs_service.member_labels(session, org.id, members)
-    rows = (
-        await session.execute(
-            select(NetGatewayAttachment.instance_id, NetGateway.uuid, NetGateway.org_id)
-            .join(NetGateway, NetGateway.id == NetGatewayAttachment.gateway_id)
-            .where(NetGatewayAttachment.instance_id.in_([i.id for i in instances]))
-        )
-    ).tuples()
+    rows = await session.execute(
+        select(NetGatewayAttachment.instance_id, NetGateway.uuid, NetGateway.org_id)
+        .join(NetGateway, NetGateway.id == NetGatewayAttachment.gateway_id)
+        .where(NetGatewayAttachment.instance_id.in_([i.id for i in instances]))
+    )
     attached = {iid: (gw_uuid if gw_org == org.id else None) for iid, gw_uuid, gw_org in rows}
     out: list[OrgInstanceOut] = []
     for inst in instances:
@@ -893,17 +891,13 @@ async def org_instances(session: AsyncSession, user_id: int) -> list[OrgInstance
 async def my_attachments(session: AsyncSession, user_id: int) -> list[MyAttachmentOut]:
     """The caller's instances attached to any gateway, personal or organization."""
     rows = (
-        (
-            await session.execute(
-                select(NetGatewayAttachment, NetGateway)
-                .join(NetGateway, NetGateway.id == NetGatewayAttachment.gateway_id)
-                .where(NetGatewayAttachment.user_id == user_id, NetGateway.status == STATUS_ACTIVE)
-                .order_by(NetGatewayAttachment.id)
-            )
+        await session.execute(
+            select(NetGatewayAttachment, NetGateway)
+            .join(NetGateway, NetGateway.id == NetGatewayAttachment.gateway_id)
+            .where(NetGatewayAttachment.user_id == user_id, NetGateway.status == STATUS_ACTIVE)
+            .order_by(NetGatewayAttachment.id)
         )
-        .tuples()
-        .all()
-    )
+    ).all()
     instances = {
         i.id: i
         for i in await orchestrator_queries.instances_by_ids(

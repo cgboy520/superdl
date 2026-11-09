@@ -6,5 +6,5 @@
  */
 
 export type EnrollProgressApiV1NodeEnrollProgressPostHeaders = {
-authorization?: string | null;
+  authorization?: string | null;
 };

@@ -6,6 +6,6 @@
  */
 
 export type ListRevisionsApiV1ServicesSlugRevisionsGetParams = {
-cursor?: string | null;
-limit?: number | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

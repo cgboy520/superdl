@@ -81,18 +81,14 @@ async def pending_hourly(session: AsyncSession, user_id: int) -> Decimal:
     """Hourly cost of the user's creating/starting instances, merged in by
     wallet.assert_can_afford."""
     rows = (
-        (
-            await session.execute(
-                select(Instance.price_hourly, Instance.gpu_count).where(
-                    Instance.user_id == user_id,
-                    Instance.status.in_((sm_def.CREATING, sm_def.STARTING)),
-                    Instance.market != MARKET_SUBSCRIPTION,
-                )
+        await session.execute(
+            select(Instance.price_hourly, Instance.gpu_count).where(
+                Instance.user_id == user_id,
+                Instance.status.in_((sm_def.CREATING, sm_def.STARTING)),
+                Instance.market != MARKET_SUBSCRIPTION,
             )
         )
-        .tuples()
-        .all()
-    )
+    ).all()
     return sum((hourly_cost(price, count) for price, count in rows), Decimal("0.00"))
 
 
@@ -104,13 +100,11 @@ async def running_cost_by_user(
     ids = list(user_ids)
     if not ids:
         return {}
-    rows = (
-        await session.execute(
-            select(
-                Instance.user_id, Instance.market, Instance.price_hourly, Instance.gpu_count
-            ).where(Instance.user_id.in_(ids), Instance.status == sm_def.RUNNING)
+    rows = await session.execute(
+        select(Instance.user_id, Instance.market, Instance.price_hourly, Instance.gpu_count).where(
+            Instance.user_id.in_(ids), Instance.status == sm_def.RUNNING
         )
-    ).tuples()
+    )
     out: dict[int, tuple[Decimal, int]] = {}
     for user_id, market, price, count in rows:
         burn, running = out.get(user_id, (Decimal("0.00"), 0))
@@ -145,9 +139,7 @@ async def billing_events(
                 .where(InstanceEvent.instance_id == instance_id)
                 .order_by(InstanceEvent.id)
             )
-        )
-        .tuples()
-        .all()
+        ).all()
     )
 
 
@@ -345,8 +337,8 @@ async def instance_disk_stats_by_user(
         .where(DataDisk.status != "deleted", DataDisk.user_id.in_(user_ids))
         .group_by(DataDisk.user_id)
     )
-    inst_rows = (await session.execute(inst_stmt)).tuples().all()
-    disk_rows = (await session.execute(disk_stmt)).tuples().all()
+    inst_rows = (await session.execute(inst_stmt)).all()
+    disk_rows = (await session.execute(disk_stmt)).all()
     stats: dict[int, dict[str, int]] = {}
     for uid, n in inst_rows:
         stats.setdefault(uid, {"instances": 0, "disk_gb": 0})["instances"] = int(n)
@@ -392,30 +384,22 @@ async def deletion_leftover_counts(
     if not user_ids:
         return {}
     inst_rows = (
-        (
-            await session.execute(
-                select(Instance.user_id, func.count())
-                .where(
-                    Instance.user_id.in_(user_ids),
-                    Instance.status.notin_((sm_def.RELEASED, sm_def.FAILED)),
-                )
-                .group_by(Instance.user_id)
+        await session.execute(
+            select(Instance.user_id, func.count())
+            .where(
+                Instance.user_id.in_(user_ids),
+                Instance.status.notin_((sm_def.RELEASED, sm_def.FAILED)),
             )
+            .group_by(Instance.user_id)
         )
-        .tuples()
-        .all()
-    )
+    ).all()
     disk_rows = (
-        (
-            await session.execute(
-                select(DataDisk.user_id, func.count())
-                .where(DataDisk.user_id.in_(user_ids), DataDisk.status != "deleted")
-                .group_by(DataDisk.user_id)
-            )
+        await session.execute(
+            select(DataDisk.user_id, func.count())
+            .where(DataDisk.user_id.in_(user_ids), DataDisk.status != "deleted")
+            .group_by(DataDisk.user_id)
         )
-        .tuples()
-        .all()
-    )
+    ).all()
     counts: dict[int, dict[str, int]] = {}
     for uid, n in inst_rows:
         counts.setdefault(uid, {"instances": 0, "disks": 0})["instances"] = int(n)
@@ -450,16 +434,12 @@ async def running_spot_gpus_by_pool(session: AsyncSession) -> dict[str, int]:
     """Pool → cards held by running spot instances (device count);
     may exceed the inventory gpu_used in oversold tiers, the caller caps by rented."""
     rows = (
-        (
-            await session.execute(
-                select(Instance.spec, Instance.gpu_count).where(
-                    Instance.status == sm_def.RUNNING, Instance.market == MARKET_SPOT
-                )
+        await session.execute(
+            select(Instance.spec, Instance.gpu_count).where(
+                Instance.status == sm_def.RUNNING, Instance.market == MARKET_SPOT
             )
         )
-        .tuples()
-        .all()
-    )
+    ).all()
     by_pool: dict[str, int] = {}
     for spec, gpus in rows:
         pool = (spec or {}).get("pool_label")
@@ -488,16 +468,12 @@ async def disk_billing_snapshot(
     """Billing snapshot of one disk: (id, user_id, price_gb_month, size_gb); None when missing (for
     gap replay)."""
     return (
-        (
-            await session.execute(
-                select(
-                    DataDisk.id, DataDisk.user_id, DataDisk.price_gb_month, DataDisk.size_gb
-                ).where(DataDisk.id == disk_id)
+        await session.execute(
+            select(DataDisk.id, DataDisk.user_id, DataDisk.price_gb_month, DataDisk.size_gb).where(
+                DataDisk.id == disk_id
             )
         )
-        .tuples()
-        .one_or_none()
-    )
+    ).one_or_none()
 
 
 async def billable_disks(session: AsyncSession) -> list[DataDisk]:

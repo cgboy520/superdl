@@ -6,8 +6,6 @@
  */
 
 export type GetServiceLogsApiV1ServicesSlugLogsGetParams = {
-/**
- * @minimum 1
- */
-tail_lines?: number;
+  /** @minimum 1 */
+  tail_lines?: number;
 };

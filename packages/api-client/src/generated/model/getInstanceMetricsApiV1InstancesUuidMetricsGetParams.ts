@@ -6,5 +6,5 @@
  */
 
 export type GetInstanceMetricsApiV1InstancesUuidMetricsGetParams = {
-range?: string;
+  range?: string;
 };

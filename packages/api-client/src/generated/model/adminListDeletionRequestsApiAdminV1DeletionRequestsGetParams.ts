@@ -6,5 +6,5 @@
  */
 
 export type AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams = {
-status?: string | null;
+  status?: string | null;
 };

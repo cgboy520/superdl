@@ -6,8 +6,6 @@
  */
 
 export type GetInstanceLogsApiV1InstancesUuidLogsGetParams = {
-/**
- * @minimum 1
- */
-tail_lines?: number;
+  /** @minimum 1 */
+  tail_lines?: number;
 };

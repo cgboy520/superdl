@@ -191,7 +191,7 @@ class Settings(BaseSettings):
 
     cluster_server_url: str = ""
     cluster_join_token: str = ""
-    cluster_agent_version: str = "v1.36.2+rke2r1"
+    cluster_agent_version: str = "v1.36.6+rke2r1"
     node_driver_version: str = "580"
     node_registries_yaml: str = ""
     node_install_mirror: Literal["official", "cn"] = "official"

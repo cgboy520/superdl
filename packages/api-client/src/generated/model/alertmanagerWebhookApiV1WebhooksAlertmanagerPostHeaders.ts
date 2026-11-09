@@ -6,5 +6,5 @@
  */
 
 export type AlertmanagerWebhookApiV1WebhooksAlertmanagerPostHeaders = {
-authorization?: string | null;
+  authorization?: string | null;
 };

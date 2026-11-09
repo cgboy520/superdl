@@ -6,5 +6,5 @@
  */
 
 export type CreateRefundApiV1WalletRefundsPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

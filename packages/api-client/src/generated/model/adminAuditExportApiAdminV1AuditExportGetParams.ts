@@ -7,15 +7,15 @@
 import type { AdminAuditExportApiAdminV1AuditExportGetLang } from './adminAuditExportApiAdminV1AuditExportGetLang';
 
 export type AdminAuditExportApiAdminV1AuditExportGetParams = {
-actor_type?: string | null;
-actor_id?: string | null;
-q?: string | null;
-since?: string | null;
-until?: string | null;
-/**
- * @minimum -720
- * @maximum 840
- */
-tz_offset_minutes?: number;
-lang?: AdminAuditExportApiAdminV1AuditExportGetLang;
+  actor_type?: string | null;
+  actor_id?: string | null;
+  q?: string | null;
+  since?: string | null;
+  until?: string | null;
+  /**
+   * @minimum -720
+   * @maximum 840
+   */
+  tz_offset_minutes?: number;
+  lang?: AdminAuditExportApiAdminV1AuditExportGetLang;
 };

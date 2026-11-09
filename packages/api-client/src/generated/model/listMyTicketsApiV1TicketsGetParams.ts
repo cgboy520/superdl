@@ -6,6 +6,6 @@
  */
 
 export type ListMyTicketsApiV1TicketsGetParams = {
-cursor?: string | null;
-limit?: number | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

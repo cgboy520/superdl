@@ -6,7 +6,7 @@
  */
 
 export type AdminTenantBillsApiAdminV1TenantsUserIdBillsGetParams = {
-instance_id?: number | null;
-cursor?: string | null;
-limit?: number | null;
+  instance_id?: number | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

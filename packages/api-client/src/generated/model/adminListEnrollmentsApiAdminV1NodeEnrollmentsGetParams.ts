@@ -6,5 +6,5 @@
  */
 
 export type AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams = {
-active?: boolean;
+  active?: boolean;
 };
