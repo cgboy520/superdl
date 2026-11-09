@@ -6,11 +6,11 @@
  */
 
 export type SkuCapacityPreviewApiAdminV1SkusCapacityPreviewGetParams = {
-pool_label: string;
-gpu_model?: string;
-gpu_cores_pct?: number;
-oversell_cores?: number | string;
-vram_gb?: number | null;
-vcpu?: number | null;
-mem_gb?: number | null;
+  pool_label: string;
+  gpu_model?: string;
+  gpu_cores_pct?: number;
+  oversell_cores?: number | string;
+  vram_gb?: number | null;
+  vcpu?: number | null;
+  mem_gb?: number | null;
 };

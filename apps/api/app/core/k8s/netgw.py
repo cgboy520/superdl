@@ -86,9 +86,20 @@ def build_netgw_secret(spec: NetgwSpec) -> "client.V1Secret":
 
 
 def _container(spec: NetgwSpec) -> "client.V1Container":
-    def probe(path: str, **kw: int) -> "client.V1Probe":
+    def probe(
+        path: str,
+        *,
+        period_seconds: int,
+        timeout_seconds: int,
+        failure_threshold: int,
+        initial_delay_seconds: int | None = None,
+    ) -> "client.V1Probe":
         return client.V1Probe(
-            http_get=client.V1HTTPGetAction(path=path, port=NETGW_HEALTH_PORT), **kw
+            http_get=client.V1HTTPGetAction(path=path, port=NETGW_HEALTH_PORT),
+            initial_delay_seconds=initial_delay_seconds,
+            period_seconds=period_seconds,
+            timeout_seconds=timeout_seconds,
+            failure_threshold=failure_threshold,
         )
 
     ports = [
@@ -300,6 +311,8 @@ def _service(
             ],
         )
     else:
+        if port is None:
+            raise ValueError("a ClusterIP service needs a port")
         svc_spec = client.V1ServiceSpec(
             type="ClusterIP",
             selector=selector,

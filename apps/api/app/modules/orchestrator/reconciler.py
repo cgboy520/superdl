@@ -14,7 +14,7 @@ One list_instance_pods per round is the status source, no per-instance get_statu
 Two stuck levels for stopping/releasing: first re-send the delete via outbox, then force delete.
 """
 
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -217,7 +217,7 @@ _MISSING_POD = PodStatus(exists=False)
 
 
 def _statuses_from_listing(
-    rows: list[tuple[int, str, str, str, Any]], listing: list[PodStatus]
+    rows: Sequence[tuple[int, str, str, str, Any]], listing: list[PodStatus]
 ) -> list[PodStatus]:
     """The full LIST is the status source, the same definition as get_status
     (ready/phase/node_name/deleting)."""
@@ -253,9 +253,7 @@ async def _reconcile_instances(
                         Instance.created_at,
                     ).where(Instance.status.in_(ACTIVE_STATUSES))
                 )
-            )
-            .tuples()
-            .all()
+            ).all()
         )
         entered_at = await _entered_status_map(
             session, [(iid, status, created) for iid, status, _ns, _uuid, created in rows]

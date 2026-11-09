@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-EG_VERSION="v1.9.0"
+EG_VERSION="v1.10.0"
 GATEWAY_API_VERSION="v1.6.1"
 CRDS_CHART="oci://docker.io/envoyproxy/gateway-crds-helm"
 CHANNEL="experimental"

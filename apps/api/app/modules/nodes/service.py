@@ -733,7 +733,11 @@ _NVIDIA_RC_FIX = "install nvidia-container-toolkit on the node, then restart k3s
 
 _COMPONENT_META: tuple[tuple[ComponentKey, str | None, str], ...] = (
     ("nodes", None, f"kubectl get node -o wide -L {POOL_NODE_LABEL}"),
-    ("hami", "hami", "kubectl -n kube-system get pod -l app=hami-scheduler -o wide"),
+    (
+        "hami",
+        "hami",
+        "kubectl -n kube-system get pod -l app.kubernetes.io/component=hami-scheduler -o wide",
+    ),
     ("gpu_operator", "gpu-operator", "kubectl -n gpu-operator get ds"),
     ("dcgm", "gpu-operator", "kubectl -n gpu-operator get ds | grep dcgm"),
     ("nvidia_runtimeclass", None, "kubectl get runtimeclass"),

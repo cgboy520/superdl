@@ -8,12 +8,12 @@ import type { ExportBillingApiV1BillingExportGetDataset } from './exportBillingA
 import type { ExportBillingApiV1BillingExportGetLang } from './exportBillingApiV1BillingExportGetLang';
 
 export type ExportBillingApiV1BillingExportGetParams = {
-dataset?: ExportBillingApiV1BillingExportGetDataset;
-month?: string | null;
-/**
- * @minimum -720
- * @maximum 840
- */
-tz_offset_minutes?: number;
-lang?: ExportBillingApiV1BillingExportGetLang;
+  dataset?: ExportBillingApiV1BillingExportGetDataset;
+  month?: string | null;
+  /**
+   * @minimum -720
+   * @maximum 840
+   */
+  tz_offset_minutes?: number;
+  lang?: ExportBillingApiV1BillingExportGetLang;
 };

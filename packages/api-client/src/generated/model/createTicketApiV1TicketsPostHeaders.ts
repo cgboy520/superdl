@@ -6,5 +6,5 @@
  */
 
 export type CreateTicketApiV1TicketsPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

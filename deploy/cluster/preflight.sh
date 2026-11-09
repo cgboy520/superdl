@@ -139,9 +139,9 @@ if kubectl get crd "$gw_crd" >/dev/null 2>&1; then
     miss "Gateway API CRD channel=${gw_channel:-unknown} (experimental required): it cannot be switched afterwards, the safe-upgrades policy refuses standard→experimental; the only way out is deleting every CRD and reinstalling, which removes every Gateway/HTTPRoute in the cluster"
   fi
   if [[ "$gw_bundle" == "v1.6.1" ]]; then
-    ok "Gateway API bundle-version=v1.6.1 (aligned with Envoy Gateway v1.9.0)"
+    ok "Gateway API bundle-version=v1.6.1 (aligned with Envoy Gateway v1.10.0)"
   else
-    miss "Gateway API bundle-version=${gw_bundle:-unknown} (v1.6.1 required, aligned with the helmfile envoy-gateway v1.9.0; run ./gateway-api-crds.sh to upgrade)"
+    miss "Gateway API bundle-version=${gw_bundle:-unknown} (v1.6.1 required, aligned with the helmfile envoy-gateway v1.10.0; run ./gateway-api-crds.sh to upgrade)"
   fi
 else
   ok "Gateway API CRDs not installed yet (normal at first install: the helmfile apply presync runs ./gateway-api-crds.sh with the experimental channel)"

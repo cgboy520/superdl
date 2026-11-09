@@ -33,7 +33,7 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           initContainers:
             - name: dump
-              image: postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+              image: postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
@@ -73,7 +73,7 @@ spec:
                 requests: {cpu: 100m, memory: 256Mi}
                 limits: {cpu: "1", memory: 1Gi}
             - name: upload
-              image: amazon/aws-cli:2.32.0@sha256:bb82c6ce5c78cd8aad48d0003ab097c858cda14f9ce389c2345c50cce0104efd
+              image: amazon/aws-cli:2.39.6@sha256:eccdb3ec77e159d43ca6a750a70738c546883138be7f094498294a1477ec7e42
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
@@ -108,7 +108,7 @@ spec:
                 limits: {cpu: "1", memory: 512Mi}
           containers:
             - name: restore-smoke
-              image: postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+              image: postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false

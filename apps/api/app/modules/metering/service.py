@@ -157,20 +157,16 @@ async def reconciliation_report(session: AsyncSession, day: datetime) -> Reconci
 
     billed = await billing_service.billed_by_instance(session, day_start, day_end)
     usage_hours = (
-        (
-            await session.execute(
-                select(UsageHourly.instance_id, func.count())
-                .where(
-                    UsageHourly.hour_start >= day_start,
-                    UsageHourly.hour_start < day_end,
-                    UsageHourly.gpu_util_avg.is_not(None),
-                )
-                .group_by(UsageHourly.instance_id)
+        await session.execute(
+            select(UsageHourly.instance_id, func.count())
+            .where(
+                UsageHourly.hour_start >= day_start,
+                UsageHourly.hour_start < day_end,
+                UsageHourly.gpu_util_avg.is_not(None),
             )
+            .group_by(UsageHourly.instance_id)
         )
-        .tuples()
-        .all()
-    )
+    ).all()
     usage_by_instance = dict(usage_hours)
 
     billed_total = sum((amount for _, amount in billed.items()), Decimal("0.00"))
@@ -217,7 +213,7 @@ async def gpu_util_last_24h_by_instance(session: AsyncSession) -> dict[int, tupl
             .group_by(UsageHourly.instance_id)
         )
     ).all()
-    return {int(iid): (float(total), int(n)) for iid, total, n in rows}
+    return {int(iid): (float(total or 0), int(n)) for iid, total, n in rows}
 
 
 NODE_METRIC_KEYS: tuple[Literal["util", "mem_used_mb", "temp"], ...] = (

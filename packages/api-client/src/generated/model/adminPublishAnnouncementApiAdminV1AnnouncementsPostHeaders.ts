@@ -6,5 +6,5 @@
  */
 
 export type AdminPublishAnnouncementApiAdminV1AnnouncementsPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

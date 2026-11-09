@@ -531,16 +531,12 @@ async def _refresh_gap_gauge(session: AsyncSession) -> None:
     round
     and after replay / write-off."""
     rows = (
-        (
-            await session.execute(
-                select(SettlementGap.kind, func.count())
-                .where(SettlementGap.resolved_at.is_(None))
-                .group_by(SettlementGap.kind)
-            )
+        await session.execute(
+            select(SettlementGap.kind, func.count())
+            .where(SettlementGap.resolved_at.is_(None))
+            .group_by(SettlementGap.kind)
         )
-        .tuples()
-        .all()
-    )
+    ).all()
     counts = dict(rows)
     for kind in ("hourly", "daily_disk"):
         SETTLEMENT_GAP_UNRESOLVED.labels(kind=kind).set(counts.get(kind, 0))

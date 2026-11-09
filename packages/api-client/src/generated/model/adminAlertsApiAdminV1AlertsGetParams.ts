@@ -7,9 +7,9 @@
 import type { AdminAlertsApiAdminV1AlertsGetType } from './adminAlertsApiAdminV1AlertsGetType';
 
 export type AdminAlertsApiAdminV1AlertsGetParams = {
-severity?: string | null;
-type?: AdminAlertsApiAdminV1AlertsGetType;
-acked?: boolean | null;
-cursor?: string | null;
-limit?: number | null;
+  severity?: string | null;
+  type?: AdminAlertsApiAdminV1AlertsGetType;
+  acked?: boolean | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

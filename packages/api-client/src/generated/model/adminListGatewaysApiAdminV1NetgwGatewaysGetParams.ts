@@ -6,6 +6,6 @@
  */
 
 export type AdminListGatewaysApiAdminV1NetgwGatewaysGetParams = {
-user_id?: number | null;
-org_uuid?: string | null;
+  user_id?: number | null;
+  org_uuid?: string | null;
 };

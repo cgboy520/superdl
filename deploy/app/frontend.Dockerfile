@@ -1,11 +1,11 @@
-FROM node:26-slim@sha256:ec7758ee051e457b468b32bde57b0879010b325bb9862718e9615225ce4aaae1 AS build
+FROM node:26-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS build
 ARG APP=web
 WORKDIR /repo
 RUN npm install -g corepack@latest && corepack enable
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm --filter ${APP} build
 
-FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:6a23acdfca2b9cfbcec61419e3f1426bcbedb91362f2f19306a8567423bb4612
+FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
 ARG APP=web
 # Fixed worker count: "auto" forks one worker per host core
 RUN sed -i 's/^worker_processes .*/worker_processes  16;/' /etc/nginx/nginx.conf && grep -q '^worker_processes  16;$' /etc/nginx/nginx.conf

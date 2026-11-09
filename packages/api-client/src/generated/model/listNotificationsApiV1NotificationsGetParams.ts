@@ -6,7 +6,7 @@
  */
 
 export type ListNotificationsApiV1NotificationsGetParams = {
-unread?: boolean;
-cursor?: string | null;
-limit?: number | null;
+  unread?: boolean;
+  cursor?: string | null;
+  limit?: number | null;
 };

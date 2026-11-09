@@ -7,5 +7,5 @@
 import type { AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetLocale } from './adminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetLocale';
 
 export type AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetParams = {
-locale: AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetLocale;
+  locale: AdminListLegalDocVersionsApiAdminV1LegalDocsDocKeyVersionsGetLocale;
 };

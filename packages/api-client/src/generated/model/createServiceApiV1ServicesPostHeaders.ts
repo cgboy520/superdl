@@ -6,5 +6,5 @@
  */
 
 export type CreateServiceApiV1ServicesPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

@@ -6,5 +6,5 @@
  */
 
 export type AdminUpdateSkuApiAdminV1SkusSkuIdPatchParams = {
-force?: boolean;
+  force?: boolean;
 };

@@ -32,7 +32,7 @@ Dependency versions are defined in `apps/api/pyproject.toml`, `package.json` and
 
 | Component               | Role                                                                                                                                                                                  |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| RKE2 / k3s              | Container platform; version follows the installer channel, the validation checklist expects v1.36.x                                                                                   |
+| RKE2 / k3s              | Container platform; version pinned to v1.36.6 (inside Cilium's supported range), the validation checklist expects v1.36.x                                                             |
 | Cilium                  | Both tiers (CNI + NetworkPolicy + kube-proxy replacement + bandwidth limits + BBR); the light tier keeps the k3s ServiceLB for the north-south LoadBalancer                           |
 | GPU Operator            | Both tiers (NFD / GFD / DCGM / MIG / VFIO); the light tier disables the toolkit (the host toolkit is installed by the node baseline)                                                  |
 | kata-deploy             | Both tiers, lands only on kata-pool nodes                                                                                                                                             |

@@ -6,9 +6,9 @@
  */
 
 export type AdminListServicesApiAdminV1ServicesGetParams = {
-user_id?: number | null;
-q?: string | null;
-include_released?: boolean;
-cursor?: string | null;
-limit?: number | null;
+  user_id?: number | null;
+  q?: string | null;
+  include_released?: boolean;
+  cursor?: string | null;
+  limit?: number | null;
 };

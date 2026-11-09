@@ -34,7 +34,7 @@ Checks CI cannot cover; each item is "what to do + pass criterion".
 - [ ] 2 instances on the same card (50% compute / 8G VRAM each): `nvidia-smi` in each sees only the quota VRAM
 - [ ] Interference load test: one instance at full load, record the other's throughput drop (sets the oversell ratio)
 - [ ] VRAM over-limit rejected: an allocation beyond gpumem OOMs inside the container without touching the neighbour
-- [ ] HAMi on k3s: `kubeScheduler.image.tag` in `values/light/hami-light.yaml` matches the cluster version, devicePlugin `runtimeClassName=nvidia` is effective, the RuntimeClass `nvidia` exists; the rendered hami-device-plugin DaemonSet nodeSelector is only `node-restriction.kubernetes.io/superdl-pool: hami` (the chart default `gpu: "on"` removed with null)
+- [ ] HAMi on k3s: `kubeScheduler.image.tag` in `values/light/hami-light.yaml` matches the cluster version, `devices.nvidia.runtimeClassName=nvidia` is effective, the RuntimeClass `nvidia` exists; the rendered hami-device-plugin DaemonSet nodeSelector is only `node-restriction.kubernetes.io/superdl-pool: hami` (the chart default `gpu: "on"` removed with null)
 - [ ] Ordering the shared tier on k3s without HAMi installed: the error names the missing component, not a timeout or 500
 
 ## D. Storage

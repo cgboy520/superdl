@@ -217,7 +217,7 @@ OPENVPN_ADDR=""
 
 test_openvpn_body() {
   # Throwaway PKI: CA, server and client certificates.
-  docker run --rm -v "$WORK:/work" --entrypoint sh alpine:3.22 -c '
+  docker run --rm -v "$WORK:/work" --entrypoint sh alpine:3.24 -c '
     set -e; apk add -q --no-cache openssl >/dev/null; cd /work
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 \
       -subj /CN=it-ca -keyout ca.key -out ca.crt 2>/dev/null

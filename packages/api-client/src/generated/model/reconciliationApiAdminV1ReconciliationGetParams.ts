@@ -6,5 +6,5 @@
  */
 
 export type ReconciliationApiAdminV1ReconciliationGetParams = {
-day: string;
+  day: string;
 };

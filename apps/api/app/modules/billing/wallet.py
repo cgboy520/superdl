@@ -329,24 +329,20 @@ async def consumption_summary(
     """Sum instance hourly fees and daily disk fees of [start, end) by bill attribution period;
     items carry instance names and billed seconds."""
     gpu_rows = (
-        (
-            await session.execute(
-                select(
-                    BillHourly.instance_id,
-                    func.sum(BillHourly.amount),
-                    func.sum(BillHourly.seconds_used),
-                )
-                .where(
-                    BillHourly.user_id == user_id,
-                    BillHourly.hour_start >= start,
-                    BillHourly.hour_start < end,
-                )
-                .group_by(BillHourly.instance_id)
+        await session.execute(
+            select(
+                BillHourly.instance_id,
+                func.sum(BillHourly.amount),
+                func.sum(BillHourly.seconds_used),
             )
+            .where(
+                BillHourly.user_id == user_id,
+                BillHourly.hour_start >= start,
+                BillHourly.hour_start < end,
+            )
+            .group_by(BillHourly.instance_id)
         )
-        .tuples()
-        .all()
-    )
+    ).all()
     disk_total = (
         await session.execute(
             select(func.coalesce(func.sum(BillDailyDisk.amount), 0)).where(
@@ -376,16 +372,12 @@ async def consumption_summary(
 async def billed_by_instance(session: AsyncSession, start, end) -> dict[int, Decimal]:
     """Sum the hourly bill amounts per instance within [start, end) by hour_start."""
     rows = (
-        (
-            await session.execute(
-                select(BillHourly.instance_id, func.sum(BillHourly.amount))
-                .where(BillHourly.hour_start >= start, BillHourly.hour_start < end)
-                .group_by(BillHourly.instance_id)
-            )
+        await session.execute(
+            select(BillHourly.instance_id, func.sum(BillHourly.amount))
+            .where(BillHourly.hour_start >= start, BillHourly.hour_start < end)
+            .group_by(BillHourly.instance_id)
         )
-        .tuples()
-        .all()
-    )
+    ).all()
     return dict(rows)
 
 
@@ -396,7 +388,7 @@ async def balances_by_user(
     stmt = select(Wallet.user_id, Wallet.balance)
     if user_ids is not None:
         stmt = stmt.where(Wallet.user_id.in_(user_ids))
-    rows = (await session.execute(stmt)).tuples().all()
+    rows = (await session.execute(stmt)).all()
     return dict(rows)
 
 
@@ -405,13 +397,9 @@ async def available_by_user(session: AsyncSession, user_ids: list[int]) -> dict[
     absent."""
     if not user_ids:
         return {}
-    rows = (
-        await session.execute(
-            select(Wallet.user_id, Wallet.balance - Wallet.frozen).where(
-                Wallet.user_id.in_(user_ids)
-            )
-        )
-    ).tuples()
+    rows = await session.execute(
+        select(Wallet.user_id, Wallet.balance - Wallet.frozen).where(Wallet.user_id.in_(user_ids))
+    )
     return {uid: as_amount(value) for uid, value in rows}
 
 
@@ -428,13 +416,11 @@ async def billed_by_user_since(
         (BillDailyDisk, BillDailyDisk.day),
     ):
         window = or_(*(and_(model.user_id == uid, start_col >= s) for uid, s in since.items()))
-        rows = (
-            await session.execute(
-                select(model.user_id, func.sum(model.amount))
-                .where(window, start_col < end)
-                .group_by(model.user_id)
-            )
-        ).tuples()
+        rows = await session.execute(
+            select(model.user_id, func.sum(model.amount))
+            .where(window, start_col < end)
+            .group_by(model.user_id)
+        )
         for uid, amount in rows:
             totals[uid] = totals.get(uid, Decimal("0.00")) + Decimal(amount or 0)
     return {uid: as_amount(v) for uid, v in totals.items()}
@@ -461,7 +447,7 @@ async def consumed_by_user(
     )
     if user_ids is not None:
         stmt = stmt.where(BalanceLedger.user_id.in_(user_ids))
-    rows = (await session.execute(stmt)).tuples().all()
+    rows = (await session.execute(stmt)).all()
     return dict(rows)
 
 
@@ -521,7 +507,7 @@ def admin_orders_query(
     order_no: str | None = None,
     user_id: int | None = None,
     day_range: tuple[datetime, datetime] | None = None,
-) -> Select[tuple[Order]]:
+) -> Select[Order]:
     """Admin top-up order filters (shared by list and CSV): status exact, order_no exact, user_id,
     day_range is the [start, end) created_at window."""
     stmt = select(Order)

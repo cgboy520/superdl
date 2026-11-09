@@ -6,9 +6,9 @@
  */
 
 export type GatewayLogsApiV1NetgwGatewaysUuidLogsGetParams = {
-/**
- * @minimum 1
- * @maximum 2000
- */
-tail_lines?: number;
+  /**
+   * @minimum 1
+   * @maximum 2000
+   */
+  tail_lines?: number;
 };

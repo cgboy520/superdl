@@ -6,5 +6,5 @@
  */
 
 export type AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

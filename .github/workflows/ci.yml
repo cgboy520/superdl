@@ -54,11 +54,11 @@ jobs:
       - name: gitleaks (secret leak scan over the full commit history)
         run: |
           docker run --rm -v "$PWD:/repo" \
-            zricethezav/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a \
+            zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             git /repo --config /repo/.github/gitleaks.toml --verbose \
             --log-opts="--full-history --diff-filter=tuxdb HEAD"
       - if: steps.f.outputs.pylock == 'true'
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         with:
           python-version: "3.13"
       - name: pip-audit (API production dependency vulnerabilities)
@@ -68,11 +68,11 @@ jobs:
           uv export --frozen --no-dev --format requirements-txt -o /tmp/reqs.txt
           uvx pip-audit -r /tmp/reqs.txt --progress-spinner off
       - if: steps.f.outputs.jslock == 'true'
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
       - if: steps.f.outputs.jslock == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: 24
+          node-version: 26
       - name: pnpm audit (frontend production dependencies, HIGH+ blocks)
         if: steps.f.outputs.jslock == 'true'
         run: pnpm audit --prod --audit-level=high
@@ -87,7 +87,7 @@ jobs:
         working-directory: apps/api
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         with:
           python-version: "3.13"
       - run: uv sync --frozen
@@ -116,10 +116,10 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: 24
+          node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
@@ -140,10 +140,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2
+      - uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376
         with:
           config: .github/kind-config.yaml
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+          node_image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         with:
           python-version: "3.13"
       - name: Install the Gateway API CRDs
@@ -261,7 +262,7 @@ jobs:
           spec:
             containers:
               - name: c
-                image: busybox:1.36
+                image: busybox:1.37
                 command: ["sleep", "1"]
                 env:
                   - name: LEAK
@@ -316,7 +317,7 @@ jobs:
                 restartPolicy: Never
                 containers:
                   - name: c
-                    image: busybox:1.36
+                    image: busybox:1.37
                     command: ["sleep", "1"]
                     envFrom:
                       - secretRef: {name: superdl-auth}
@@ -334,7 +335,7 @@ jobs:
                   - {name: s, secret: {secretName: superdl-crypto}}
                 containers:
                   - name: c
-                    image: busybox:1.36
+                    image: busybox:1.37
                     command: ["sleep", "1"]
                     volumeMounts: [{name: s, mountPath: /s}]
           EOF
@@ -346,7 +347,7 @@ jobs:
           spec:
             containers:
               - name: c
-                image: busybox:1.36
+                image: busybox:1.37
                 command: ["sleep", "1"]
                 envFrom:
                   - secretRef: {name: superdl-auth}
@@ -365,7 +366,7 @@ jobs:
                 imagePullSecrets: [{name: superdl-registry-pull}]
                 containers:
                   - name: prewarm
-                    image: busybox:1.36
+                    image: busybox:1.37
                     command: ["sleep", "1"]
           EOF
           deny_check "prewarm creates a Job template setting serviceAccountName (Pods created by platform SAs carry no SA identity)" \
@@ -382,7 +383,7 @@ jobs:
                 imagePullSecrets: [{name: superdl-registry-pull}]
                 containers:
                   - name: prewarm
-                    image: busybox:1.36
+                    image: busybox:1.37
                     command: ["sleep", "1"]
           EOF
           allow_check "migration Job Pod injects superdl-db-migrate whole" \
@@ -393,7 +394,7 @@ jobs:
           spec:
             containers:
               - name: migrate
-                image: busybox:1.36
+                image: busybox:1.37
                 command: ["sleep", "1"]
                 envFrom:
                   - secretRef: {name: superdl-db-migrate}
@@ -422,7 +423,7 @@ jobs:
             automountServiceAccountToken: false
             containers:
               - name: gateway
-                image: busybox:1.36
+                image: busybox:1.37
                 securityContext:
                   allowPrivilegeEscalation: false
                   capabilities: {drop: [ALL], add: [NET_ADMIN]}
@@ -555,7 +556,7 @@ jobs:
         working-directory: deploy/cluster
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         with:
           python-version: "3.13"
       - name: helm-render the monitoring stack (alloy / loki / kube-prometheus-stack, once for full and once for light)
@@ -654,7 +655,7 @@ jobs:
             -skip Certificate,ClusterIssuer,ServiceMonitor,PodMonitor,Kustomization,GatewayClass,Gateway,HTTPRoute,HTTPRouteFilter,EnvoyProxy,SecurityPolicy,BackendTrafficPolicy,ClientTrafficPolicy \
             -ignore-filename-pattern '10-migrate-job' \
             -summary /work/deploy/app/k8s
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         with:
           python-version: "3.13"
       - name: Gateway manifest CRD schema validation

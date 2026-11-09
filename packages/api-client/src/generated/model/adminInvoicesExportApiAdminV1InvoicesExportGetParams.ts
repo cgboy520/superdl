@@ -7,14 +7,14 @@
 import type { AdminInvoicesExportApiAdminV1InvoicesExportGetLang } from './adminInvoicesExportApiAdminV1InvoicesExportGetLang';
 
 export type AdminInvoicesExportApiAdminV1InvoicesExportGetParams = {
-status?: string | null;
-period?: string | null;
-reveal?: boolean;
-reason?: string | null;
-/**
- * @minimum -720
- * @maximum 840
- */
-tz_offset_minutes?: number;
-lang?: AdminInvoicesExportApiAdminV1InvoicesExportGetLang;
+  status?: string | null;
+  period?: string | null;
+  reveal?: boolean;
+  reason?: string | null;
+  /**
+   * @minimum -720
+   * @maximum 840
+   */
+  tz_offset_minutes?: number;
+  lang?: AdminInvoicesExportApiAdminV1InvoicesExportGetLang;
 };

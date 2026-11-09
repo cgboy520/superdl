@@ -10,7 +10,7 @@ mig:
   strategy: mixed
 dcgmExporter:
   enabled: true
-  version: 4.6.0-4.8.3-distroless
+  version: 4.6.1-4.8.4-distroless
   serviceMonitor:
     enabled: true
 sandboxWorkloads:

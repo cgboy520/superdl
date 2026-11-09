@@ -1,7 +1,7 @@
 # Tenant private-network gateway image: WireGuard / strongSwan / OpenVPN / openconnect clients,
 # nftables, dnsmasq and the netgw agent (gateway, plus the attach entry of instance Pods).
 # Contract and spec format: deploy/netgw/README.md.
-FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 RUN apk add --no-cache dnsmasq iproute2 nftables openconnect openvpn python3 strongswan tini \
     wireguard-tools-wg

@@ -6,5 +6,5 @@
  */
 
 export type CreateInvoiceApiV1BillingInvoicesPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

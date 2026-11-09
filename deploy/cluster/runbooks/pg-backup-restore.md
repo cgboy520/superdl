@@ -18,14 +18,14 @@ Reconciliation: `balance_ledger` is append-only and every row carries `balance_a
 
 ## Logical-backup image acceptance gate
 
-The CronJob retains the pinned `postgres:18` and `amazon/aws-cli:2.32.0` digests in `deploy/app/k8s/06-pg-backup.yaml`; no extra image or runtime package installation is used. **Do not mark this backup chain accepted until those exact images pass the toolchain and restore drill.** A Dockerfile installing GnuPG during its build does not prove `gpg` survives package cleanup in the final image. Offline command-stub tests check argument plumbing and failure handling only, not tool availability or encryption.
+The CronJob retains the pinned `postgres:18` and `amazon/aws-cli:2.39.6` digests in `deploy/app/k8s/06-pg-backup.yaml`; no extra image or runtime package installation is used. **Do not mark this backup chain accepted until those exact images pass the toolchain and restore drill.** A Dockerfile installing GnuPG during its build does not prove `gpg` survives package cleanup in the final image. Offline command-stub tests check argument plumbing and failure handling only, not tool availability or encryption.
 
 On a Docker-capable isolated host, check the exact PostgreSQL image without credentials or network access inside the container:
 
 ```bash
 docker run --rm --network none --read-only --user 999:999 \
   --tmpfs /tmp:rw,mode=1777 --entrypoint sh \
-  postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280 \
+  postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42 \
   -ec 'for t in pg_dump gpg gpg-agent initdb pg_ctl createdb pg_restore psql; do command -v "$t" >/dev/null || exit 1; done'
 ```
 

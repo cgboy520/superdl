@@ -7,9 +7,9 @@
 import type { AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetKind } from './adminListSettlementGapsApiAdminV1FinanceSettlementGapsGetKind';
 
 export type AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetParams = {
-kind?: AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetKind;
-reason?: string | null;
-unresolved?: boolean;
-cursor?: string | null;
-limit?: number | null;
+  kind?: AdminListSettlementGapsApiAdminV1FinanceSettlementGapsGetKind;
+  reason?: string | null;
+  unresolved?: boolean;
+  cursor?: string | null;
+  limit?: number | null;
 };

@@ -2,7 +2,7 @@ import { adminThemeComponents, adminThemeToken, CurrencyProvider, ThemeProvider 
 import { NotFoundView, RouteErrorFallbackView } from "@superdl/ui/components";
 import { createRootRoute, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
 import { App as AntApp, ConfigProvider, theme } from "antd";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useAppLocale } from "@superdl/ui";
@@ -18,6 +18,10 @@ export const Route = createRootRoute({
 /** Theme + locale + deployment currency (`GET /deployment`, readable by every role, only once signed in). */
 function DarkShell({ children }: { children: ReactNode }) {
   const antdLocale = useAppLocale();
+  const { t } = useTranslation();
+  useEffect(() => {
+    document.title = t("app.title");
+  }, [t]);
   const { accessToken } = useAuth();
   const { data: deployment } = useDeployment({ enabled: accessToken != null });
   return (

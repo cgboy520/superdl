@@ -185,7 +185,7 @@ async def active_member_ids(session: AsyncSession, org_ids: Iterable[int]) -> di
     rows = await session.execute(
         select(OrgMember.org_id, OrgMember.user_id).where(OrgMember.org_id.in_(ids))
     )
-    for org_id, user_id in rows.tuples():
+    for org_id, user_id in rows:
         out[org_id].add(user_id)
     return out
 
@@ -198,7 +198,7 @@ async def org_statuses(session: AsyncSession, org_ids: Iterable[int]) -> dict[in
     rows = await session.execute(
         select(Organization.id, Organization.status).where(Organization.id.in_(ids))
     )
-    return dict(rows.tuples().all())
+    return dict(rows.all())
 
 
 async def member_labels(
@@ -231,7 +231,7 @@ async def org_refs(session: AsyncSession, org_ids: Iterable[int]) -> dict[int, t
             Organization.id.in_(ids)
         )
     )
-    return {oid: (uuid, name) for oid, uuid, name in rows.tuples()}
+    return {oid: (uuid, name) for oid, uuid, name in rows}
 
 
 async def orgs_of_users(session: AsyncSession, user_ids: Iterable[int]) -> dict[int, OrgRefOut]:
@@ -246,7 +246,7 @@ async def orgs_of_users(session: AsyncSession, user_ids: Iterable[int]) -> dict[
     )
     return {
         uid: OrgRefOut.model_validate({"uuid": uuid, "name": name, "role": role})
-        for uid, role, uuid, name in rows.tuples()
+        for uid, role, uuid, name in rows
     }
 
 
@@ -446,7 +446,7 @@ async def _received_rows(
         )
         .order_by(OrgInvitation.id.desc())
     )
-    return [(inv, org) for inv, org in rows.tuples()]
+    return [(inv, org) for inv, org in rows]
 
 
 async def my_org(session: AsyncSession, user: "User") -> MyOrgOut:
@@ -848,9 +848,7 @@ async def _admin_outs(session: AsyncSession, orgs: list[Organization]) -> list[A
                     OrgMember.org_id.in_(ids), OrgMember.role == ROLE_OWNER
                 )
             )
-        )
-        .tuples()
-        .all()
+        ).all()
     )
     counts = dict(
         (
@@ -859,9 +857,7 @@ async def _admin_outs(session: AsyncSession, orgs: list[Organization]) -> list[A
                 .where(OrgMember.org_id.in_(ids))
                 .group_by(OrgMember.org_id)
             )
-        )
-        .tuples()
-        .all()
+        ).all()
     )
     pending = dict(
         (
@@ -874,9 +870,7 @@ async def _admin_outs(session: AsyncSession, orgs: list[Organization]) -> list[A
                 )
                 .group_by(OrgInvitation.org_id)
             )
-        )
-        .tuples()
-        .all()
+        ).all()
     )
     emails = await account_service.emails_by_user(session, owners.values())
     return [

@@ -6,10 +6,10 @@
  */
 
 export type AdminListTicketsApiAdminV1TicketsGetParams = {
-status?: string | null;
-category?: string | null;
-user_id?: number | null;
-ticket_no?: string | null;
-cursor?: string | null;
-limit?: number | null;
+  status?: string | null;
+  category?: string | null;
+  user_id?: number | null;
+  ticket_no?: string | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

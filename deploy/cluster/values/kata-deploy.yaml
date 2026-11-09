@@ -1,3 +1,5 @@
+deploymentMode: daemonset
+
 nodeSelector:
   node-restriction.kubernetes.io/superdl-pool: kata
 

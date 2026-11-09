@@ -6,8 +6,8 @@
  */
 
 export type ListServicesApiV1ServicesGetParams = {
-status?: string | null;
-name?: string | null;
-cursor?: string | null;
-limit?: number | null;
+  status?: string | null;
+  name?: string | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

@@ -6,5 +6,5 @@
  */
 
 export type EnrollBootstrapApiV1NodeEnrollBootstrapPostHeaders = {
-authorization?: string | null;
+  authorization?: string | null;
 };

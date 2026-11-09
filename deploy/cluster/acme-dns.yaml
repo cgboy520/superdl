@@ -17,7 +17,7 @@ data:
       ]
     debug = false
     [database]
-    engine = "sqlite3"
+    engine = "sqlite"
     connection = "/var/lib/acme-dns/acme-dns.db"
     [api]
     ip = "0.0.0.0"
@@ -69,7 +69,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: acme-dns
-          image: joohoi/acme-dns:v1.0@sha256:CHANGE_ME_ACME_DNS_DIGEST
+          image: joohoi/acme-dns:v2.0.2@sha256:8d327df58b1c9f6361c76734f9761a108fa4f12cf7ca94440a0404a28f75de62
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

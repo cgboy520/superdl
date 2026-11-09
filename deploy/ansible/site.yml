@@ -3,14 +3,16 @@
   become: true
   vars:
     cluster_distro: rke2
-    rke2_channel: latest
+    # Exact server versions; agents follow the platform configuration cluster_agent_version.
+    rke2_version: v1.36.6+rke2r1
+    k3s_version: v1.36.6+k3s1
     # Installer origin: official = get.rke2.io / get.k3s.io (default); cn = rancher-mirror.rancher.cn.
     # The sha256 pins below must equal PIN_*_OFFICIAL / PIN_*_CN in
     # apps/api/app/modules/nodes/assets/node-join.sh (a bats test cross-checks them).
     k8s_install_mirror: official
-    rke2_installer_sha256_official: "42983c86d1da64a92061d83afb57630cedd69241989f1b0673f3db6c3d92ee6b"
+    rke2_installer_sha256_official: "9441e25b6750ef51647eb38f50d3f5dc1c04fdc65959eca1891432145a068a49"
     rke2_installer_sha256_cn: "5541410b86d4d19d927d820be85156e787be3fdb24be72507af52932a1d12de1"
-    k3s_installer_sha256_official: "ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b"
+    k3s_installer_sha256_official: "c2a2643dd7c259121a876d16538844c60928de3d38ae98f22f7b95a7ffcfab9d"
     k3s_installer_sha256_cn: "3944aa467eb945b5ff2151a8e4f8d4a5f3a210d31ab39aec81f37606936d0863"
     rke2_installer_url: "{{ 'https://get.rke2.io' if k8s_install_mirror == 'official' else 'https://rancher-mirror.rancher.cn/rke2/install.sh' }}"
     k3s_installer_url: "{{ 'https://get.k3s.io' if k8s_install_mirror == 'official' else 'https://rancher-mirror.rancher.cn/k3s/k3s-install.sh' }}"
@@ -187,7 +189,7 @@
 
     - name: "Install the rke2 server (idempotent: skipped when installed)"
       shell: >
-        {{ rke2_installer_mirror_env }} INSTALL_RKE2_CHANNEL={{ rke2_channel }} sh /root/.cache/superdl/rke2-install.sh
+        {{ rke2_installer_mirror_env }} INSTALL_RKE2_VERSION={{ rke2_version }} sh /root/.cache/superdl/rke2-install.sh
       args:
         executable: /bin/bash
         creates: /etc/systemd/system/rke2-server.service
@@ -206,7 +208,7 @@
 
     - name: "Install the k3s server (idempotent: skipped when installed)"
       shell: >
-        {{ k3s_installer_mirror_env }} sh /root/.cache/superdl/k3s-install.sh server
+        {{ k3s_installer_mirror_env }} INSTALL_K3S_VERSION={{ k3s_version }} sh /root/.cache/superdl/k3s-install.sh server
       args:
         executable: /bin/bash
         creates: /etc/systemd/system/k3s.service

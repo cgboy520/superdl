@@ -63,7 +63,7 @@ def slice_page[T](
 
 async def paginate_by_id[RowT](
     session: AsyncSession,
-    stmt: Select[tuple[RowT]],
+    stmt: Select[RowT],
     *,
     id_col: InstrumentedAttribute[int],
     cursor: str | None,

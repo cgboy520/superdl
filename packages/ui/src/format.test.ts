@@ -40,7 +40,7 @@ function makeT(lng: "zh-CN" | "en-US"): SharedT {
     interpolation: { escapeValue: false },
   });
   void inst.init();
-  return (key: string, opts?: Record<string, unknown>) => inst.t(key, opts);
+  return (key: string, opts?: Record<string, unknown>) => inst.t(key, opts ?? {});
 }
 const tZh = makeT("zh-CN");
 const tEn = makeT("en-US");

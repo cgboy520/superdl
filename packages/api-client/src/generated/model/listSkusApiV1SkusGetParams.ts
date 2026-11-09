@@ -6,6 +6,6 @@
  */
 
 export type ListSkusApiV1SkusGetParams = {
-tier?: string | null;
-gpu_model?: string | null;
+  tier?: string | null;
+  gpu_model?: string | null;
 };

@@ -6,10 +6,10 @@
  */
 
 export type AdminListOrdersApiAdminV1OrdersGetParams = {
-status?: string | null;
-order_no?: string | null;
-user_id?: number | null;
-cursor?: string | null;
-limit?: number | null;
-day?: string | null;
+  status?: string | null;
+  order_no?: string | null;
+  user_id?: number | null;
+  cursor?: string | null;
+  limit?: number | null;
+  day?: string | null;
 };

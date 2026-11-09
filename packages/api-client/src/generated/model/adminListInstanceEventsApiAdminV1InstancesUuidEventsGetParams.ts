@@ -6,6 +6,6 @@
  */
 
 export type AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams = {
-cursor?: string | null;
-limit?: number | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

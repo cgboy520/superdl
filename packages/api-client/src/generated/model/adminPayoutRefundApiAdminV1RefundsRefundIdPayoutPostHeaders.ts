@@ -6,5 +6,5 @@
  */
 
 export type AdminPayoutRefundApiAdminV1RefundsRefundIdPayoutPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

@@ -6,5 +6,5 @@
  */
 
 export type CreateOrgApiV1OrgPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

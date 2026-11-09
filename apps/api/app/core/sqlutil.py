@@ -45,7 +45,7 @@ def total(column: SQLColumnExpression[Decimal]) -> ColumnElement[Decimal]:
     return func.coalesce(func.sum(column), 0)
 
 
-async def sum_decimal(session: AsyncSession, stmt: Select[tuple[Any]]) -> Decimal:
+async def sum_decimal(session: AsyncSession, stmt: Select[Any]) -> Decimal:
     """Run a single-column aggregate (usually select(total(col)).where(...)) and return a
     Decimal."""
     return Decimal((await session.execute(stmt)).scalar_one())

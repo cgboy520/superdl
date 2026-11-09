@@ -33,7 +33,7 @@ releases:
     condition: cilium.enabled
     namespace: kube-system
     chart: cilium/cilium
-    version: "1.20.0"
+    version: "1.20.4"
     values:
       - values/cilium.yaml
       {{- if eq .Environment.Name "light" }}
@@ -49,7 +49,7 @@ releases:
     condition: gpuOperator.enabled
     namespace: gpu-operator
     chart: nvidia/gpu-operator
-    version: "v26.3.3"
+    version: "v26.7.2"
     values:
       - values/gpu-operator.yaml
       {{- if eq .Environment.Name "light" }}
@@ -62,7 +62,7 @@ releases:
     condition: kataDeploy.enabled
     namespace: kube-system
     chart: oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy
-    version: "4.1.0"
+    version: "4.3.1"
     values: [values/kata-deploy.yaml]
     set:
       - name: k8sDistribution
@@ -72,7 +72,7 @@ releases:
     condition: hami.enabled
     namespace: kube-system
     chart: hami/hami
-    version: "2.9.0"
+    version: "2.11.0"
     values:
       - values/hami.yaml
       {{- if eq .Environment.Name "light" }}
@@ -83,7 +83,7 @@ releases:
     condition: kps.enabled
     namespace: monitoring
     chart: prometheus-community/kube-prometheus-stack
-    version: "88.0.0"
+    version: "93.1.1"
     values:
       - values/kps.yaml
       {{- if eq .Environment.Name "light" }}
@@ -102,14 +102,14 @@ releases:
     condition: rookCeph.enabled
     namespace: rook-ceph
     chart: rook-release/rook-ceph
-    version: "v1.20.7"
+    version: "v1.21.2"
     values: [values/rook-ceph.yaml]
 
   - name: ceph-csi-drivers
     condition: rookCeph.enabled
     namespace: rook-ceph
     chart: ceph-csi-operator/ceph-csi-drivers
-    version: "1.0.5"
+    version: "1.1.0"
     values: [values/ceph-csi-drivers.yaml]
     needs: [rook-ceph/rook-ceph]
     disableValidationOnInstall: true
@@ -118,7 +118,7 @@ releases:
     condition: rookCeph.enabled
     namespace: rook-ceph
     chart: rook-release/rook-ceph-cluster
-    version: "v1.20.7"
+    version: "v1.21.2"
     values: [values/rook-ceph-cluster.yaml]
     needs: [rook-ceph/rook-ceph]
     disableValidationOnInstall: true
@@ -127,7 +127,7 @@ releases:
     condition: topolvm.enabled
     namespace: topolvm-system
     chart: topolvm/topolvm
-    version: "17.0.0"
+    version: "17.3.1"
     values:
       - values/topolvm.yaml
       {{- if eq .Environment.Name "light" }}
@@ -143,7 +143,7 @@ releases:
     condition: certManager.enabled
     namespace: cert-manager
     chart: jetstack/cert-manager
-    version: "1.19.1"
+    version: "1.21.3"
     values: [values/cert-manager.yaml]
     set:
       - name: crds.enabled
@@ -162,7 +162,7 @@ releases:
     condition: envoyGateway.enabled
     namespace: envoy-gateway-system
     chart: oci://docker.io/envoyproxy/gateway-helm
-    version: "v1.9.0"
+    version: "v1.10.0"
     values:
       - values/envoy-gateway.yaml
       {{- if eq .Environment.Name "light" }}
@@ -180,13 +180,13 @@ releases:
     condition: cnpg.enabled
     namespace: cnpg-system
     chart: cloudnative-pg/cloudnative-pg
-    version: "0.29.0"
+    version: "0.29.1"
 
   - name: cnpg-cluster
     condition: cnpg.enabled
     namespace: superdl
     chart: cloudnative-pg/cluster
-    version: "0.8.1"
+    version: "0.9.0"
     needs:
       - cnpg-system/cloudnative-pg
     disableValidationOnInstall: true
@@ -196,7 +196,7 @@ releases:
     condition: loki.enabled
     namespace: monitoring
     chart: grafana-community/loki
-    version: "18.9.1"
+    version: "21.0.0"
     values:
       - values/loki.yaml
       {{- if eq .Environment.Name "light" }}
@@ -214,7 +214,7 @@ releases:
     condition: logCollector.enabled
     namespace: monitoring
     chart: grafana/alloy
-    version: "1.11.1"
+    version: "1.15.0"
     needs:
       - monitoring/loki
     values: [values/alloy.yaml]

@@ -6,6 +6,6 @@
  */
 
 export type AdminTenantLedgerApiAdminV1TenantsUserIdLedgerGetParams = {
-cursor?: string | null;
-limit?: number | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

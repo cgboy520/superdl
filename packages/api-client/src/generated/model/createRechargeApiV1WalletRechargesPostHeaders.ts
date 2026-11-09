@@ -6,5 +6,5 @@
  */
 
 export type CreateRechargeApiV1WalletRechargesPostHeaders = {
-'Idempotency-Key'?: string | null;
+  'Idempotency-Key'?: string | null;
 };

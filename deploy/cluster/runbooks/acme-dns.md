@@ -21,7 +21,6 @@ cert-manager (acmeDNS solver)
 ## One-time deployment steps
 
 1. **Replace the placeholders** (`deploy/cluster/acme-dns.yaml`, scanned by preflight):
-   - `CHANGE_ME_ACME_DNS_DIGEST`: pin the digest from `docker buildx imagetools inspect joohoi/acme-dns:v1.0`
    - `auth.superdl.example.com` → the real auth subdomain (a dedicated subdomain, not mixed with business domains)
 2. `helmfile -e full apply` (the cert-manager presync hook applies acme-dns.yaml automatically)
 3. Read the public LoadBalancer IP, write it into `CHANGE_ME_ACME_DNS_LB_IP` in the `config.cfg` records, then `kubectl apply` + restart the Pod:

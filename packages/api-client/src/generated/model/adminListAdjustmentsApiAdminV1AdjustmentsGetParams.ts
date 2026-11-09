@@ -6,9 +6,9 @@
  */
 
 export type AdminListAdjustmentsApiAdminV1AdjustmentsGetParams = {
-status?: string | null;
-user_id?: number | null;
-cursor?: string | null;
-limit?: number | null;
-day?: string | null;
+  status?: string | null;
+  user_id?: number | null;
+  cursor?: string | null;
+  limit?: number | null;
+  day?: string | null;
 };

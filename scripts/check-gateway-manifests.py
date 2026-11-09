@@ -13,7 +13,7 @@ import tempfile
 import jsonschema
 import yaml
 
-CHART_VERSION = "v1.9.0"
+CHART_VERSION = "v1.10.0"
 CHART = "oci://docker.io/envoyproxy/gateway-helm"
 REPO = pathlib.Path(__file__).resolve().parent.parent
 TARGETS = [REPO / "deploy/app/k8s/04-gateway.yaml"]

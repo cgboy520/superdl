@@ -6,9 +6,9 @@
  */
 
 export type ListExpiringInstancesApiV1InstancesExpiringGetParams = {
-/**
- * @minimum 1
- * @maximum 90
- */
-within_days?: number;
+  /**
+   * @minimum 1
+   * @maximum 90
+   */
+  within_days?: number;
 };

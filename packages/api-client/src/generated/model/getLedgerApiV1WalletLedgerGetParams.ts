@@ -6,6 +6,6 @@
  */
 
 export type GetLedgerApiV1WalletLedgerGetParams = {
-cursor?: string | null;
-limit?: number | null;
+  cursor?: string | null;
+  limit?: number | null;
 };

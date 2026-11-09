@@ -436,7 +436,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "cluster",
         "str",
         pattern=r"v\d+\.\d+\.\d+(\+(rke2r|k3s)\d+)?",
-        hint="Version pinned by the install script, e.g. v1.36.2+rke2r1 / v1.36.3+k3s1",
+        hint="Version pinned by the install script, e.g. v1.36.6+rke2r1 / v1.36.6+k3s1",
     ),
     "node_driver_version": SettingSpec(
         "cluster",
