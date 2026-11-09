@@ -290,6 +290,7 @@ def _upsert_node_spec(
         n.driver_version_label or enrolled.get("driver_version") or row.driver_version
     )
     row.cuda_version = n.cuda_version_label or enrolled.get("cuda_version") or row.cuda_version
+    row.arch = n.arch or row.arch
     row.status = n.status
     row.last_seen = now
     return canonical

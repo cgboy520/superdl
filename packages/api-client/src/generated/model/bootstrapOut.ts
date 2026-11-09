@@ -15,7 +15,6 @@ export interface BootstrapOut {
   driver_version: string;
   install_mirror?: string;
   k8s_distro: string;
-  nvme_devices: string[];
   pool: string;
   progress_token: string;
   registries_yaml: string;

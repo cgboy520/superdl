@@ -61,6 +61,9 @@ data:
   SUPERDL_ADMIN_HOST: "admin.superdl.example.com"
   SUPERDL_REGISTRY_HOST: "harbor.superdl.example.com"
   SUPERDL_REGISTRY_PROJECT: "superdl"
+  # Staging of uploaded image archives: the superdl-uploads volume (a CephFS subvolume shared by
+  # the API and the image-ops worker, created with deploy/cluster/ceph/static-volume.sh).
+  SUPERDL_IMAGE_UPLOAD_DIR: "/var/lib/superdl/uploads"
   SUPERDL_CAPTCHA_ENABLED: "true"
   # turnstile (default; Cloudflare site key below, secret in superdl-cloud) or aliyun (scene ID / prefix below, AccessKey in superdl-cloud).
   SUPERDL_CAPTCHA_PROVIDER: "turnstile"

@@ -363,7 +363,7 @@ if [[ "$env_name" == "full" ]]; then
   fi
 fi
 
-say "== StorageClasses referenced by PVCs exist (a missing SC leaves PVCs unbound forever and components silently down) =="
+say "== Platform component storage (TopoLVM on the infra-storage nodes) =="
 check_sc() {
   if kubectl get storageclass "$1" >/dev/null 2>&1; then
     ok "StorageClass $1($2)"
@@ -371,25 +371,28 @@ check_sc() {
     miss "StorageClass $1 missing ($2)"
   fi
 }
-check_sc topolvm-provisioner "instance disks / monitoring components / acme-dns storage (mandatory on full and light)"
-if grep -qE '^\s*rookCeph:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
-  check_sc superdl-cephfs "data disks (CephFS; the only shared filesystem supporting idmapped mounts)"
-  if kubectl get storageclass superdl-cephfs >/dev/null 2>&1; then
-    cephfs_rp="$(kubectl get storageclass superdl-cephfs -o jsonpath='{.reclaimPolicy}' 2>/dev/null || true)"
-    if [[ "$cephfs_rp" == "Delete" ]]; then
-      ok "StorageClass superdl-cephfs reclaimPolicy=Delete"
-    else
-      miss "StorageClass superdl-cephfs reclaimPolicy=${cephfs_rp:-unknown} (the code assumes Delete: deleting a disk deletes the subvolume; SC fields are immutable, kubectl delete sc superdl-cephfs first, then rebuild with ./apply.sh $env_name -l name=rook-ceph-cluster, see runbooks/cluster-validation.md section D. Storage)"
-    fi
-    cephfs_pvs="$(kubectl get pv -o jsonpath='{range .items[?(@.spec.storageClassName=="superdl-cephfs")]}{.metadata.name}{" "}{.spec.persistentVolumeReclaimPolicy}{" "}{.status.phase}{"\n"}{end}' 2>/dev/null || true)"
-    pv_retain="$(awk '$2=="Retain"' <<< "$cephfs_pvs" | grep -c . || true)"
-    pv_released="$(awk '$3=="Released"' <<< "$cephfs_pvs" | grep -c . || true)"
-    if [[ "$pv_retain" -eq 0 && "$pv_released" -eq 0 ]]; then
-      ok "superdl-cephfs PVs are all Delete with no Released leftovers"
-    else
-      miss "superdl-cephfs PVs: $pv_retain still Retain, $pv_released Released (subvolumes of deleted tenant disks still occupy Ceph capacity; patch each with kubectl patch pv <pv> -p '{\"spec\":{\"persistentVolumeReclaimPolicy\":\"Delete\"}}', kubectl delete pv the Released ones, see runbooks/cluster-validation.md section D. Storage)"
-    fi
+check_sc topolvm-provisioner "monitoring / logging / acme-dns / CloudNativePG volumes"
+infra_nodes="$(kubectl get nodes -l superdl.io/infra-storage=true --no-headers 2>/dev/null | grep -c . || true)"
+if [[ "$infra_nodes" -ge 1 ]]; then
+  ok "$infra_nodes node(s) labelled superdl.io/infra-storage=true"
+else
+  miss "no node labelled superdl.io/infra-storage=true: create the superdl-infra volume group on the control-plane host and label it (runbooks/ceph-storage.md section 1)"
+fi
+
+say "== Tenant storage (external Ceph through ceph-csi) =="
+if grep -qE '^\s*cephCsi:\s*\{[^}]*enabled:\s*true' "environments/$env_name.yaml"; then
+  if grep -q "CHANGE_ME" values/ceph-csi-cephfs.yaml; then
+    miss "values/ceph-csi-cephfs.yaml still carries CHANGE_ME: fill clusterID (the fsid) and the monitors from the cluster's ceph.conf"
+  else
+    ok "values/ceph-csi-cephfs.yaml filled in"
   fi
+  if kubectl get csidriver cephfs.csi.ceph.com >/dev/null 2>&1; then
+    ok "CSIDriver cephfs.csi.ceph.com registered"
+  else
+    miss "CSIDriver cephfs.csi.ceph.com missing: ./apply.sh $env_name -l name=ceph-csi-cephfs"
+  fi
+else
+  miss "cephCsi is disabled in environments/$env_name.yaml: tenant disks cannot be mounted"
 fi
 
 if [[ "$env_name" == "light" ]]; then

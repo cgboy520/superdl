@@ -12,7 +12,7 @@ export interface HandleConfirmRequest {
      */
   code: string;
   /**
-     * Login handle: an email address or an E.164 phone number
+     * Login handle: an email address, an E.164 phone number or a tenant username (<tenant code>.<name>)
      * @maxLength 254
      */
   handle: string;

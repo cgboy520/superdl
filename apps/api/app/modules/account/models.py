@@ -10,20 +10,33 @@ DELETION_COOLDOWN = timedelta(days=7)
 
 class User(Base):
     """User account. Login handles: `email` (lower-cased) and/or `phone` (E.164), each unique when
-    set; both become NULL on account deletion. KYC stores only the masked identity number and a
-    keyed digest, never the plaintext."""
+    set; both become NULL on account deletion. An account created by a tenant (organization)
+    admin signs in with `username` (`<tenant code>.<name>`, unique) and carries managed_org_id:
+    it skips identity verification, cannot leave the tenant and is reset, disabled or deleted by
+    the tenant's admins. KYC stores only the masked identity number and a keyed digest, never the
+    plaintext."""
 
     __tablename__ = "users"
     __table_args__ = (
         Index("ix_users_status_not_active", "status", postgresql_where=text("status <> 'active'")),
         Index("uq_users_email", "email", unique=True, postgresql_where=text("email IS NOT NULL")),
         Index("uq_users_phone", "phone", unique=True, postgresql_where=text("phone IS NOT NULL")),
+        Index(
+            "uq_users_username",
+            "username",
+            unique=True,
+            postgresql_where=text("username IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str | None] = mapped_column(String(254))
     email_verified_at: Mapped[datetime | None]
     phone: Mapped[str | None] = mapped_column(String(20))
+    username: Mapped[str | None] = mapped_column(String(64))
+    managed_org_id: Mapped[int | None] = mapped_column(index=True)
+    login_disabled: Mapped[bool] = mapped_column(default=False, server_default="false")
+    password_change_required: Mapped[bool] = mapped_column(default=False, server_default="false")
     password_hash: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(16), default="active")
     low_balance_warn_hours: Mapped[int] = mapped_column(default=24)
@@ -42,9 +55,15 @@ class User(Base):
         return f"tenant-{self.id}"
 
     @property
+    def managed(self) -> bool:
+        """Created by a tenant admin."""
+        return self.managed_org_id is not None
+
+    @property
     def primary_handle(self) -> str:
-        """Email first, then phone; deleted accounts fall back to `user:<id>`."""
-        return self.email or self.phone or f"user:{self.id}"
+        """Email first, then phone, then the tenant username; deleted accounts fall back to
+        `user:<id>`."""
+        return self.email or self.phone or self.username or f"user:{self.id}"
 
 
 class UserQuotaOverride(Base):

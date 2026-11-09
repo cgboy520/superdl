@@ -30,7 +30,6 @@ export const PHASE_LABEL = {
   iommu: "nodes.phase.iommu",
   driver: "nodes.phase.driver",
   nvidia_toolkit: "nodes.phase.nvidiaToolkit",
-  nvme_vg: "nodes.phase.nvmeVg",
   reboot: "nodes.phase.reboot",
   registries: "nodes.phase.registries",
   agent_config: "nodes.phase.agentConfig",

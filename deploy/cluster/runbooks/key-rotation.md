@@ -33,8 +33,8 @@ uv run uvicorn app.main:app   # no decrypt failure in the startup log; the insta
    - `SUPERDL_CONFIG_ENCRYPTION_KEY` = the new key
    - `SUPERDL_CONFIG_ENCRYPTION_KEY_PREVIOUS` = the **old** key (do not swap them)
 3. Rolling restart of the consumers: `kubectl -n superdl rollout restart deploy/superdl-api deploy/superdl-worker
-   deploy/superdl-worker-tenant-mgr deploy/superdl-worker-node-mgr deploy/superdl-worker-prewarm`
-   (disk-ops and 10-migrate-job do not consume crypto, nothing to do)
+   deploy/superdl-worker-tenant-mgr deploy/superdl-worker-node-mgr deploy/superdl-worker-prewarm
+   deploy/superdl-worker-image-ops` (10-migrate-job does not consume crypto, nothing to do)
 4. Verify: no `platform_setting_decrypt_failed` in the startup log; secret previews under admin "Platform configuration" render; call one service endpoint with an existing API key; open the Jupyter link of a running instance.
 5. Re-encrypt existing ciphertexts to the new kid (four tables; rows already on the current kid are skipped; undecryptable rows count as skipped and are printed, must be 0):
 

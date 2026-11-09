@@ -117,12 +117,21 @@ _HEADERS: dict[tuple[str, str], list[str]] = {
 }
 
 _LEDGER_TYPE_LABEL: dict[str, dict[str, str]] = {
-    "zh-CN": {"recharge": "充值", "consume": "消费", "refund": "退款", "adjust": "调账"},  # cjk-ok
+    "zh-CN": {
+        "recharge": "充值",  # cjk-ok
+        "consume": "消费",  # cjk-ok
+        "refund": "退款",  # cjk-ok
+        "adjust": "调账",  # cjk-ok
+        "transfer_in": "租户划入",  # cjk-ok
+        "transfer_out": "划出",  # cjk-ok
+    },
     "en-US": {
         "recharge": "Recharge",
         "consume": "Consumption",
         "refund": "Refund",
         "adjust": "Adjustment",
+        "transfer_in": "Tenant allocation in",
+        "transfer_out": "Allocation out",
     },
 }
 

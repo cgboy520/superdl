@@ -1,8 +1,9 @@
-"""Admin routes (SKUs and images / prewarming)."""
+"""Admin routes (SKUs and images / prewarming, uploaded custom images)."""
 
 from decimal import Decimal
+from typing import Annotated
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
 from app.core.audit import set_audit_target
 from app.core.db import DbSession
@@ -23,6 +24,8 @@ from app.modules.catalog.schemas import (
     SkuImpactOut,
     SkuUpdate,
 )
+from app.modules.customimages import service as customimages_service
+from app.modules.customimages.schemas import AdminCustomImageOut, ImageStatus
 
 router = APIRouter(tags=["admin"])
 
@@ -172,3 +175,27 @@ async def admin_image_nodes(image_id: int, session: DbSession) -> list[ImageNode
     """Per-node cache details (failed rows carry last_error)."""
     rows = await catalog_service.image_node_rows(session, image_id)
     return [ImageNodeCacheOut.model_validate(r) for r in rows]
+
+
+@router.get("/custom-images", dependencies=[require_roles("ops", "readonly")])
+async def admin_list_custom_images(
+    session: DbSession,
+    user_id: Annotated[int | None, Query(ge=1)] = None,
+    status: Annotated[ImageStatus | None, Query()] = None,
+) -> list[AdminCustomImageOut]:
+    """Images users uploaded, newest 200, filterable by user and status."""
+    rows = await customimages_service.admin_list(session, user_id=user_id, status=status)
+    return [
+        AdminCustomImageOut.model_validate({**out.model_dump(), "user_id": row.user_id})
+        for row, out in rows
+    ]
+
+
+@router.delete("/custom-images/{uuid}", dependencies=[require_roles("ops")], status_code=204)
+async def admin_delete_custom_image(
+    uuid: str, body: ImageDeleteRequest, session: DbSession, request: Request
+) -> None:
+    """Remove an uploaded image (abuse, policy): its registry artifact is deleted even while
+    instances use it; their next start cannot pull it. reason required."""
+    set_audit_target(request, f"custom-image:{uuid}", detail={"reason": body.reason})
+    await customimages_service.admin_delete(session, uuid)

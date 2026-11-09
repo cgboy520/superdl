@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +35,8 @@ from app.modules.account import service as account_service
 from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import queries as orchestrator_queries
+from app.modules.orgs import mounts
+from app.modules.orgs.access import lock_org, membership_of, require_org_role
 from app.modules.orgs.models import (
     INVITE_ACCEPTED,
     INVITE_DECLINED,
@@ -50,6 +52,7 @@ from app.modules.orgs.models import (
     OrgInvitation,
     OrgMember,
 )
+from app.modules.orgs.mounts import OrgMountRuntime
 from app.modules.orgs.schemas import (
     AdminOrgDetailOut,
     AdminOrgInvitationOut,
@@ -68,6 +71,7 @@ from app.modules.orgs.schemas import (
     OrgFinanceOut,
     OrgOut,
     OrgRefOut,
+    OrgRename,
     ReceivedInvitationOut,
 )
 
@@ -76,7 +80,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-CONSENT_VERSION = "1"
+CONSENT_VERSION = "2"
 DISCLOSURE_ITEMS = (
     "identity",
     "available_balance",
@@ -84,6 +88,7 @@ DISCLOSURE_ITEMS = (
     "burn_rate",
     "instances",
     "routed_access",
+    "storage_mounts",
 )
 INVITATION_TTL = timedelta(days=7)
 ADMINS = (ROLE_OWNER, ROLE_ADMIN)
@@ -127,7 +132,13 @@ def _label(remark: str | None, email: str | None) -> str:
 
 def _org_out(org: Organization) -> OrgOut:
     return OrgOut.model_validate(
-        {"uuid": org.uuid, "name": org.name, "status": org.status, "created_at": org.created_at}
+        {
+            "uuid": org.uuid,
+            "name": org.name,
+            "code": org.code,
+            "status": org.status,
+            "created_at": org.created_at,
+        }
     )
 
 
@@ -138,42 +149,6 @@ def _invitation_status(inv: OrgInvitation) -> str:
 
 
 # ---------------------------------------------------------------- public surface for other modules
-
-
-async def membership_of(session: AsyncSession, user_id: int) -> OrgMember | None:
-    """The user's membership; only active organizations have members."""
-    return await session.scalar(select(OrgMember).where(OrgMember.user_id == user_id))
-
-
-async def require_org_role(
-    session: AsyncSession, user_id: int, roles: Iterable[str], *, lock: bool = False
-) -> tuple[Organization, OrgMember]:
-    """The caller's organization and membership; not a member → 404, other role → 403. lock=True
-    takes the organization row lock first and re-reads the membership under it."""
-    member = await membership_of(session, user_id)
-    if member is None:
-        raise not_found(key="orgs.notMember")
-    if lock:
-        org = await _lock_org(session, member.org_id)
-        member = await session.scalar(
-            select(OrgMember)
-            .where(OrgMember.user_id == user_id, OrgMember.org_id == org.id)
-            .execution_options(populate_existing=True)
-        )
-        if member is None:
-            raise not_found(key="orgs.notMember")
-    else:
-        org = await session.get(Organization, member.org_id)
-        if org is None:
-            raise not_found(key="orgs.notMember")
-    if member.role not in tuple(roles):
-        raise forbidden(key="orgs.roleNotAllowed")
-    return org, member
-
-
-async def lock_org(session: AsyncSession, org_id: int) -> Organization:
-    """FOR UPDATE on the organization row (the first lock of every organization-scoped write)."""
-    return await _lock_org(session, org_id)
 
 
 async def active_member_ids(session: AsyncSession, org_ids: Iterable[int]) -> dict[int, set[int]]:
@@ -255,7 +230,7 @@ async def owned_org_other_members(session: AsyncSession, user_id: int) -> int:
     member = await membership_of(session, user_id)
     if member is None or member.role != ROLE_OWNER:
         return 0
-    return await _member_count(session, member.org_id) - 1
+    return await member_count(session, member.org_id) - 1
 
 
 async def drop_deleted_user(session: AsyncSession, user_id: int) -> None:
@@ -265,7 +240,7 @@ async def drop_deleted_user(session: AsyncSession, user_id: int) -> None:
     member = await membership_of(session, user_id)
     if member is None:
         return
-    org = await _lock_org(session, member.org_id)
+    org = await lock_org(session, member.org_id)
     member = await session.scalar(
         select(OrgMember)
         .where(OrgMember.user_id == user_id, OrgMember.org_id == org.id)
@@ -273,26 +248,19 @@ async def drop_deleted_user(session: AsyncSession, user_id: int) -> None:
     )
     if member is None:
         return
-    if member.role == ROLE_OWNER and (others := await _member_count(session, org.id) - 1) > 0:
+    if member.role == ROLE_OWNER and (others := await member_count(session, org.id) - 1) > 0:
         raise conflict(key="account.deletionOrgOwner", params={"members": others})
     if member.role == ROLE_OWNER:
         await _dissolve(session, org)
         logger.info("org_dissolved_by_deletion", org_uuid=org.uuid, user_id=user_id)
         return
-    await _remove(session, org, [member])
+    await remove_members(session, org, [member])
 
 
 # ---------------------------------------------------------------- internals
 
 
-async def _lock_org(session: AsyncSession, org_id: int) -> Organization:
-    org = await session.get(Organization, org_id, with_for_update=True, populate_existing=True)
-    if org is None:
-        raise not_found(key="orgs.notFound")
-    return org
-
-
-async def _member_count(session: AsyncSession, org_id: int) -> int:
+async def member_count(session: AsyncSession, org_id: int) -> int:
     return (
         await session.scalar(
             select(func.count()).select_from(OrgMember).where(OrgMember.org_id == org_id)
@@ -305,7 +273,7 @@ async def _members(session: AsyncSession, org_id: int) -> list[OrgMember]:
     return sorted(rows, key=lambda m: (_ROLE_ORDER[m.role], ensure_utc(m.joined_at), m.id))
 
 
-async def _member_in_org(session: AsyncSession, org_id: int, member_id: int) -> OrgMember:
+async def member_in_org(session: AsyncSession, org_id: int, member_id: int) -> OrgMember:
     member = await session.scalar(
         select(OrgMember).where(OrgMember.id == member_id, OrgMember.org_id == org_id)
     )
@@ -314,11 +282,14 @@ async def _member_in_org(session: AsyncSession, org_id: int, member_id: int) -> 
     return member
 
 
-async def _remove(session: AsyncSession, org: Organization, members: list[OrgMember]) -> None:
+async def remove_members(
+    session: AsyncSession, org: Organization, members: list[OrgMember]
+) -> None:
     ids = {m.user_id for m in members}
     for m in members:
         await session.delete(m)
     await session.flush()
+    await mounts.on_members_removed(session, org.id, ids)
     for listener in _members_removed_listeners:
         await listener(session, org.id, ids)
     logger.info("org_members_removed", org_uuid=org.uuid, count=len(ids))
@@ -339,6 +310,7 @@ async def _dissolve(session: AsyncSession, org: Organization) -> list[OrgMember]
     org.status = ORG_DISSOLVED
     org.dissolved_at = now
     await session.flush()
+    await mounts.on_org_dissolved(session, org.id)
     for listener in _org_dissolved_listeners:
         await listener(session, org.id)
     return members
@@ -355,24 +327,38 @@ async def _notify(session: AsyncSession, user_ids: Iterable[int], key: str, org_
         )
 
 
-async def _member_outs(session: AsyncSession, members: list[OrgMember]) -> list[MemberOut]:
-    ids = [m.user_id for m in members]
-    emails = await account_service.emails_by_user(session, ids)
-    statuses = await account_service.user_statuses(session, ids)
-    return [
-        MemberOut.model_validate(
-            {
-                "member_id": m.id,
-                "role": m.role,
-                "label": _label(m.remark, emails.get(m.user_id)),
-                "email_masked": mask_handle(emails.get(m.user_id)),
-                "remark": m.remark,
-                "status": statuses.get(m.user_id, "deleted"),
-                "joined_at": m.joined_at,
-            }
-        )
-        for m in members
-    ]
+def _member_out(m: OrgMember, profile: account_service.AccountProfile | None) -> MemberOut:
+    """An account the tenant created shows its username in full; any other member stays
+    masked."""
+    managed = profile is not None and profile.managed_org_id == m.org_id
+    email = profile.email if profile else None
+    username = profile.username if managed and profile else None
+    return MemberOut.model_validate(
+        {
+            "member_id": m.id,
+            "role": m.role,
+            "label": m.remark or username or mask_handle(email),
+            "email_masked": mask_handle(email),
+            "remark": m.remark,
+            "status": profile.status if profile else "deleted",
+            "joined_at": m.joined_at,
+            "managed": managed,
+            "username": username,
+            "login_disabled": bool(profile and profile.login_disabled),
+        }
+    )
+
+
+async def member_outs(session: AsyncSession, members: list[OrgMember]) -> list[MemberOut]:
+    profiles = await account_service.profiles_by_user(session, [m.user_id for m in members])
+    return [_member_out(m, profiles.get(m.user_id)) for m in members]
+
+
+async def is_managed_by(session: AsyncSession, member: OrgMember) -> bool:
+    profile = (await account_service.profiles_by_user(session, [member.user_id])).get(
+        member.user_id
+    )
+    return profile is not None and profile.managed_org_id == member.org_id
 
 
 # ---------------------------------------------------------------- the caller's organization
@@ -382,7 +368,7 @@ async def create_org(
     session: AsyncSession, user_id: int, body: OrgCreate, idempotency_key: str | None
 ) -> tuple[Organization, bool]:
     """Create an organization owned by the caller; (organization, created)."""
-    fingerprint = request_fingerprint(user_id, body.name)
+    fingerprint = request_fingerprint(user_id, body.name, body.code)
     if idempotency_key:
         existing = await find_replay(
             session,
@@ -397,9 +383,11 @@ async def create_org(
             return existing, False
     if await membership_of(session, user_id) is not None:
         raise conflict(key="orgs.alreadyMember")
+    await _require_code_free(session, body.code)
     org = Organization(
         uuid=uuid4().hex,
         name=body.name,
+        code=body.code,
         created_by=user_id,
         idempotency_key=idempotency_key,
         request_fingerprint=fingerprint,
@@ -484,9 +472,22 @@ async def my_org(session: AsyncSession, user: "User") -> MyOrgOut:
     )
 
 
-async def rename_org(session: AsyncSession, user_id: int, name: str) -> Organization:
+async def _require_code_free(session: AsyncSession, code: str) -> None:
+    if await session.scalar(select(Organization.id).where(Organization.code == code)):
+        raise conflict(key="orgs.codeTaken", params={"code": code})
+
+
+async def rename_org(session: AsyncSession, user_id: int, body: OrgRename) -> Organization:
+    """Owner: name and / or code; the code is part of every created account's username, so it
+    changes only while the tenant has none."""
     org, _ = await require_org_role(session, user_id, (ROLE_OWNER,), lock=True)
-    org.name = name
+    if body.name is not None:
+        org.name = body.name
+    if body.code is not None and body.code != org.code:
+        if await account_service.managed_account_count(session, org.id):
+            raise conflict(key="orgs.codeLocked")
+        await _require_code_free(session, body.code)
+        org.code = body.code
     await session.commit()
     await session.refresh(org)
     return org
@@ -496,9 +497,11 @@ async def transfer_owner(session: AsyncSession, user_id: int, member_id: int) ->
     """The owner becomes an admin and the target the owner (demote, flush, promote: the one-owner
     index is not deferrable)."""
     org, me = await require_org_role(session, user_id, (ROLE_OWNER,), lock=True)
-    target = await _member_in_org(session, org.id, member_id)
+    target = await member_in_org(session, org.id, member_id)
     if target.id == me.id:
         raise conflict(key="orgs.transferTargetInvalid")
+    if await is_managed_by(session, target):
+        raise conflict(key="orgs.ownerMustBeOwnAccount")
     await _swap_owner(session, me, target)
     await _notify(session, [target.user_id], "owner_transferred", org.name)
     await session.commit()
@@ -517,6 +520,7 @@ async def dissolve_org(session: AsyncSession, user_id: int, confirm_name: str) -
     org, me = await require_org_role(session, user_id, (ROLE_OWNER,), lock=True)
     if " ".join(confirm_name.split()) != org.name:
         raise AppError(ErrorCode.VALIDATION_ERROR, key="orgs.confirmNameMismatch")
+    await _refuse_while_managed_accounts(session, org)
     members = await _dissolve(session, org)
     await _notify(session, [m.user_id for m in members if m.id != me.id], "dissolved", org.name)
     await session.commit()
@@ -525,17 +529,26 @@ async def dissolve_org(session: AsyncSession, user_id: int, confirm_name: str) -
     return org
 
 
+async def _refuse_while_managed_accounts(session: AsyncSession, org: Organization) -> None:
+    """Accounts a tenant created exist only inside it: delete them before dissolving."""
+    count = await account_service.managed_account_count(session, org.id)
+    if count:
+        raise conflict(key="orgs.dissolveHasManagedUsers", params={"count": count})
+
+
 async def leave_org(session: AsyncSession, user_id: int) -> None:
     org, me = await require_org_role(session, user_id, ALL_ROLES, lock=True)
     if me.role == ROLE_OWNER:
         raise conflict(key="orgs.ownerCannotLeave")
-    await _remove(session, org, [me])
+    if await is_managed_by(session, me):
+        raise conflict(key="orgs.managedCannotLeave")
+    await remove_members(session, org, [me])
     await session.commit()
 
 
 async def list_members(session: AsyncSession, user_id: int) -> list[MemberOut]:
     org, _ = await require_org_role(session, user_id, ADMINS)
-    return await _member_outs(session, await _members(session, org.id))
+    return await member_outs(session, await _members(session, org.id))
 
 
 async def update_member(
@@ -543,7 +556,7 @@ async def update_member(
 ) -> MemberOut:
     """Owner: role and remark; admin: remark only. The owner role moves only by transfer."""
     org, me = await require_org_role(session, user_id, ADMINS, lock=True)
-    target = await _member_in_org(session, org.id, member_id)
+    target = await member_in_org(session, org.id, member_id)
     fields = body.model_fields_set
     if "role" in fields and body.role is not None and body.role != target.role:
         if me.role != ROLE_OWNER:
@@ -554,20 +567,22 @@ async def update_member(
     if "remark" in fields:
         target.remark = body.remark or None
     await session.commit()
-    return (await _member_outs(session, [target]))[0]
+    return (await member_outs(session, [target]))[0]
 
 
 async def remove_member(session: AsyncSession, user_id: int, member_id: int) -> None:
     """Owner removes anyone else, an admin removes members only; the member is notified."""
     org, me = await require_org_role(session, user_id, ADMINS, lock=True)
-    target = await _member_in_org(session, org.id, member_id)
+    target = await member_in_org(session, org.id, member_id)
     if target.id == me.id:
         raise conflict(key="orgs.useLeave")
     if target.role == ROLE_OWNER:
         raise conflict(key="orgs.cannotRemoveOwner")
     if target.role == ROLE_ADMIN and me.role != ROLE_OWNER:
         raise forbidden(key="orgs.roleNotAllowed")
-    await _remove(session, org, [target])
+    if await is_managed_by(session, target):
+        raise conflict(key="orgs.managedUseDelete")
+    await remove_members(session, org, [target])
     await _notify(session, [target.user_id], "removed", org.name)
     await session.commit()
 
@@ -733,14 +748,14 @@ async def accept_invitation(
     found = await _received(session, user, uuid)
     if consent_version != CONSENT_VERSION:
         raise conflict(key="orgs.consentOutdated")
-    org = await _lock_org(session, found.org_id)
+    org = await lock_org(session, found.org_id)
     inv = await session.get(OrgInvitation, found.id, with_for_update=True, populate_existing=True)
     if inv is None or _invitation_status(inv) != INVITE_PENDING or org.status != ORG_ACTIVE:
         raise conflict(key="orgs.invitationNotPending", params={"status": "revoked"})
     if await membership_of(session, user.id) is not None:
         raise conflict(key="orgs.alreadyMember")
     limit = get_settings().org_max_members
-    if await _member_count(session, org.id) >= limit:
+    if await member_count(session, org.id) >= limit:
         raise conflict(key="orgs.memberQuota", params={"max": limit})
     session.add(
         OrgMember(
@@ -878,6 +893,7 @@ async def _admin_outs(session: AsyncSession, orgs: list[Organization]) -> list[A
             {
                 "uuid": o.uuid,
                 "name": o.name,
+                "code": o.code,
                 "status": o.status,
                 "owner_user_id": owners.get(o.id),
                 "owner_email_masked": (
@@ -901,8 +917,8 @@ async def admin_list_orgs(
     cursor: str | None,
     limit: int | None,
 ) -> RawPage[AdminOrgOut]:
-    """Newest first. q = organization uuid (32 hex), a member's user id (digits) or a name
-    fragment."""
+    """Newest first. q = tenant uuid (32 hex), a member's user id (digits), the tenant code or a
+    name fragment."""
     stmt = select(Organization).order_by(Organization.id.desc())
     if status:
         stmt = stmt.where(Organization.status == status)
@@ -915,7 +931,12 @@ async def admin_list_orgs(
                 Organization.id.in_(select(OrgMember.org_id).where(OrgMember.user_id == int(term)))
             )
         else:
-            stmt = stmt.where(Organization.name.ilike(f"%{like_escape(term)}%", escape="\\"))
+            stmt = stmt.where(
+                or_(
+                    Organization.name.ilike(f"%{like_escape(term)}%", escape="\\"),
+                    Organization.code == term.lower(),
+                )
+            )
     rows, next_cursor = await paginate_by_id(
         session, stmt, id_col=Organization.id, cursor=cursor, limit=limit
     )
@@ -937,8 +958,7 @@ async def admin_org_detail(session: AsyncSession, uuid: str) -> AdminOrgDetailOu
     (base,) = await _admin_outs(session, [org])
     members = await _members(session, org.id)
     member_ids = [m.user_id for m in members]
-    emails = await account_service.emails_by_user(session, member_ids)
-    statuses = await account_service.user_statuses(session, member_ids)
+    profiles = await account_service.profiles_by_user(session, member_ids)
     invitations = list(
         (
             await session.scalars(
@@ -956,13 +976,18 @@ async def admin_org_detail(session: AsyncSession, uuid: str) -> AdminOrgDetailOu
                 {
                     "user_id": m.user_id,
                     "role": m.role,
-                    "email_masked": mask_handle(emails.get(m.user_id)),
-                    "status": statuses.get(m.user_id, "deleted"),
+                    "email_masked": mask_handle(p.email if p else None),
+                    "username": p.username if p else None,
+                    "managed": bool(p and p.managed_org_id == org.id),
+                    "login_disabled": bool(p and p.login_disabled),
+                    "status": p.status if p else "deleted",
                     "joined_at": m.joined_at,
                 }
             )
             for m in members
+            for p in (profiles.get(m.user_id),)
         ],
+        mounts=await mounts.admin_mounts(session, org.id),
         invitations=[
             AdminOrgInvitationOut.model_validate(
                 {
@@ -988,6 +1013,7 @@ async def _active_org_by_uuid(session: AsyncSession, uuid: str) -> Organization:
 
 async def admin_dissolve(session: AsyncSession, uuid: str) -> None:
     org = await _active_org_by_uuid(session, uuid)
+    await _refuse_while_managed_accounts(session, org)
     members = await _dissolve(session, org)
     await _notify(session, [m.user_id for m in members], "dissolved", org.name)
     await session.commit()
@@ -1008,7 +1034,9 @@ async def admin_remove_member(session: AsyncSession, uuid: str, user_id: int) ->
     target = await _member_by_user(session, org.id, user_id)
     if target.role == ROLE_OWNER:
         raise conflict(key="orgs.cannotRemoveOwner")
-    await _remove(session, org, [target])
+    if await is_managed_by(session, target):
+        raise conflict(key="orgs.managedUseDelete")
+    await remove_members(session, org, [target])
     await _notify(session, [target.user_id], "removed", org.name)
     await session.commit()
 
@@ -1018,6 +1046,8 @@ async def admin_transfer(session: AsyncSession, uuid: str, user_id: int) -> None
     target = await _member_by_user(session, org.id, user_id)
     if target.role == ROLE_OWNER:
         raise conflict(key="orgs.transferTargetInvalid")
+    if await is_managed_by(session, target):
+        raise conflict(key="orgs.ownerMustBeOwnAccount")
     owner = await session.scalar(
         select(OrgMember).where(OrgMember.org_id == org.id, OrgMember.role == ROLE_OWNER)
     )
@@ -1029,3 +1059,8 @@ async def admin_transfer(session: AsyncSession, uuid: str, user_id: int) -> None
     await _notify(session, [target.user_id], "owner_transferred", org.name)
     await session.commit()
     logger.info("org_owner_transferred_by_admin", org_uuid=org.uuid, user_id=user_id)
+
+
+async def ready_mounts_for_user(session: AsyncSession, user_id: int) -> list[OrgMountRuntime]:
+    """Organization storage an instance of this user mounts (worker side, keys decrypted)."""
+    return await mounts.ready_mounts_for_user(session, user_id)

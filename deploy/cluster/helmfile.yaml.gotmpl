@@ -13,10 +13,8 @@ repositories:
     url: https://project-hami.github.io/HAMi
   - name: prometheus-community
     url: https://prometheus-community.github.io/helm-charts
-  - name: rook-release
-    url: https://charts.rook.io/release
-  - name: ceph-csi-operator
-    url: https://ceph.github.io/ceph-csi-operator
+  - name: ceph-csi
+    url: https://ceph.github.io/csi-charts
   - name: topolvm
     url: https://topolvm.github.io/topolvm
   - name: jetstack
@@ -98,30 +96,12 @@ releases:
           - "-c"
           - "kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f - && kubectl apply -f monitoring-rbac.yaml"
 
-  - name: rook-ceph
-    condition: rookCeph.enabled
-    namespace: rook-ceph
-    chart: rook-release/rook-ceph
-    version: "v1.21.2"
-    values: [values/rook-ceph.yaml]
-
-  - name: ceph-csi-drivers
-    condition: rookCeph.enabled
-    namespace: rook-ceph
-    chart: ceph-csi-operator/ceph-csi-drivers
-    version: "1.1.0"
-    values: [values/ceph-csi-drivers.yaml]
-    needs: [rook-ceph/rook-ceph]
-    disableValidationOnInstall: true
-
-  - name: rook-ceph-cluster
-    condition: rookCeph.enabled
-    namespace: rook-ceph
-    chart: rook-release/rook-ceph-cluster
-    version: "v1.21.2"
-    values: [values/rook-ceph-cluster.yaml]
-    needs: [rook-ceph/rook-ceph]
-    disableValidationOnInstall: true
+  - name: ceph-csi-cephfs
+    condition: cephCsi.enabled
+    namespace: ceph-csi-cephfs
+    chart: ceph-csi/ceph-csi-cephfs
+    version: "3.18.2"
+    values: [values/ceph-csi-cephfs.yaml]
 
   - name: topolvm
     condition: topolvm.enabled

@@ -139,6 +139,49 @@ async def debit(
     return entry
 
 
+TRANSFER_REF_TYPE = "org_transfer"
+
+
+async def transfer(
+    session: AsyncSession,
+    *,
+    from_user_id: int,
+    to_user_id: int,
+    amount: Decimal,
+    ref_id: str,
+    remark_out: str,
+    remark_in: str,
+) -> None:
+    """Move available balance between two wallets in one transaction, no commit: both rows are
+    locked in user-id order (no deadlock with a concurrent opposite move), the payer may not go
+    below its frozen amount. Neither side counts toward refundable capacity and invoices count
+    paid orders only, so moved money is spend-only for the recipient."""
+    amount = as_amount(amount)
+    if amount <= 0 or from_user_id == to_user_id:
+        raise ValueError("transfer needs a positive amount between two wallets")
+    for uid in sorted((from_user_id, to_user_id)):
+        await lock_wallet(session, uid)
+    await debit(
+        session,
+        from_user_id,
+        amount,
+        type_="transfer_out",
+        ref_type=TRANSFER_REF_TYPE,
+        ref_id=ref_id,
+        remark=remark_out,
+        allow_negative=False,
+    )
+    await credit(
+        session,
+        to_user_id,
+        amount,
+        type_="transfer_in",
+        ref_type=TRANSFER_REF_TYPE,
+        ref_id=ref_id,
+        remark=remark_in,
+    )
+
+
 async def get_balance(session: AsyncSession, user_id: int) -> Decimal:
     wallet = (
         await session.execute(select(Wallet).where(Wallet.user_id == user_id))
@@ -159,14 +202,16 @@ async def get_available_balance(session: AsyncSession, user_id: int) -> Decimal:
 
 
 async def refundable_capacity(session: AsyncSession, user_id: int) -> Decimal:
-    """Net ledger excluding positive adjustments, floored at zero; refund requests and payouts are
-    capped by it."""
+    """Net ledger excluding positive adjustments and tenant balance moves (both directions),
+    floored at zero; refund requests and payouts are capped by it and by the balance. Moved money
+    is therefore refundable by nobody but the payer it returns to."""
     total = (
         await session.execute(
             select(
                 func.coalesce(
                     func.sum(
                         case(
+                            (BalanceLedger.type.in_(("transfer_in", "transfer_out")), 0),
                             (BalanceLedger.type == "adjust", func.least(BalanceLedger.amount, 0)),
                             else_=BalanceLedger.amount,
                         )

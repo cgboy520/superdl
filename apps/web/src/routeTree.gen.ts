@@ -14,6 +14,7 @@ import { Route as ConsoleRouteImport } from './routes/_console'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ConsoleBillingRouteImport } from './routes/_console.billing'
+import { Route as ConsoleImagesRouteImport } from './routes/_console.images'
 import { Route as ConsoleInstancesRouteImport } from './routes/_console.instances'
 import { Route as ConsoleMarketRouteImport } from './routes/_console.market'
 import { Route as ConsoleNetworkRouteImport } from './routes/_console.network'
@@ -54,6 +55,11 @@ const LoginRoute = LoginRouteImport.update({
 const ConsoleBillingRoute = ConsoleBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
+  getParentRoute: () => ConsoleRoute,
+} as any)
+const ConsoleImagesRoute = ConsoleImagesRouteImport.update({
+  id: '/images',
+  path: '/images',
   getParentRoute: () => ConsoleRoute,
 } as any)
 const ConsoleInstancesRoute = ConsoleInstancesRouteImport.update({
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/help': typeof HelpRoute
   '/login': typeof LoginRoute
   '/billing': typeof ConsoleBillingRoute
+  '/images': typeof ConsoleImagesRoute
   '/instances': typeof ConsoleInstancesRoute
   '/market': typeof ConsoleMarketRoute
   '/network': typeof ConsoleNetworkRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByTo {
   '/help': typeof HelpRoute
   '/login': typeof LoginRoute
   '/billing': typeof ConsoleBillingRoute
+  '/images': typeof ConsoleImagesRoute
   '/instances': typeof ConsoleInstancesRoute
   '/market': typeof ConsoleMarketRoute
   '/network': typeof ConsoleNetworkRoute
@@ -196,6 +204,7 @@ export interface FileRoutesById {
   '/help': typeof HelpRoute
   '/login': typeof LoginRoute
   '/_console/billing': typeof ConsoleBillingRoute
+  '/_console/images': typeof ConsoleImagesRoute
   '/_console/instances': typeof ConsoleInstancesRoute
   '/_console/market': typeof ConsoleMarketRoute
   '/_console/network': typeof ConsoleNetworkRoute
@@ -221,6 +230,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/login'
     | '/billing'
+    | '/images'
     | '/instances'
     | '/market'
     | '/network'
@@ -244,6 +254,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/login'
     | '/billing'
+    | '/images'
     | '/instances'
     | '/market'
     | '/network'
@@ -268,6 +279,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/login'
     | '/_console/billing'
+    | '/_console/images'
     | '/_console/instances'
     | '/_console/market'
     | '/_console/network'
@@ -332,6 +344,13 @@ declare module '@tanstack/react-router' {
       path: '/billing'
       fullPath: '/billing'
       preLoaderRoute: typeof ConsoleBillingRouteImport
+      parentRoute: typeof ConsoleRoute
+    }
+    '/_console/images': {
+      id: '/_console/images'
+      path: '/images'
+      fullPath: '/images'
+      preLoaderRoute: typeof ConsoleImagesRouteImport
       parentRoute: typeof ConsoleRoute
     }
     '/_console/instances': {
@@ -458,6 +477,7 @@ declare module '@tanstack/react-router' {
 
 interface ConsoleRouteChildren {
   ConsoleBillingRoute: typeof ConsoleBillingRoute
+  ConsoleImagesRoute: typeof ConsoleImagesRoute
   ConsoleInstancesRoute: typeof ConsoleInstancesRoute
   ConsoleMarketRoute: typeof ConsoleMarketRoute
   ConsoleNetworkRoute: typeof ConsoleNetworkRoute
@@ -476,6 +496,7 @@ interface ConsoleRouteChildren {
 
 const ConsoleRouteChildren: ConsoleRouteChildren = {
   ConsoleBillingRoute: ConsoleBillingRoute,
+  ConsoleImagesRoute: ConsoleImagesRoute,
   ConsoleInstancesRoute: ConsoleInstancesRoute,
   ConsoleMarketRoute: ConsoleMarketRoute,
   ConsoleNetworkRoute: ConsoleNetworkRoute,

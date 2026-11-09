@@ -22,6 +22,10 @@ export const keys = {
   images: ["images"],
   sshKeys: ["ssh-keys"],
   disks: ["disks"],
+  customImages: {
+    all: ["custom-images"],
+    detail: (uuid: string) => ["custom-images", uuid],
+  },
   policies: ["policies"],
   siteConfig: ["site-config"],
   legalDoc: (docKey: string, lang: string) => ["legal-doc", docKey, lang],
@@ -81,6 +85,8 @@ export const keys = {
     invitations: ["org", "invitations"],
     received: ["org", "received"],
     finance: ["org", "finance"],
+    mounts: ["org", "mounts"],
+    transfers: ["org", "transfers"],
   },
   bills: {
     all: ["bills"],

@@ -60,7 +60,7 @@ Enter the same single-operator maintenance window as a release: suspend GitOps, 
 ```bash
 kubectl -n superdl scale deploy superdl-api --replicas=0
 kubectl -n superdl scale deploy superdl-worker superdl-worker-tenant-mgr \
-  superdl-worker-node-mgr superdl-worker-prewarm superdl-worker-disk-ops --replicas=0
+  superdl-worker-node-mgr superdl-worker-prewarm superdl-worker-image-ops --replicas=0
 
 ```
 
@@ -95,7 +95,7 @@ After the API `/readyz` and the business smoke pass, restore every worker to its
 ```bash
 kubectl -n superdl scale deploy superdl-worker superdl-worker-tenant-mgr --replicas=2
 kubectl -n superdl scale deploy superdl-worker-node-mgr superdl-worker-prewarm \
-  superdl-worker-disk-ops --replicas=1
+  superdl-worker-image-ops --replicas=1
 ```
 
 Announce the restore point to users; recharges after the restore point follow the channel statements and are credited one by one through the admin "Backfill".

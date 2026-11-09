@@ -1,5 +1,6 @@
-/** Sign-in / sign-up page: code or password sign-in by email or phone handle, email-first sign-up
- *  (phone only when the compliance profile requires it), password reset, live market summary. */
+/** Sign-in / sign-up page: code or password sign-in by email or phone handle (password sign-in also
+ *  by tenant username), email-first sign-up (phone only when the compliance profile requires it),
+ *  password reset, live market summary. */
 
 import { CheckCircleOutlined } from "@ant-design/icons";
 import type { SkuMarketOut, TokenPairOut } from "@superdl/api-client";
@@ -243,11 +244,19 @@ function LoginPage() {
     }
   };
 
-  const handleRule = {
-    required: true,
-    pattern: /^([^@\s]+@[^@\s]+\.[^@\s]+|\+[1-9]\d{6,14})$/,
-    message: t("login.handleInvalid"),
-  };
+  /** Password sign-in also takes a tenant username (<code>.<name>); code flows need an email or phone. */
+  const handleRule =
+    mode === "password"
+      ? {
+          required: true,
+          pattern: /^([^@\s]+@[^@\s]+\.[^@\s]+|\+[1-9]\d{6,14}|[a-z][a-z0-9-]{1,19}\.[a-z0-9][a-z0-9_-]{0,31})$/i,
+          message: t("login.handleInvalidPassword"),
+        }
+      : {
+          required: true,
+          pattern: /^([^@\s]+@[^@\s]+\.[^@\s]+|\+[1-9]\d{6,14})$/,
+          message: t("login.handleInvalid"),
+        };
 
   return (
     <div style={{ minHeight: "100vh", display: "flex" }}>
@@ -353,8 +362,18 @@ function LoginPage() {
                 )}
               </>
             ) : (
-              <Form.Item name="handle" label={t("login.handleLabel")} rules={[handleRule]}>
-                <Input placeholder={t("login.handlePlaceholder")} maxLength={254} autoComplete="username" />
+              <Form.Item
+                name="handle"
+                label={mode === "password" ? t("login.handleLabelPassword") : t("login.handleLabel")}
+                rules={[handleRule]}
+              >
+                <Input
+                  placeholder={
+                    mode === "password" ? t("login.handlePlaceholderPassword") : t("login.handlePlaceholder")
+                  }
+                  maxLength={254}
+                  autoComplete="username"
+                />
               </Form.Item>
             )}
             {(mode === "code" || mode === "reset") && (

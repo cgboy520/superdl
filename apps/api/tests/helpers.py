@@ -505,10 +505,13 @@ async def finance_pair(sm, client: AsyncClient) -> tuple[dict, dict]:
     return reviewer, payer
 
 
-async def create_disk(client, headers, name="data-1", size_gb=100) -> dict:
-    resp = await client.post(
-        "/api/v1/disks", json={"name": name, "size_gb": size_gb}, headers=headers
-    )
+async def create_disk(
+    client, headers, name="data-1", size_gb=100, mount_path: str | None = None
+) -> dict:
+    body: dict[str, object] = {"name": name, "size_gb": size_gb}
+    if mount_path is not None:
+        body["mount_path"] = mount_path
+    resp = await client.post("/api/v1/disks", json=body, headers=headers)
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -743,7 +746,6 @@ def make_instance(**overrides) -> Instance:
         "ssh_port": 30022,
         "jupyter_token": _encode_token("tok", instance_uuid=uuid),
         "authorized_keys": [],
-        "data_disk_id": None,
         "k8s_namespace": "tenant-1",
         "status": "creating",
     }
@@ -790,3 +792,15 @@ async def provision_subscription(client, sm, fake, email: str, *, period: str = 
     fake.mark_ready(f"tenant-{user_id}", data["uuid"])
     await reconcile_once(sm)
     return headers, data["uuid"], user_id, sku_id, key_id
+
+
+def data_disk_gb(ceph, user_id: int, disk_uuid: str) -> int | None:
+    """Quota of a data disk's subvolume in the fake Ceph cluster (None = no subvolume)."""
+    sv = ceph.subvolumes.get(f"u{user_id}-disk-{disk_uuid}")
+    return None if sv is None else sv.size_bytes // 1024**3
+
+
+def system_disk_present(ceph, fake, user_id: int, instance_uuid: str) -> bool:
+    """The instance's system-disk subvolume exists and its PVC is bound into the namespace."""
+    bound = (f"tenant-{user_id}", f"{instance_uuid}-root") in fake.ceph_volumes
+    return bound and f"u{user_id}-sys-{instance_uuid}" in ceph.subvolumes

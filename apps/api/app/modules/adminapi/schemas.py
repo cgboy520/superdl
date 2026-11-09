@@ -140,9 +140,12 @@ class AdminRefreshOut(BaseModel):
 
 
 class TenantOut(BaseModel):
+    """username is set on accounts a tenant created (they have no email or phone)."""
+
     id: int
     email_masked: str | None
     phone_masked: str | None
+    username: str | None = None
     status: str
     balance: str
     total_consumed: str

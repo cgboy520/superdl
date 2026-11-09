@@ -1,4 +1,0 @@
-enableDiscoveryDaemon: false
-csi:
-  # The chart has no default for this key and renders it empty, which the operator reads as "false".
-  createCsiOperatorResources: true

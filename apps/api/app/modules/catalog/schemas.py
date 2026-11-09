@@ -45,7 +45,8 @@ class SiteConfigOut(BaseModel):
 
 class SkuMarketOut(BaseModel):
     """Market card view (user console); display_model is the model tenants see, gpu_model when the
-    SKU sets none."""
+    SKU sets none; archs are the CPU architectures of the pool's Ready nodes (an uploaded image
+    must match one)."""
 
     id: int
     name: str
@@ -65,6 +66,7 @@ class SkuMarketOut(BaseModel):
     period_enabled: bool
     spot_enabled: bool
     available_count: int = 0
+    archs: list[str] = []
 
     model_config = {"from_attributes": True}
 

@@ -7,18 +7,28 @@ from app.core.params import IdempotencyKey
 from app.core.ratelimit import check_rate_limit
 from app.modules.account import service as account_service
 from app.modules.account.deps import CurrentUser
-from app.modules.orgs import service
+from app.modules.orgs import mounts, service, transfers, users
 from app.modules.orgs.schemas import (
+    BalanceTransferCreate,
+    BalanceTransferOut,
     DisclosureOut,
     InvitationAccept,
     InvitationCreate,
     InvitationOut,
+    ManagedPasswordOut,
+    ManagedPasswordReset,
+    ManagedUserCreatedOut,
+    ManagedUsersCreate,
+    ManagedUserUpdate,
     MemberOut,
     MemberUpdate,
     MyOrgOut,
     OrgCreate,
     OrgDissolve,
     OrgFinanceOut,
+    OrgMountCreate,
+    OrgMountOut,
+    OrgMountUpdate,
     OrgRename,
     OrgTransfer,
     ReceivedInvitationOut,
@@ -69,10 +79,11 @@ async def create_org(
 async def rename_org(
     body: OrgRename, user: CurrentUser, session: DbSession, request: Request
 ) -> MyOrgOut:
-    """Owner only."""
+    """Owner only: name and / or code (the code changes only while the tenant has created no
+    accounts)."""
     await _write_limit(user.id)
-    org = await service.rename_org(session, user.id, body.name)
-    set_audit_target(request, f"org:{org.uuid}", detail={"name": body.name})
+    org = await service.rename_org(session, user.id, body)
+    set_audit_target(request, f"org:{org.uuid}", detail=body.model_dump(exclude_none=True))
     return await service.my_org(session, user)
 
 
@@ -210,3 +221,157 @@ async def org_finance(user: CurrentUser, session: DbSession, request: Request) -
     out = await service.finance(session, user.id)
     mark_audited_read(request, f"org-finance:{user.id}", detail={"members": len(out.members)})
     return out
+
+
+@router.get("/mounts")
+async def list_mounts(user: CurrentUser, session: DbSession) -> list[OrgMountOut]:
+    """The organization's storage mounts, every member: mounted at /mnt/org/<name> in each
+    member's instances from their next start. Path, key user and check errors are shown to
+    owners and admins only; the key never comes back."""
+    return await mounts.list_mounts(session, user.id)
+
+
+@router.post("/mounts", status_code=status.HTTP_201_CREATED)
+async def create_mount(
+    body: OrgMountCreate, user: CurrentUser, session: DbSession, request: Request
+) -> OrgMountOut:
+    """Owners and admins: a directory of the platform's Ceph cluster plus the organization's own
+    cephx key. Checked in user space first; only a ready mount reaches instances. Members are
+    notified."""
+    await _write_limit(user.id)
+    out = await mounts.create_mount(session, user.id, body)
+    set_audit_target(
+        request,
+        f"org-mount:{out.uuid}",
+        detail={"name": body.name, "read_only": body.read_only, "ceph_user": body.ceph_user},
+    )
+    return out
+
+
+@router.patch("/mounts/{uuid}")
+async def update_mount(
+    uuid: str, body: OrgMountUpdate, user: CurrentUser, session: DbSession, request: Request
+) -> OrgMountOut:
+    """Owners and admins; a new path, key user, key or access is checked again and reaches
+    instances from their next start (running instances keep the previous one)."""
+    await _write_limit(user.id)
+    out = await mounts.update_mount(session, user.id, uuid, body)
+    set_audit_target(request, f"org-mount:{uuid}", detail={"fields": sorted(body.model_fields_set)})
+    return out
+
+
+@router.post("/mounts/{uuid}/check")
+async def recheck_mount(
+    uuid: str, user: CurrentUser, session: DbSession, request: Request
+) -> OrgMountOut:
+    """Owners and admins: check the directory and key again."""
+    await _write_limit(user.id)
+    out = await mounts.recheck_mount(session, user.id, uuid)
+    set_audit_target(request, f"org-mount:{uuid}")
+    return out
+
+
+@router.delete("/mounts/{uuid}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_mount(
+    uuid: str, user: CurrentUser, session: DbSession, request: Request
+) -> Response:
+    """Owners and admins; instances lose the mount at their next start."""
+    await _write_limit(user.id)
+    await mounts.delete_mount(session, user.id, uuid)
+    set_audit_target(request, f"org-mount:{uuid}")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/users", status_code=status.HTTP_201_CREATED)
+async def create_users(
+    body: ManagedUsersCreate, user: CurrentUser, session: DbSession, request: Request
+) -> list[ManagedUserCreatedOut]:
+    """Owners and admins: create 1-100 accounts named <tenant code>.<name>, members from the
+    start, no identity verification needed. Each password (the shared one, or a random one per
+    account) is returned only here; the accounts pick their own at first sign-in."""
+    await check_rate_limit(f"org-users:{user.id}", max_attempts=30, window_seconds=3600.0)
+    out = await users.create_users(session, user.id, body)
+    set_audit_target(
+        request,
+        f"org-users:{user.id}",
+        detail={"count": len(out), "usernames": [u.username for u in out]},
+    )
+    return out
+
+
+@router.post("/members/{member_id}/password")
+async def reset_member_password(
+    member_id: int,
+    body: ManagedPasswordReset,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+) -> ManagedPasswordOut:
+    """An account the tenant created (owner: any, admin: members): set or generate a password,
+    end its sessions; returned only here."""
+    await _write_limit(user.id)
+    out = await users.reset_password(session, user.id, member_id, body)
+    set_audit_target(request, f"org-member:{member_id}", detail={"action": "password_reset"})
+    return out
+
+
+@router.patch("/members/{member_id}/login")
+async def set_member_login(
+    member_id: int,
+    body: ManagedUserUpdate,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+) -> MemberOut:
+    """Switch sign-in of an account the tenant created; disabling ends its sessions at once
+    (instances keep running)."""
+    await _write_limit(user.id)
+    out = await users.set_login(session, user.id, member_id, body)
+    set_audit_target(
+        request, f"org-member:{member_id}", detail={"login_disabled": body.login_disabled}
+    )
+    return out
+
+
+@router.delete("/members/{member_id}/account", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_member_account(
+    member_id: int, user: CurrentUser, session: DbSession, request: Request
+) -> Response:
+    """Delete an account the tenant created: it must hold no unreleased instance, no data disk
+    and no balance (take the balance back first)."""
+    await _write_limit(user.id)
+    await users.delete_user(session, user.id, member_id)
+    set_audit_target(request, f"org-member:{member_id}", detail={"action": "account_deleted"})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/members/{member_id}/balance")
+async def move_member_balance(
+    member_id: int,
+    body: BalanceTransferCreate,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKey = None,
+) -> BalanceTransferOut:
+    """Owners and admins: allocate from the caller's available balance to a member, or take back
+    from an account the tenant created. Moved money can only be spent: never refunded or
+    invoiced by whoever receives it. A replay of the same Idempotency-Key returns the first move
+    (200 + X-Idempotent-Replay)."""
+    await check_rate_limit(f"org-balance:{user.id}", max_attempts=120, window_seconds=3600.0)
+    out, created = await transfers.transfer(session, user.id, member_id, body, idempotency_key)
+    if not created:
+        mark_idempotent_replay(response)
+    set_audit_target(
+        request,
+        f"org-transfer:{out.uuid}",
+        detail={"member_id": member_id, "kind": body.kind, "amount": body.amount},
+    )
+    return out
+
+
+@router.get("/transfers")
+async def list_transfers(user: CurrentUser, session: DbSession) -> list[BalanceTransferOut]:
+    """The tenant's balance moves, newest 200 (owners and admins)."""
+    return await transfers.list_transfers(session, user.id)

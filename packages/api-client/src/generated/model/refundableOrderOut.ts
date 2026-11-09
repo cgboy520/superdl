@@ -13,8 +13,8 @@
  * An order may be partially refunded several times: max_amount = min(order remainder,
  * non-negative available balance, refundable ledger balance).
  * Remainder = order amount − Σ paid refunds; available balance = balance − frozen.
- * The refundable ledger balance is the net ledger excluding positive adjustments, floored at
- * zero.
+ * The refundable ledger balance is the net ledger excluding positive adjustments and tenant
+ * balance moves, floored at zero.
  */
 export interface RefundableOrderOut {
   amount: string;

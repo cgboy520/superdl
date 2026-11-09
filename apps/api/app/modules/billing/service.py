@@ -72,6 +72,7 @@ from app.modules.billing.wallet import (
     lock_wallet,
     release_freeze,
     revenue_summary,
+    transfer as transfer_balance,
 )
 
 __all__ = [
@@ -131,5 +132,6 @@ __all__ = [
     "stream_ledger_csv",
     "subscriptions_by_instance",
     "to_recharge_out",
+    "transfer_balance",
     "verify_order",
 ]

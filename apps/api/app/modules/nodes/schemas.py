@@ -13,7 +13,6 @@ class EnrollmentCreate(BaseModel):
     pool: Pool
     hostname: str = Field(min_length=1, max_length=253, pattern=HOSTNAME_PATTERN)
     note: str | None = Field(default=None, max_length=128)
-    nvme_devices: list[str] | None = Field(default=None, max_length=16)
     ttl_hours: int = Field(default=24, ge=1, le=168)
 
 
@@ -93,7 +92,6 @@ class BootstrapOut(BaseModel):
     cluster_server_url: str
     cluster_join_token: str
     driver_version: str
-    nvme_devices: list[str]
     registries_yaml: str
     registry_ca_pem: str = ""
     install_mirror: str = "official"

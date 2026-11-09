@@ -1,13 +1,14 @@
-/** Organization: outside one, create one or answer invitations; inside, overview (everyone) and members / invitations / finance (owners and admins). `?tab=` and `?invite=<uuid>` (the acceptance drawer) are whitelisted in the URL. */
+/** Tenant management: outside a tenant, create one or answer invitations; inside, overview (everyone, with the tenant's storage mounts) and members (joined and created accounts) / invitations / finance / storage (owners and admins). `?tab=` and `?invite=<uuid>` (the acceptance drawer) are whitelisted in the URL. */
 
 import type { MemberOut, MyOrgOut, ReceivedInvitationOut } from "@superdl/api-client";
-import { formatDateTime, idemKeyOf, space } from "@superdl/ui";
+import { formatDateTime, idemKeyOf, orgMountStatusMap, space } from "@superdl/ui";
 import {
   DangerZone,
   EmptyState,
   GatedButton,
   KeyValue,
   PageContainer,
+  StatusTag,
   TableErrorEmpty,
   TypeConfirmModal,
   useConfirm,
@@ -25,15 +26,24 @@ import {
   useRenameOrg,
   useTransferOrg,
 } from "../api/mutations";
-import { useMe, useMyOrg, useOrgMembers, usePolicies, useReceivedInvitations, useSiteConfig } from "../api/queries";
+import {
+  useMe,
+  useMyOrg,
+  useOrgMembers,
+  useOrgMounts,
+  usePolicies,
+  useReceivedInvitations,
+  useSiteConfig,
+} from "../api/queries";
 import { Field } from "../components/Field";
 import { AcceptInvitationDrawer } from "../components/org/AcceptInvitationDrawer";
 import { FinanceTab } from "../components/org/FinanceTab";
 import { InvitationsTab } from "../components/org/InvitationsTab";
 import { MembersTab } from "../components/org/MembersTab";
+import { StorageTab } from "../components/org/StorageTab";
 import { requireAuth } from "../lib/guard";
 
-export const ORG_TABS = ["overview", "members", "invitations", "finance"] as const;
+export const ORG_TABS = ["overview", "members", "invitations", "finance", "storage"] as const;
 export type OrgTab = (typeof ORG_TABS)[number];
 
 interface OrgSearch {
@@ -129,15 +139,50 @@ function ReceivedCard({ onOpen }: { onOpen: (uuid: string) => void }) {
   );
 }
 
+/** Tenant code: the prefix of the usernames the tenant creates (<code>.<name>). */
+const CODE_RE = /^[a-z][a-z0-9-]{1,19}$/;
+
+function CodeField({
+  value,
+  onChange,
+  disabledReason,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabledReason?: string;
+}) {
+  const { t } = useTranslation();
+  const invalid = value !== "" && !CODE_RE.test(value);
+  return (
+    <Field
+      label={t("org.code")}
+      required
+      error={invalid ? t("org.codeInvalid") : undefined}
+      hint={disabledReason ?? t("org.codeHint", { example: `${value || "lab"}.alice` })}
+    >
+      <Input
+        value={value}
+        maxLength={20}
+        disabled={Boolean(disabledReason)}
+        onChange={(e) => onChange(e.target.value.toLowerCase())}
+        aria-label={t("org.code")}
+        className="mono"
+      />
+    </Field>
+  );
+}
+
 function CreateOrgModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const [name, setName] = useState("");
+  const [code, setCode] = useState("");
   const [seq] = useState(() => Date.now());
   const create = useCreateOrg({
     onSuccess: () => {
       message.success(t("org.created"));
       setName("");
+      setCode("");
       onClose();
     },
   });
@@ -147,9 +192,11 @@ function CreateOrgModal({ open, onClose }: { open: boolean; onClose: () => void 
       title={t("org.createTitle")}
       open={open}
       onCancel={onClose}
-      onOk={() => create.mutate({ name: trimmed, idempotencyKey: idemKeyOf("org", [seq, trimmed]) })}
+      onOk={() =>
+        create.mutate({ body: { name: trimmed, code }, idempotencyKey: idemKeyOf("org", [seq, trimmed, code]) })
+      }
       okText={t("org.createSubmit")}
-      okButtonProps={{ disabled: trimmed.length < 2 }}
+      okButtonProps={{ disabled: trimmed.length < 2 || !CODE_RE.test(code) }}
       confirmLoading={create.isPending}
     >
       <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
@@ -157,8 +204,33 @@ function CreateOrgModal({ open, onClose }: { open: boolean; onClose: () => void 
         <Field label={t("org.name")} required hint={t("org.nameHint")}>
           <Input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} aria-label={t("org.name")} />
         </Field>
+        <CodeField value={code} onChange={setCode} />
       </Space>
     </Modal>
+  );
+}
+
+/** Tenant storage everyone in the tenant mounts (read-only list; admins manage it on the Storage tab). */
+function MountsCard() {
+  const { t } = useTranslation();
+  const q = useOrgMounts();
+  const rows = (q.data ?? []).filter((m) => m.enabled);
+  if (q.isError || rows.length === 0) return null;
+  return (
+    <Card size="small" title={t("org.storage.membersTitle")}>
+      <Space orientation="vertical" size={space.xs} style={{ width: "100%" }}>
+        {rows.map((m) => (
+          <Space key={m.uuid} size={space.sm} wrap>
+            <Typography.Text code>{m.mount_path}</Typography.Text>
+            <StatusTag map={orgMountStatusMap} value={m.status} variant="badge" />
+            <Typography.Text type="secondary">
+              {m.read_only ? t("org.storage.readOnlyShort") : t("org.storage.readWriteShort")}
+            </Typography.Text>
+          </Space>
+        ))}
+        <Typography.Text type="secondary">{t("org.storage.membersNote")}</Typography.Text>
+      </Space>
+    </Card>
   );
 }
 
@@ -227,9 +299,13 @@ function Overview({ my }: { my: MyOrgOut }) {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const confirm = useConfirm();
+  const { data: me } = useMe();
   const org = my.org;
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(org?.name ?? "");
+  const [code, setCode] = useState(org?.code ?? "");
+  const members = useOrgMembers({ enabled: renaming });
+  const codeLocked = (members.data ?? []).some((m) => m.managed);
   const [transferring, setTransferring] = useState(false);
   const [dissolving, setDissolving] = useState(false);
   const rename = useRenameOrg({
@@ -258,6 +334,7 @@ function Overview({ my }: { my: MyOrgOut }) {
               size="small"
               onClick={() => {
                 setName(org.name);
+                setCode(org.code);
                 setRenaming(true);
               }}
             >
@@ -270,6 +347,7 @@ function Overview({ my }: { my: MyOrgOut }) {
           columns={1}
           items={[
             { label: t("org.name"), value: org.name },
+            { label: t("org.code"), value: <Typography.Text code>{org.code}</Typography.Text> },
             { label: t("org.myRole"), value: my.role ? t(`org.role.${my.role}`) : null },
             { label: t("org.memberCount"), value: String(my.member_count ?? 0) },
             {
@@ -283,7 +361,10 @@ function Overview({ my }: { my: MyOrgOut }) {
           {t("org.visibilityNote")}
         </Typography.Paragraph>
       </Card>
-      {owner ? (
+      <MountsCard />
+      {me?.managed ? (
+        <Typography.Text type="secondary">{t("org.managedNote", { code: org.code })}</Typography.Text>
+      ) : owner ? (
         <DangerZone
           title={t("org.dangerZone")}
           description={t("org.ownerDangerNote")}
@@ -318,14 +399,26 @@ function Overview({ my }: { my: MyOrgOut }) {
         title={t("org.renameTitle")}
         open={renaming}
         onCancel={() => setRenaming(false)}
-        onOk={() => rename.mutate(name.trim())}
+        onOk={() =>
+          rename.mutate({
+            ...(name.trim() !== org.name ? { name: name.trim() } : {}),
+            ...(code !== org.code ? { code } : {}),
+          })
+        }
         okText={t("org.save")}
-        okButtonProps={{ disabled: name.trim().length < 2 }}
+        okButtonProps={{ disabled: name.trim().length < 2 || !CODE_RE.test(code) }}
         confirmLoading={rename.isPending}
       >
-        <Field label={t("org.name")} required hint={t("org.nameHint")}>
-          <Input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} aria-label={t("org.name")} />
-        </Field>
+        <Space orientation="vertical" size={space.md} style={{ width: "100%" }}>
+          <Field label={t("org.name")} required hint={t("org.nameHint")}>
+            <Input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} aria-label={t("org.name")} />
+          </Field>
+          <CodeField
+            value={code}
+            onChange={setCode}
+            {...(codeLocked ? { disabledReason: t("org.codeLockedHint") } : {})}
+          />
+        </Space>
       </Modal>
       <TransferModal open={transferring} onClose={() => setTransferring(false)} />
       <TypeConfirmModal
@@ -361,6 +454,7 @@ function OrgPage() {
           { key: "members", label: t("org.tab.members") },
           { key: "invitations", label: t("org.tab.invitations") },
           { key: "finance", label: t("org.tab.finance") },
+          { key: "storage", label: t("org.tab.storage") },
         ]
       : []),
   ];
@@ -385,6 +479,7 @@ function OrgPage() {
           {tab === "members" && <MembersTab my={my} />}
           {tab === "invitations" && <InvitationsTab my={my} />}
           {tab === "finance" && <FinanceTab />}
+          {tab === "storage" && <StorageTab />}
         </Space>
       )}
       <AcceptInvitationDrawer uuid={search.invite} onClose={() => openInvite(undefined)} />

@@ -16,7 +16,6 @@ import type { ServiceRevisionCreatePeriod } from './serviceRevisionCreatePeriod'
 export interface ServiceRevisionCreate {
   container_args?: string[] | null;
   container_command?: string[] | null;
-  data_disk_id?: number | null;
   env?: ServiceRevisionCreateEnv;
   /** @maxItems 64 */
   env_secret_keep?: string[];

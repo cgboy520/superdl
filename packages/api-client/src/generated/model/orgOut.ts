@@ -7,6 +7,7 @@
 import type { OrgOutStatus } from './orgOutStatus';
 
 export interface OrgOut {
+  code: string;
   created_at: string;
   name: string;
   status: OrgOutStatus;

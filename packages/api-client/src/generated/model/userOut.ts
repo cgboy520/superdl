@@ -12,6 +12,11 @@ export interface UserOut {
   id: number;
   kyc_status: string;
   low_balance_warn_hours: number;
+  /** Created by a tenant admin: no identity verification, managed by the tenant */
+  managed?: boolean;
+  password_change_required?: boolean;
   phone: string | null;
   status: string;
+  /** Sign-in name of an account created by a tenant admin */
+  username?: string | null;
 }

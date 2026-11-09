@@ -1,4 +1,4 @@
-/** Organization: create, invite, accept with the disclosure, member spending, remove; organization gateway: an admin attaches a member's instance and the member detaches it (skipped without a gateway image). */
+/** Tenant: create (name + code), invite, accept with the disclosure, member spending, remove; tenant gateway: an admin attaches a member's instance and the member detaches it (skipped without a gateway image). */
 
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
@@ -12,16 +12,17 @@ async function memberPage(browser: Browser, email: string): Promise<{ page: Page
   return { page, token };
 }
 
-test("organization: create, invite, accept, member spending, remove", async ({ page, browser }) => {
+test("tenant: create, invite, accept, member spending, remove", async ({ page, browser }) => {
   const stamp = Date.now();
   await loginViaApi(page, `org-owner-${stamp}@e2e.local`);
   const memberEmail = `org-member-${stamp}@e2e.local`;
   const member = await memberPage(browser, memberEmail);
 
   await page.goto("/org");
-  await page.getByRole("button", { name: "创建组织" }).click();
-  const create = page.getByRole("dialog", { name: "创建组织" });
-  await create.getByLabel("组织名称").fill(`E2E Lab ${String(stamp)}`);
+  await page.getByRole("button", { name: "创建租户" }).click();
+  const create = page.getByRole("dialog", { name: "创建租户" });
+  await create.getByLabel("租户名称").fill(`E2E Lab ${String(stamp)}`);
+  await create.getByLabel("租户代码").fill(`e2e${String(stamp).slice(-9)}`);
   await create.getByRole("button", { name: /^创\s*建$/ }).click();
   await expect(page.getByText("所有者").first()).toBeVisible();
 
@@ -39,7 +40,7 @@ test("organization: create, invite, accept, member spending, remove", async ({ p
   await expect(drawer.getByText("可用余额")).toBeVisible();
   await drawer.getByRole("checkbox").check();
   await drawer.getByRole("button", { name: "接受并加入" }).click();
-  await expect(member.page.getByText("已加入组织")).toBeVisible();
+  await expect(member.page.getByText("已加入租户")).toBeVisible();
   await expect(member.page.getByRole("tab", { name: "成员消费" })).toHaveCount(0);
 
   await page.getByRole("tab", { name: "成员消费" }).click();
@@ -56,13 +57,10 @@ test("organization: create, invite, accept, member spending, remove", async ({ p
   await expect(page.getByText("成员已移除")).toBeVisible();
 
   await member.page.reload();
-  await expect(member.page.getByRole("button", { name: "创建组织" })).toBeVisible();
+  await expect(member.page.getByRole("button", { name: "创建租户" })).toBeVisible();
 });
 
-test("organization gateway: an admin attaches a member's instance, the member detaches it", async ({
-  page,
-  browser,
-}) => {
+test("tenant gateway: an admin attaches a member's instance, the member detaches it", async ({ page, browser }) => {
   const stamp = Date.now();
   const ownerToken = await loginViaApi(page, `orggw-owner-${stamp}@e2e.local`);
   const owner = { Authorization: `Bearer ${ownerToken}` };
@@ -93,7 +91,10 @@ test("organization gateway: an admin attaches a member's instance, the member de
   });
   expect(created.status(), await created.text()).toBe(202);
 
-  const org = await page.request.post("/api/v1/org", { headers: owner, data: { name: `GW Lab ${String(stamp)}` } });
+  const org = await page.request.post("/api/v1/org", {
+    headers: owner,
+    data: { name: `GW Lab ${String(stamp)}`, code: `gw${String(stamp).slice(-9)}` },
+  });
   expect(org.status(), await org.text()).toBe(201);
   const me = (await (await page.request.get("/api/v1/me", { headers: member })).json()) as { email: string };
   const inv = await page.request.post("/api/v1/org/invitations", { headers: owner, data: { email: me.email } });
@@ -108,8 +109,8 @@ test("organization gateway: an admin attaches a member's instance, the member de
   expect(accepted.status(), await accepted.text()).toBe(200);
 
   await page.goto("/network?scope=org");
-  await page.getByRole("button", { name: "新建组织网关" }).first().click();
-  const form = page.getByRole("dialog", { name: "新建组织网关" });
+  await page.getByRole("button", { name: "新建租户网关" }).first().click();
+  const form = page.getByRole("dialog", { name: "新建租户网关" });
   await form.getByLabel("名称", { exact: true }).fill("corp");
   const remote = form.getByLabel("隧道网段");
   await remote.fill("10.1.0.0/16");
@@ -131,7 +132,7 @@ test("organization gateway: an admin attaches a member's instance, the member de
   await expect(detail.getByText("子网互通 · 已接入 1/250")).toBeVisible();
 
   await memberCtxPage.goto("/network");
-  const mine = memberCtxPage.getByText("我在组织网关上的实例");
+  const mine = memberCtxPage.getByText("我在租户网关上的实例");
   await expect(mine).toBeVisible();
   await memberCtxPage
     .getByRole("row", { name: /memberbox/ })

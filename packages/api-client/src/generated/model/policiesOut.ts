@@ -11,6 +11,9 @@
 export interface PoliciesOut {
   billing_timezone: string;
   currency: string;
+  custom_image_max_count: number;
+  custom_image_max_total_gb: number;
+  custom_image_max_upload_gb: number;
   disk_frozen_days: number;
   disk_grace_days: number;
   disk_max_gb: number;

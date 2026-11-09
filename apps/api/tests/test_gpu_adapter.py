@@ -90,13 +90,14 @@ def test_build_pod_spec_carries_selector_and_annotations(monkeypatch):
 
 
 def test_build_pod_spec_multi_gpu_scales_cpu_mem():
-    """An N-card instance Pod has limits = N × SKU; the system disk is not scaled."""
+    """An N-card instance Pod has limits = N × SKU; the system disk is one claim whatever the card
+    count (its size is the subvolume quota, spec.disk_gb)."""
     inst = make_instance(spec=gpu_spec("dedicated", "kata"))
     inst.gpu_count = 8
     pod = build_pod_spec(inst)
     assert pod.vcpu == 8 * 8
     assert pod.mem_gb == 32 * 8
-    assert pod.disk_gb == 100
+    assert pod.system_disk_pvc == f"{inst.uuid}-root"
     single = build_pod_spec(make_instance(spec=gpu_spec("dedicated", "kata")))
     assert single.vcpu == 8 and single.mem_gb == 32
 

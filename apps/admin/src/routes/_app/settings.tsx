@@ -156,6 +156,21 @@ const POLICY_LABELS = {
     unit: "settings.policy.spot_grace_seconds.unit",
     hint: "settings.policy.spot_grace_seconds.hint",
   },
+  max_custom_images_per_user: {
+    label: "settings.policy.max_custom_images_per_user.label",
+    unit: "settings.policy.max_custom_images_per_user.unit",
+    hint: "settings.policy.max_custom_images_per_user.hint",
+  },
+  max_custom_image_gb_per_user: {
+    label: "settings.policy.max_custom_image_gb_per_user.label",
+    unit: "settings.policy.max_custom_image_gb_per_user.unit",
+    hint: "settings.policy.max_custom_image_gb_per_user.hint",
+  },
+  custom_image_max_upload_gb: {
+    label: "settings.policy.custom_image_max_upload_gb.label",
+    unit: "settings.policy.custom_image_max_upload_gb.unit",
+    hint: "settings.policy.custom_image_max_upload_gb.hint",
+  },
 } as const satisfies Record<string, { label: string; unit: string; hint?: string }>;
 type PolicyMeta = (typeof POLICY_LABELS)[keyof typeof POLICY_LABELS];
 /** Unified shape of a configuration item, with an optional hint. */

@@ -158,6 +158,43 @@ spec:
       ports:
         - {protocol: TCP, port: 9090}
 ---
+# tenant-mgr runs the Ceph CLI (subvolume management, storage patrol, organization storage
+# checks): monitors (msgr2 3300 / msgr1 6789), managers, MDS and OSDs (6800-7300) of the external
+# cluster's public network. Tenant mounts are made by the nodes' kernel client, outside any Pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tenant-mgr-ceph-egress
+  namespace: superdl
+spec:
+  podSelector:
+    matchLabels: {app: superdl-worker, superdl.io/component: tenant-mgr}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock: {cidr: "CHANGE_ME_CEPH_PUBLIC_CIDR"}
+      ports:
+        - {protocol: TCP, port: 3300}
+        - {protocol: TCP, port: 6789}
+        - {protocol: TCP, port: 6800, endPort: 7300}
+---
+# image-ops pushes imported images to Harbor (the registry_host platform setting) and deletes them;
+# change the port when Harbor listens elsewhere.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: image-ops-registry-egress
+  namespace: superdl
+spec:
+  podSelector:
+    matchLabels: {app: superdl-worker, superdl.io/component: image-ops}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - ipBlock: {cidr: "CHANGE_ME_REGISTRY_CIDR"}
+      ports:
+        - {protocol: TCP, port: 443}
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -1,4 +1,4 @@
-/** Source of truth of the console main navigation (shared by the sidebar / narrow-screen drawer / command palette). Groups: resources (instances / online services / storage / private network) · purchasing & billing (market / billing) · support.
+/** Source of truth of the console main navigation (shared by the sidebar / narrow-screen drawer / command palette). Groups: resources (instances / online services / storage / images / private network) · purchasing & billing (market / billing) · support.
  *  Notifications and account settings are not in the main navigation (reached via the top-bar bell and user menu); the selected state is the longest prefix match, no highlight without a match. */
 
 import {
@@ -6,6 +6,7 @@ import {
   ApiOutlined,
   AppstoreOutlined,
   CloudServerOutlined,
+  ContainerOutlined,
   HddOutlined,
   QuestionCircleOutlined,
   WalletOutlined,
@@ -19,6 +20,7 @@ export const CONSOLE_NAV_GROUPS = [
       { key: "/instances", icon: <CloudServerOutlined />, labelKey: "instances.title" },
       { key: "/services", icon: <ApiOutlined />, labelKey: "services.title" },
       { key: "/storage", icon: <HddOutlined />, labelKey: "storage.title" },
+      { key: "/images", icon: <ContainerOutlined />, labelKey: "images.title" },
       { key: "/network", icon: <ApartmentOutlined />, labelKey: "network.title" },
     ],
   },

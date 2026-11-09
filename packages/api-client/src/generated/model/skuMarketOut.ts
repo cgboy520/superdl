@@ -7,9 +7,11 @@
 
 /**
  * Market card view (user console); display_model is the model tenants see, gpu_model when the
- * SKU sets none.
+ * SKU sets none; archs are the CPU architectures of the pool's Ready nodes (an uploaded image
+ * must match one).
  */
 export interface SkuMarketOut {
+  archs?: string[];
   available_count?: number;
   cuda_max: string | null;
   disk_gb: number;

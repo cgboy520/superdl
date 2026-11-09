@@ -1,4 +1,5 @@
-"""Login handles: an email address or an E.164 phone number.
+"""Login handles: an email address, an E.164 phone number, or the username of an account created
+by a tenant admin (`<tenant code>.<name>`).
 
 `parse_handle` classifies and normalizes a raw string; the pydantic aliases at the bottom apply the
 same normalization inside request schemas. Masking and rate-limit key derivation live here so every
@@ -13,17 +14,21 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field
 
 E164_RE = r"^\+[1-9][0-9]{6,14}$"
+TENANT_CODE_RE = r"^[a-z][a-z0-9-]{1,19}$"
+USERNAME_NAME_RE = r"^[a-z0-9][a-z0-9_-]{0,31}$"
+USERNAME_RE = r"^[a-z][a-z0-9-]{1,19}\.[a-z0-9][a-z0-9_-]{0,31}$"
 EMAIL_RE = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 EMAIL_MAX_LEN = 254
 _RATELIMIT_PLAIN_MAX = 48
 
 _E164 = re.compile(E164_RE)
+_USERNAME = re.compile(USERNAME_RE)
 _EMAIL = re.compile(EMAIL_RE)
 _PHONE_LIKE = re.compile(r"^\+?[0-9]{7,15}$")
 _PHONE_MASK_MIN_LEN = 11
 _PHONE_SEPARATORS = re.compile(r"[\s\-().]")
 
-HandleKind = Literal["email", "phone"]
+HandleKind = Literal["email", "phone", "username"]
 
 
 @dataclass(frozen=True)
@@ -49,13 +54,17 @@ def normalize_phone(raw: str) -> str:
 
 
 def parse_handle(raw: str) -> Handle:
-    """Classify by shape: `@` means email, a leading `+` means phone; anything else is rejected."""
+    """Classify by shape: `@` means email, a leading `+` means phone, `<tenant>.<name>` means a
+    tenant username; anything else is rejected."""
     stripped = raw.strip()
     if "@" in stripped:
         return Handle("email", normalize_email(stripped))
     if stripped.startswith("+"):
         return Handle("phone", normalize_phone(stripped))
-    raise ValueError("handle must be an email address or an E.164 phone number")
+    lowered = stripped.lower()
+    if _USERNAME.match(lowered):
+        return Handle("username", lowered)
+    raise ValueError("handle must be an email address, an E.164 phone number or a tenant username")
 
 
 def mask_handle(value: str | None) -> str:
@@ -105,7 +114,8 @@ NormalizedHandle = Annotated[
     AfterValidator(_normalize_handle),
     Field(
         max_length=EMAIL_MAX_LEN,
-        description="Login handle: an email address or an E.164 phone number",
-        examples=["user@example.com", "+14155550123"],
+        description="Login handle: an email address, an E.164 phone number or a tenant username"
+        " (<tenant code>.<name>)",
+        examples=["user@example.com", "+14155550123", "ailab.student01"],
     ),
 ]

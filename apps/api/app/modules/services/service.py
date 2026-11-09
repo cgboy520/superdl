@@ -118,7 +118,6 @@ def _instance_request(spec: "ServiceSpecIn", *, name: str | None) -> InstanceReq
         image_ref=spec.image_ref,
         ssh_key_ids=tuple(spec.ssh_key_ids),
         name=name,
-        data_disk_id=spec.data_disk_id,
         container_command=tuple(spec.container_command) if spec.container_command else None,
         container_args=tuple(spec.container_args) if spec.container_args else None,
         env=spec.env,

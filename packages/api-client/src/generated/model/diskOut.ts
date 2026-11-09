@@ -4,17 +4,23 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { DiskUserOut } from './diskUserOut';
 
 export interface DiskOut {
+  /** Bytes stored on the disk, refreshed by the storage patrol */
+  bytes_used?: number | null;
   created_at: string;
   frozen_started_at: string | null;
   grace_started_at: string | null;
   id: number;
-  mounted_instance_id: number | null;
+  mount_path: string;
+  /** Instances whose Pod currently mounts the disk */
+  mounted_by?: DiskUserOut[];
   name: string;
   price_gb_month: string;
   provisioned: boolean;
   size_gb: number;
   status: string;
+  usage_checked_at?: string | null;
   uuid: string;
 }

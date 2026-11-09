@@ -1,7 +1,7 @@
-/** Organization drawer (?org=<uuid>): members and invitations with masked handles, the organization's gateways; dissolve and remove a member (ops, reason), transfer ownership (admin only, reason). */
+/** Tenant drawer (?org=<uuid>): code, members (joined accounts with masked handles, created accounts with their username) and invitations, storage mounts (Ceph path and user, never the key), the tenant's gateways; dissolve and remove a joined member (ops, reason), transfer ownership (admin only, reason). */
 
-import { drawerWidth, formatDateTime, space } from "@superdl/ui";
-import { EntityHeader, Mono, TableErrorEmpty, type KeyValueItem } from "@superdl/ui/components";
+import { drawerWidth, formatDateTime, orgMountStatusMap, space } from "@superdl/ui";
+import { EntityHeader, Mono, StatusTag, TableErrorEmpty, type KeyValueItem } from "@superdl/ui/components";
 import { Link } from "@tanstack/react-router";
 import { Drawer, Skeleton, Space, Table, Tag, Typography } from "antd";
 import { useTranslation } from "react-i18next";
@@ -20,6 +20,7 @@ import { canWriteOps, useAdminRole } from "../../stores/auth";
 
 type Member = AdminOrgDetailOut["member_list"][number];
 type Invitation = AdminOrgDetailOut["invitations"][number];
+type Mount = AdminOrgDetailOut["mounts"][number];
 
 export function OrgDrawer({
   uuid,
@@ -47,6 +48,7 @@ export function OrgDrawer({
 
   const meta: KeyValueItem[] = org
     ? [
+        { label: t("orgs.colCode"), value: <Mono>{org.code}</Mono> },
         {
           label: t("orgs.colOwner"),
           value: org.owner_user_id ? (
@@ -122,9 +124,25 @@ export function OrgDrawer({
               locale={{ emptyText: t("orgs.noMembers") }}
               columns={[
                 { title: "ID", width: 80, render: (_, m) => <TenantLink id={m.user_id} /> },
-                { title: t("orgs.colEmail"), render: (_, m) => m.email_masked },
+                {
+                  title: t("orgs.colEmail"),
+                  render: (_, m) =>
+                    m.managed ? (
+                      <Space size={space.xs}>
+                        <Mono>{m.username ?? ""}</Mono>
+                        <Tag variant="filled" color="purple">
+                          {t("orgs.managedTag")}
+                        </Tag>
+                      </Space>
+                    ) : (
+                      m.email_masked
+                    ),
+                },
                 { title: t("orgs.colRole"), render: (_, m) => t(`orgs.role.${m.role}`) },
-                { title: t("orgs.colAccount"), render: (_, m) => t(`orgs.account.${m.status}`) },
+                {
+                  title: t("orgs.colAccount"),
+                  render: (_, m) => (m.login_disabled ? t("orgs.loginDisabled") : t(`orgs.account.${m.status}`)),
+                },
                 { title: t("orgs.colJoined"), render: (_, m) => formatDateTime(m.joined_at) },
                 {
                   title: t("orgs.colActions"),
@@ -136,8 +154,14 @@ export function OrgDrawer({
                         confirmText={t("orgs.transferConfirm", { id: m.user_id, name: org.name })}
                         target={`#${String(m.user_id)} · ${m.email_masked}`}
                         triggerDanger={false}
-                        disabled={!superAdmin || !active || m.role === "owner"}
-                        disabledReason={!superAdmin ? t("orgs.adminOnly") : t("orgs.alreadyOwner")}
+                        disabled={!superAdmin || !active || m.role === "owner" || m.managed === true}
+                        disabledReason={
+                          !superAdmin
+                            ? t("orgs.adminOnly")
+                            : m.managed
+                              ? t("orgs.managedNotOwner")
+                              : t("orgs.alreadyOwner")
+                        }
                         onSubmit={async (reason) => {
                           await transfer.mutateAsync({ uuid: org.uuid, data: { user_id: m.user_id, reason } });
                           done();
@@ -149,13 +173,58 @@ export function OrgDrawer({
                         confirmText={t("orgs.removeConfirm", { id: m.user_id, name: org.name })}
                         target={`#${String(m.user_id)} · ${m.email_masked}`}
                         danger
-                        disabled={!ops || !active || m.role === "owner"}
-                        disabledReason={!ops ? t("tenants.noPermission") : t("orgs.ownerNotRemovable")}
+                        disabled={!ops || !active || m.role === "owner" || m.managed === true}
+                        disabledReason={
+                          !ops
+                            ? t("tenants.noPermission")
+                            : m.managed
+                              ? t("orgs.managedNotRemovable")
+                              : t("orgs.ownerNotRemovable")
+                        }
                         onSubmit={async (reason) => {
                           await remove.mutateAsync({ uuid: org.uuid, data: { user_id: m.user_id, reason } });
                           done();
                         }}
                       />
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+          </div>
+          <div>
+            <Typography.Title level={5}>{t("orgs.mountsTitle")}</Typography.Title>
+            <Table<Mount>
+              rowKey="uuid"
+              size="small"
+              pagination={false}
+              scroll={{ x: 720 }}
+              dataSource={org.mounts}
+              locale={{ emptyText: t("orgs.noMounts") }}
+              columns={[
+                { title: t("orgs.colMountPath"), render: (_, m) => <Mono>{m.mount_path}</Mono> },
+                {
+                  title: t("orgs.colCephSource"),
+                  render: (_, m) => (
+                    <Space orientation="vertical" size={0}>
+                      <Mono>{m.ceph_path ?? ""}</Mono>
+                      <Typography.Text type="secondary">
+                        <Mono>{`client.${m.ceph_user ?? ""}`}</Mono>
+                      </Typography.Text>
+                    </Space>
+                  ),
+                },
+                {
+                  title: t("orgs.colMountMode"),
+                  render: (_, m) =>
+                    `${m.read_only ? t("orgs.mountReadOnly") : t("orgs.mountReadWrite")}${m.enabled ? "" : ` · ${t("orgs.mountDisabled")}`}`,
+                },
+                {
+                  title: t("orgs.colStatus"),
+                  render: (_, m) => (
+                    <Space orientation="vertical" size={0}>
+                      <StatusTag map={orgMountStatusMap} value={m.status} variant="badge" />
+                      {m.last_error && <Typography.Text type="danger">{m.last_error}</Typography.Text>}
                     </Space>
                   ),
                 },

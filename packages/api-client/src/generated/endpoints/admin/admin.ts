@@ -19,6 +19,7 @@ import type {
   AdminCreateAdjustmentApiAdminV1AdjustmentsPostHeaders,
   AdminCreateEnrollmentApiAdminV1NodeEnrollmentsPostHeaders,
   AdminCreateRequest,
+  AdminCustomImageOut,
   AdminDecommissionNodeApiAdminV1NodesNodeNameDecommissionPostParams,
   AdminDeletionApprove,
   AdminDeletionReject,
@@ -28,6 +29,7 @@ import type {
   AdminInvoiceOut,
   AdminInvoicesExportApiAdminV1InvoicesExportGetParams,
   AdminListAdjustmentsApiAdminV1AdjustmentsGetParams,
+  AdminListCustomImagesApiAdminV1CustomImagesGetParams,
   AdminListDeletionRequestsApiAdminV1DeletionRequestsGetParams,
   AdminListEnrollmentsApiAdminV1NodeEnrollmentsGetParams,
   AdminListInstanceEventsApiAdminV1InstancesUuidEventsGetParams,
@@ -1063,6 +1065,77 @@ export const adminClusterTestConnectionApiAdminV1ClusterTestConnectionPost = asy
     method: 'POST'
 
 
+  }
+);}
+
+
+export const getAdminListCustomImagesApiAdminV1CustomImagesGetUrl = (params?: AdminListCustomImagesApiAdminV1CustomImagesGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/v1/custom-images?${stringifiedParams}` : `/api/admin/v1/custom-images`
+}
+
+/**
+ * Images users uploaded, newest 200, filterable by user and status.
+ * @summary Admin List Custom Images
+ */
+export const adminListCustomImagesApiAdminV1CustomImagesGet = async (params?: AdminListCustomImagesApiAdminV1CustomImagesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminCustomImageOut[]> => {
+
+  return customFetch<AdminCustomImageOut[]>(getAdminListCustomImagesApiAdminV1CustomImagesGetUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+export const getAdminDeleteCustomImageApiAdminV1CustomImagesUuidDeleteUrl = (uuid: string,) => {
+
+
+
+
+  return `/api/admin/v1/custom-images/${uuid}`
+}
+
+/**
+ * Remove an uploaded image (abuse, policy): its registry artifact is deleted even while
+ * instances use it; their next start cannot pull it. reason required.
+ * @summary Admin Delete Custom Image
+ */
+export const adminDeleteCustomImageApiAdminV1CustomImagesUuidDelete = async (uuid: string,
+    imageDeleteRequest: ImageDeleteRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<void>(getAdminDeleteCustomImageApiAdminV1CustomImagesUuidDeleteUrl(uuid),
+  {
+    ...options,
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(imageDeleteRequest)
   }
 );}
 

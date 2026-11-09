@@ -52,6 +52,7 @@ PlatformConfigGroup = Literal[
     "support",
     "cluster",
     "registry",
+    "storage",
     "observability",
 ]
 SettingGroup = Literal[PlatformConfigGroup, "policy"]
@@ -516,6 +517,28 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         " ghcr.io=ghcr (create the project in Harbor as public first); node containerd mirrors the"
         " upstream through it and falls back to the upstream",
     ),
+    "registry_user_project": SettingSpec(
+        "registry",
+        "str",
+        pattern=r"[a-z0-9]+(?:[._-][a-z0-9]+)*",
+        max_len=255,
+        hint="Harbor project holding the images users upload (default superdl-users), one"
+        " repository per user under u<user id>/; the pull robot must read it too",
+    ),
+    "registry_push_robot_name": SettingSpec(
+        "registry",
+        "str",
+        pattern=r"robot\$[A-Za-z0-9._+-]+",
+        max_len=255,
+        hint="Robot account the image importer pushes with: Push + Pull Repository and Delete"
+        " Artifact on the user project only",
+    ),
+    "registry_push_robot_secret": SettingSpec(
+        "registry",
+        "secret",
+        max_len=256,
+        hint="Secret of the push robot",
+    ),
     "image_allowed_registries": SettingSpec(
         "registry",
         "text",
@@ -525,6 +548,83 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         " docker.io/); empty = unrestricted; the Harbor address is always allowed, references from"
         " the"
         " platform image catalog always pass",
+    ),
+    "ceph_fsid": SettingSpec(
+        "storage",
+        "str",
+        pattern=r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        max_len=36,
+        hint="fsid of the external Ceph cluster (ceph.conf [global] fsid); also the clusterID of"
+        " the ceph-csi configuration on the cluster side",
+    ),
+    "ceph_mon_host": SettingSpec(
+        "storage",
+        "str",
+        pattern=r"[A-Za-z0-9.:/\[\], _-]+",
+        max_len=1024,
+        hint="mon_host line copied from ceph.conf, e.g. [v2:10.0.0.1:3300/0,v1:10.0.0.1:6789/0]"
+        " [v2:10.0.0.2:3300/0,...]; the platform workers must reach the monitors (3300 / 6789)"
+        " and managers (6800-7300)",
+    ),
+    "ceph_fs_name": SettingSpec(
+        "storage",
+        "str",
+        pattern=r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}",
+        max_len=64,
+        hint="CephFS file system name (default cephfs)",
+    ),
+    "ceph_subvolume_group": SettingSpec(
+        "storage",
+        "str",
+        pattern=r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}",
+        max_len=64,
+        hint="Subvolume group holding every system disk and data disk; the admin key must be"
+        " allowed to manage subvolumes in it",
+    ),
+    "ceph_pool_layout": SettingSpec(
+        "storage",
+        "str",
+        pattern=r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}",
+        max_len=128,
+        hint="Data pool passed as --pool_layout on every subvolume create; empty = the group's"
+        " default pool",
+    ),
+    "ceph_namespace_isolated": SettingSpec(
+        "storage",
+        "bool",
+        hint="Pass --namespace-isolated on every subvolume create: each subvolume's objects live"
+        " in their own RADOS namespace",
+    ),
+    "ceph_admin_id": SettingSpec(
+        "storage",
+        "str",
+        pattern=r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}",
+        max_len=64,
+        hint="cephx id of the restricted admin key without the client. prefix, e.g. cloud-admin;"
+        " it creates, resizes, authorizes and removes subvolumes and reads the keys it issued",
+    ),
+    "ceph_admin_key": SettingSpec(
+        "storage",
+        "secret",
+        pattern=r"[A-Za-z0-9+/]{20,120}={0,2}",
+        max_len=128,
+        hint="Secret of the admin key (the key = value of its keyring); never handed to tenants",
+    ),
+    "ceph_auth_prefix": SettingSpec(
+        "storage",
+        "str",
+        pattern=r"[a-z0-9][a-z0-9_-]{0,31}\.",
+        max_len=33,
+        hint="Prefix of the per-subvolume cephx ids the platform issues, ending with a dot; must be"
+        " a prefix the admin key may authorize (e.g. cloud.)",
+    ),
+    "ceph_mount_options": SettingSpec(
+        "storage",
+        "str",
+        pattern=r"[A-Za-z0-9_=,.-]{0,256}",
+        max_len=256,
+        hint="Kernel client mount options written into every volume (default ms_mode=prefer-crc"
+        " for msgr2 monitors on port 3300); empty = kernel defaults",
     ),
     "grafana_url": SettingSpec(
         "observability",
@@ -553,6 +653,11 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         max_len=128,
         hint="Comma-separated preset amounts offered in the top-up dialog (1–8 values)",
     ),
+    "max_custom_images_per_user": _num("int", "0", "1000", "Uploaded images per user"),
+    "max_custom_image_gb_per_user": _num(
+        "int", "1", "100000", "Registry storage of a user's uploaded images, GB"
+    ),
+    "custom_image_max_upload_gb": _num("int", "1", "1024", "Largest archive one upload may be, GB"),
     "disk_min_gb": _num("int", "1", "1024"),
     "disk_max_gb": _num("int", "10", "65536"),
     "disk_grace_days": _num("int", "1", "365"),
@@ -656,13 +761,29 @@ class RuntimeConfig:
     registry_robot_secret: str
     registry_ca_pem: str
     registry_proxy_projects: str
+    registry_user_project: str
+    registry_push_robot_name: str
+    registry_push_robot_secret: str
     image_allowed_registries: str
+    ceph_fsid: str
+    ceph_mon_host: str
+    ceph_fs_name: str
+    ceph_subvolume_group: str
+    ceph_pool_layout: str
+    ceph_namespace_isolated: bool
+    ceph_admin_id: str
+    ceph_admin_key: str
+    ceph_auth_prefix: str
+    ceph_mount_options: str
     grafana_url: str
     oncall_phone: str
     disk_price_gb_month: Decimal
     recharge_min: Decimal
     recharge_max: Decimal
     recharge_presets: str
+    max_custom_images_per_user: int
+    max_custom_image_gb_per_user: int
+    custom_image_max_upload_gb: int
     disk_min_gb: int
     disk_max_gb: int
     disk_grace_days: int

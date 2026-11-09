@@ -6,6 +6,11 @@
  */
 
 export interface OrgCreate {
+  /**
+     * Short code prefixed to the usernames of accounts the tenant creates (<code>.<name>)
+     * @maxLength 20
+     */
+  code: string;
   /** @maxLength 80 */
   name: string;
 }

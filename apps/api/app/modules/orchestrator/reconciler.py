@@ -45,7 +45,6 @@ from app.core.timeutil import ensure_utc, now_utc
 from app.modules.billing import service as billing_service
 from app.modules.notify import service as notify_service
 from app.modules.orchestrator import statemachine as sm_def
-from app.modules.orchestrator.disks import detach_for_instance
 from app.modules.orchestrator.models import DataDisk, Instance, InstanceEvent, PortAllocation
 from app.modules.orchestrator.ports import free_port, port_pool_stats
 from app.modules.orchestrator.transitions import transition
@@ -468,14 +467,13 @@ async def _fail_instance(
     metadata: dict[str, Any] | None = None,
     force_delete: bool = False,
 ) -> PostCommit:
-    """Shared wrap-up of → failed: transition, release the port, detach the data disk, count;
+    """Shared wrap-up of → failed: transition, release the port, count;
     returns the out-of-transaction Pod/Service/HTTPRoute delete actions
     (404 tolerated; failures are covered by leak reclamation)."""
     await transition(
         session, instance, sm_def.FAILED, reason=reason, actor="system", metadata=metadata
     )
     await free_port(session, instance.id)
-    await detach_for_instance(session, instance.id)
     ctx.counts["to_failed"] += 1
     orch, ns, uuid = ctx.orch, instance.k8s_namespace, instance.uuid
 
@@ -511,7 +509,6 @@ async def _reconcile_terminating(
     await transition(session, instance, target, reason=reason, actor="system")
     if target == sm_def.RELEASED:
         await free_port(session, instance.id)
-        await detach_for_instance(session, instance.id)
         enqueue(session, "instance.disk_cleanup", {"instance_id": instance.id})
     ctx.counts[counter] += 1
     return None

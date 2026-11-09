@@ -7,12 +7,19 @@
 import type { MemberOutRole } from './memberOutRole';
 import type { MemberOutStatus } from './memberOutStatus';
 
+/**
+ * managed = an account this tenant created (username shown in full, password reset,
+ * sign-in switch, deletion and balance take-back by the tenant's admins).
+ */
 export interface MemberOut {
   email_masked: string;
   joined_at: string;
   label: string;
+  login_disabled?: boolean;
+  managed?: boolean;
   member_id: number;
   remark: string | null;
   role: MemberOutRole;
   status: MemberOutStatus;
+  username?: string | null;
 }

@@ -6,6 +6,9 @@
  */
 import type { OrgRefOut } from './orgRefOut';
 
+/**
+ * username is set on accounts a tenant created (they have no email or phone).
+ */
 export interface TenantOut {
   balance: string;
   created_at: string;
@@ -19,4 +22,5 @@ export interface TenantOut {
   phone_masked: string | null;
   status: string;
   total_consumed: string;
+  username?: string | null;
 }

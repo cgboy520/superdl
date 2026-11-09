@@ -1202,7 +1202,7 @@ class TestTenantQuotaOverride:
         assert body["updated_by"] is None
         got = (await client.get(f"/api/admin/v1/tenants/{user_id}/quota", headers=ah)).json()
         assert got["max_disks"] is None and got["effective_max_disks"] == 20
-        await create_disk(client, headers, name="d2", size_gb=50)
+        await create_disk(client, headers, name="d2", size_gb=50, mount_path="/data2")
 
         from app.core.audit import AuditLog
 

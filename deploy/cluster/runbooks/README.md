@@ -8,6 +8,7 @@ Write new incident-response runbooks in that structure and add `runbook_url` to 
 | [gpu-fault-sop.md](./gpu-fault-sop.md) | Incident response | GPU Xid fatal error: isolate → stop and settle → notify → compensate → return to service |
 | [pg-backup-restore.md](./pg-backup-restore.md) | Incident response + SOP | Billing database backup layers, logical backup restore, quarterly drill and RTO log |
 | [node-pool-switch.md](./node-pool-switch.md) | SOP | Moving a node between the kata / hami / mig pools: prerequisites, execution, verification |
+| [ceph-storage.md](./ceph-storage.md) | SOP + incident response | External Ceph prerequisites, upload volume, cut-over from node-local storage, unreachable cluster, group capacity, tenant mounts |
 | [image-prewarm.md](./image-prewarm.md) | SOP | Harbor onboarding and pull credentials, platform image release, Spegel P2P and prewarming |
 | [acme-dns.md](./acme-dns.md) | SOP | Wildcard certificate DNS01 (acme-dns) deployment and credential rotation; **full tier only** |
 | [loki-logging.md](./loki-logging.md) | Reference | Log retention definitions, LogQL troubleshooting queries, collection self-check |
@@ -28,8 +29,9 @@ Alerts with a dedicated runbook carry a `runbook_url` annotation on the rule; th
 | GPUHighTemperature | GPU >85°C for 5 minutes | Check room cooling; cordon and observe if it persists | [gpu-fault-sop.md](./gpu-fault-sop.md) |
 | NodeGPUUnavailable | GPU node NotReady | Check the node; running instances are judged node_lost by the reconciler and billing stops | `docs/reference/orchestrator.md`, `docs/reference/nodes.md` |
 | SharedPoolUtilSaturated | Shared pool saturated continuously | Review the SKU's oversell parameters and capacity | `docs/reference/catalog.md` |
-| CephUnhealthy | Ceph not HEALTH_OK for over 15 minutes | `kubectl -n rook-ceph exec deploy/rook-ceph-tools -- ceph -s` | [cluster-validation.md](./cluster-validation.md) section D |
-| DiskProvisionFailed | Data disk PVC create/expand dead-lettered | Check the disk-ops worker logs and the CephFS CSI; unready disks cannot be mounted | [cluster-validation.md](./cluster-validation.md) section D |
+| CephUnreachable | The platform cannot reach the external Ceph cluster | Cluster › Storage `cephError`; `nc -zv <mon> 3300` from a node and from tenant-mgr | [ceph-storage.md](./ceph-storage.md#unreachable) |
+| CephGroupNearlyFull | Subvolume group above 85 % of its quota | Ask the Ceph administrators to raise the group quota | [ceph-storage.md](./ceph-storage.md#capacity) |
+| DiskProvisionFailed | Data disk subvolume create/resize dead-lettered | Check the tenant-mgr worker logs and Ceph reachability; unready disks cannot be mounted | [ceph-storage.md](./ceph-storage.md#unreachable) |
 | HamiSchedulerDown | Shared pool scheduler metrics missing | Check the `hami-scheduler` Pod; shared-tier orders report CLUSTER_NOT_READY meanwhile | [cluster-validation.md](./cluster-validation.md) section C |
 | CertExpiringSoon / CertExpiringCritical / CertNotReady / CertManagerMetricsMissing | Certificate renewal chain abnormal | `kubectl describe certificate`; full tier checks the DNS01 delegation and the acme-dns account, light tier confirms the manually loaded wildcard certificate has not expired | [acme-dns.md](./acme-dns.md) |
 | OutboxTaskDead | Orchestration task dead-lettered | Admin overview dead-letter card: read the reason, then replay or ignore (reason required) | `docs/reference/orchestrator.md` |

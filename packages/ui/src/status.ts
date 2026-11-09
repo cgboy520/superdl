@@ -260,6 +260,26 @@ export const imageCacheStatusMap = {
   failed: { labelKey: "shared:status.imageCache.failed", color: statusColors.red, badge: "error" },
 } as const satisfies Record<ImageCacheStatus, StatusMeta>;
 
+/** Uploaded image (matches CustomImageOut.status exactly); importing / deleting poll transiently. */
+export type CustomImageStatus = "uploading" | "importing" | "ready" | "failed" | "deleting";
+
+export const customImageStatusMap = {
+  uploading: { labelKey: "shared:status.customImage.uploading", color: statusColors.blue, badge: "processing" },
+  importing: { labelKey: "shared:status.customImage.importing", color: statusColors.blue, badge: "processing" },
+  ready: { labelKey: "shared:status.customImage.ready", color: statusColors.green, badge: "success" },
+  failed: { labelKey: "shared:status.customImage.failed", color: statusColors.red, badge: "error" },
+  deleting: { labelKey: "shared:status.customImage.deleting", color: statusColors.gray, badge: "processing" },
+} as const satisfies Record<CustomImageStatus, StatusMeta>;
+
+/** Tenant storage mount check state (matches OrgMountOut.status exactly). */
+export type OrgMountStatus = "checking" | "ready" | "failed";
+
+export const orgMountStatusMap = {
+  checking: { labelKey: "shared:status.orgMount.checking", color: statusColors.blue, badge: "processing" },
+  ready: { labelKey: "shared:status.orgMount.ready", color: statusColors.green, badge: "success" },
+  failed: { labelKey: "shared:status.orgMount.failed", color: statusColors.red, badge: "error" },
+} as const satisfies Record<OrgMountStatus, StatusMeta>;
+
 /** Node enrollment / join status (matches node_enrollments.status exactly) */
 export type NodeEnrollStatus =
   "pending" | "installing" | "rebooting" | "joining" | "joined" | "failed" | "expired" | "revoked";
@@ -287,13 +307,15 @@ export const nodeEnrollStatusMap = {
   revoked: { labelKey: "shared:status.nodeEnroll.revoked", color: statusColors.gray, badge: "default" },
 } as const satisfies Record<NodeEnrollStatus, StatusMeta>;
 
-export type LedgerType = "recharge" | "consume" | "refund" | "adjust";
+export type LedgerType = "recharge" | "consume" | "refund" | "adjust" | "transfer_in" | "transfer_out";
 
 export const ledgerTypeMap = {
   recharge: { labelKey: "shared:status.ledger.recharge", color: statusColors.green },
   consume: { labelKey: "shared:status.ledger.consume", color: statusColors.blue },
   refund: { labelKey: "shared:status.ledger.refund", color: statusColors.orange },
   adjust: { labelKey: "shared:status.ledger.adjust", color: statusColors.purple },
+  transfer_in: { labelKey: "shared:status.ledger.transfer_in", color: statusColors.green },
+  transfer_out: { labelKey: "shared:status.ledger.transfer_out", color: statusColors.gray },
 } as const satisfies Record<LedgerType, ColorMeta>;
 
 export type OrderStatus = "pending" | "paid" | "closed" | "failed";
@@ -538,6 +560,8 @@ export const ALL_STATUS_MAPS = [
   serviceStatusMap,
   subscriptionStatusMap,
   imageCacheStatusMap,
+  customImageStatusMap,
+  orgMountStatusMap,
   nodeEnrollStatusMap,
   nodeStatusMap,
   componentHealthMap,

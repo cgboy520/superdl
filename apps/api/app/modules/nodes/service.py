@@ -17,6 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
+from app.core.ceph import GIB
+from app.core.ceph.status import StorageStatus, get_storage_status, storage_ready
 from app.core.config import get_settings
 from app.core.crypto import hash_node_token, hash_node_token_candidates
 from app.core.errors import AppError, ErrorCode, conflict, not_found
@@ -25,8 +27,6 @@ from app.core.gpu_models import model_matches, supports_mig, supports_passthroug
 from app.core.idempotency import find_replay
 from app.core.k8s import get_orchestrator
 from app.core.k8s.base import (
-    DATA_DISK_STORAGE_CLASS,
-    INSTANCE_DISK_STORAGE_CLASS,
     POOL_NODE_LABEL,
     ClusterProbe,
     ComponentFact,
@@ -189,7 +189,6 @@ def _add_enrollment(
         pool=data.pool,
         hostname=data.hostname,
         note=data.note,
-        nvme_devices=data.nvme_devices,
         expires_at=now_utc() + timedelta(hours=data.ttl_hours),
         created_by=created_by,
         idempotency_key=idempotency_key,
@@ -256,7 +255,7 @@ async def revoke_enrollment(session: AsyncSession, enrollment_id: int) -> NodeEn
 
 
 async def _assert_node_empty(session: AsyncSession, node_name: str) -> None:
-    """409 when the node has unreleased instances, stopped/frozen/failed included."""
+    """409 while instances run on the node (stopped ones do not count: they start anywhere)."""
     active = await orchestrator_queries.count_active_instances_on_node(session, node_name)
     if active:
         raise conflict(key="nodes.nodeHasInstances", params={"count": active})
@@ -590,7 +589,7 @@ async def save_cluster_probe(session: AsyncSession, probe: ClusterProbe) -> Clus
     row.cert_manager_ready = probe.cert_manager_ready
     row.nodes_ready = probe.nodes_ready
     row.nodes_total = probe.nodes_total
-    row.storage_classes = list(probe.storage_classes)
+    row.ceph_csi_ready = probe.ceph_csi_ready
     row.pools = dict(probe.pools)
     row.pools_ready = dict(probe.pools_ready)
     row.component_facts = component_facts_to_json(probe.component_facts)
@@ -705,21 +704,21 @@ async def require_pool_runtime(session: AsyncSession, pool_label: str) -> None:
             )
 
 
-async def require_storage_classes(session: AsyncSession, *, with_data_disk: bool) -> None:
-    """Storage dispatch gate: 409 when the instance-disk / data-disk StorageClass is missing."""
+async def require_storage_ready(session: AsyncSession) -> None:
+    """Storage dispatch gate: 409 unless the CephFS CSI node plugin runs (patrol snapshot) and the
+    storage patrol reached the Ceph cluster within STORAGE_STATUS_MAX_AGE."""
     row = await _fresh_cluster_status(session)
-    present = set(row.storage_classes or ())
-    required = [INSTANCE_DISK_STORAGE_CLASS]
-    if with_data_disk:
-        required.append(DATA_DISK_STORAGE_CLASS)
-    missing = [sc for sc in required if sc not in present]
-    if missing:
+    reason: str | None = None
+    if not row.ceph_csi_ready:
+        reason = "ceph_csi_missing"
+    elif not storage_ready(await get_storage_status(session)):
+        reason = "ceph_unreachable"
+    if reason is not None:
         raise AppError(
             ErrorCode.CLUSTER_NOT_READY,
-            key="nodes.storageClassMissing",
-            params={"names": ", ".join(missing)},
+            key="nodes.storageNotReady",
             http_status=http_status.HTTP_409_CONFLICT,
-            detail={"reason": "storage_class_missing", "missing": missing},
+            detail={"reason": reason},
         )
 
 
@@ -746,17 +745,60 @@ _COMPONENT_META: tuple[tuple[ComponentKey, str | None, str], ...] = (
         "kata-deploy",
         f"kubectl get runtimeclass kata-qemu; kubectl get node -l {POOL_NODE_LABEL}=kata",
     ),
-    ("storage", "topolvm", "kubectl get sc"),
+    ("storage", "ceph-csi-cephfs", "kubectl get csidriver; kubectl -n ceph-csi-cephfs get ds,pod"),
     ("gateway", "envoy-gateway", "kubectl -n superdl get gateway superdl -o yaml"),
     ("cert_manager", "cert-manager", "kubectl -n superdl get certificate"),
     ("monitoring", "kube-prometheus-stack", "kubectl -n monitoring get sts,ds"),
 )
 
 
-def cluster_components(row: ClusterStatus | None) -> list[ClusterComponentOut]:
+async def storage_status(session: AsyncSession) -> StorageStatus | None:
+    return await get_storage_status(session)
+
+
+def _gib(value: int | None) -> str:
+    return "-" if value is None else str(value // GIB)
+
+
+def _with_ceph_facts(
+    cf: ComponentFacts | None, storage: StorageStatus | None
+) -> ComponentFacts | None:
+    """The storage item = CSI facts of the K8s probe + the Ceph side of the storage patrol; an
+    unreachable or stale Ceph probe turns the item down."""
+    if cf is None:
+        return None
+    ready = storage_ready(storage)
+    extra = [
+        ComponentFact(
+            key="cephCluster",
+            value="reachable" if ready else "unreachable",
+            tone="normal" if ready else "bad",
+        )
+    ]
+    if storage is not None:
+        extra += [
+            ComponentFact(key="cephUsedGib", value=_gib(storage.group_bytes_used)),
+            ComponentFact(key="cephQuotaGib", value=_gib(storage.group_bytes_quota)),
+        ]
+        if storage.error:
+            extra.append(ComponentFact(key="cephError", value=storage.error[:200], tone="bad"))
+    return ComponentFacts(
+        state=cf.state if ready else "down",
+        headline=cf.headline,
+        facts=cf.facts + tuple(extra),
+        objects=cf.objects,
+    )
+
+
+def cluster_components(
+    row: ClusterStatus | None, storage: StorageStatus | None = None
+) -> list[ClusterComponentOut]:
     """Assemble component facts from the patrol snapshot; missing, stale or API-unreachable
     snapshots yield unknown."""
     facts = component_facts_from_json(row.component_facts if row else None)
+    merged = _with_ceph_facts(facts.get("storage"), storage)
+    if merged is not None:
+        facts["storage"] = merged
     unknown = _probe_unknown(row)
     distro = row.distro if row else None
     return [
@@ -853,3 +895,29 @@ async def probe_component_detail(admin_id: int, key: str) -> ComponentProbeOut:
         pods=[ComponentObjectOut(name=o.name, fields=o.fields) for o in detail.pods],
         events=[ComponentObjectOut(name=o.name, fields=o.fields) for o in detail.events],
     )
+
+
+async def archs_by_pool(session: AsyncSession) -> dict[str, set[str]]:
+    """CPU architectures of the Ready nodes of every pool, one query (market cards)."""
+    rows = await session.execute(
+        select(NodeSpec.pool_label, NodeSpec.arch)
+        .where(NodeSpec.status == "Ready", NodeSpec.arch.is_not(None))
+        .distinct()
+    )
+    out: dict[str, set[str]] = {}
+    for pool, arch in rows.all():
+        if pool and arch:
+            out.setdefault(pool, set()).add(arch)
+    return out
+
+
+async def pool_archs(session: AsyncSession, pool_label: str) -> set[str]:
+    """CPU architectures of the pool's Ready nodes (kubernetes.io/arch); empty when unknown."""
+    rows = await session.scalars(
+        select(NodeSpec.arch).where(
+            NodeSpec.pool_label == pool_label,
+            NodeSpec.status == "Ready",
+            NodeSpec.arch.is_not(None),
+        )
+    )
+    return {a for a in rows.all() if a}

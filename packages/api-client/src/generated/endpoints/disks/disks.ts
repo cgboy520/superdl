@@ -7,8 +7,8 @@
 import type {
   CreateDiskApiV1DisksPostHeaders,
   DiskCreate,
-  DiskExpand,
-  DiskOut
+  DiskOut,
+  DiskUpdate
 } from '../../model';
 
 import { customFetch } from '../../../mutator';
@@ -22,6 +22,7 @@ export const getListDisksApiV1DisksGetUrl = () => {
 }
 
 /**
+ * Every disk of the user; each is mounted on all of the user's instances at its mount point.
  * @summary List Disks
  */
 export const listDisksApiV1DisksGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<DiskOut[]> => {
@@ -83,7 +84,7 @@ export const getDeleteDiskApiV1DisksUuidDeleteUrl = (uuid: string,) => {
 }
 
 /**
- * Delete the data disk (irreversible); forbidden while mounted.
+ * Delete the data disk (irreversible); forbidden while an instance's Pod mounts it.
  * @summary Delete Disk
  */
 export const deleteDiskApiV1DisksUuidDelete = async (uuid: string, options?: Parameters<typeof customFetch>[1]): Promise<DiskOut> => {
@@ -98,7 +99,7 @@ export const deleteDiskApiV1DisksUuidDelete = async (uuid: string, options?: Par
 );}
 
 
-export const getExpandDiskApiV1DisksUuidPatchUrl = (uuid: string,) => {
+export const getUpdateDiskApiV1DisksUuidPatchUrl = (uuid: string,) => {
 
 
 
@@ -107,11 +108,11 @@ export const getExpandDiskApiV1DisksUuidPatchUrl = (uuid: string,) => {
 }
 
 /**
- * Expand (grow only).
- * @summary Expand Disk
+ * Grow (never shrink) and / or move the mount point.
+ * @summary Update Disk
  */
-export const expandDiskApiV1DisksUuidPatch = async (uuid: string,
-    diskExpand: DiskExpand, options?: Parameters<typeof customFetch>[1]): Promise<DiskOut> => {
+export const updateDiskApiV1DisksUuidPatch = async (uuid: string,
+    diskUpdate: DiskUpdate, options?: Parameters<typeof customFetch>[1]): Promise<DiskOut> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -127,12 +128,12 @@ export const expandDiskApiV1DisksUuidPatch = async (uuid: string,
     }
     return headers;
   };
-return customFetch<DiskOut>(getExpandDiskApiV1DisksUuidPatchUrl(uuid),
+return customFetch<DiskOut>(getUpdateDiskApiV1DisksUuidPatchUrl(uuid),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(diskExpand)
+    body: JSON.stringify(diskUpdate)
   }
 );}
 

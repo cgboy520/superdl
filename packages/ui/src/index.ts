@@ -32,6 +32,7 @@ export {
   formatDateTime,
   formatDate,
   formatSizeGb,
+  formatBytes,
   maskHandle,
 } from "./format";
 export type { PeriodQuote, Formatters } from "./format";

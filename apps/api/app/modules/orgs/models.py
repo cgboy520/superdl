@@ -1,9 +1,21 @@
-"""Organizations: members (one organization per user, exactly one owner) and email invitations.
-Funds stay per user; the organization only scopes visibility and shared gateways."""
+"""Organizations: members (one organization per user, exactly one owner), email invitations and
+the organization's storage mounts. Funds stay per user; the organization scopes visibility, shared
+gateways and shared storage."""
 
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, UniqueConstraint, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -33,6 +45,7 @@ class Organization(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     uuid: Mapped[str] = mapped_column(String(32), unique=True)
     name: Mapped[str] = mapped_column(String(40))
+    code: Mapped[str] = mapped_column(String(20), unique=True)
     status: Mapped[str] = mapped_column(String(16), default=ORG_ACTIVE, index=True)
     created_by: Mapped[int] = mapped_column(index=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
@@ -98,3 +111,68 @@ class OrgInvitation(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     expires_at: Mapped[datetime]
     responded_at: Mapped[datetime | None]
+
+
+MOUNT_CHECKING = "checking"
+MOUNT_READY = "ready"
+MOUNT_FAILED = "failed"
+
+
+class OrgMount(Base):
+    """A directory of the platform's Ceph cluster, reached with the organization's own cephx key,
+    mounted read-only or read-write at /mnt/org/<name> in every member's instances from their next
+    start. The key is stored AES-GCM encrypted (AAD bound to the uuid) and never leaves the
+    platform except as a node-stage Secret; revision bumps whenever path, user, key or access
+    change, so new Pods get fresh volume objects while old Pods keep the previous ones."""
+
+    __tablename__ = "org_mounts"
+    __table_args__ = (
+        CheckConstraint("status IN ('checking', 'ready', 'failed')", name="status"),
+        UniqueConstraint("org_id", "name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(String(32), unique=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(40))
+    ceph_path: Mapped[str] = mapped_column(String(255))
+    ceph_user: Mapped[str] = mapped_column(String(64))
+    key_encrypted: Mapped[str] = mapped_column(Text)
+    read_only: Mapped[bool] = mapped_column(default=True)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    revision: Mapped[int] = mapped_column(default=1)
+    status: Mapped[str] = mapped_column(String(16), default=MOUNT_CHECKING)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    checked_at: Mapped[datetime | None]
+    created_by: Mapped[int]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+TRANSFER_ALLOCATE = "allocate"
+TRANSFER_RECLAIM = "reclaim"
+
+
+class OrgTransfer(Base):
+    """Balance moved by a tenant admin: allocate (admin → member) or reclaim (an account the
+    tenant created → admin). The two ledger rows (transfer_out / transfer_in, ref org_transfer)
+    are written in the same transaction; this row is the shared reference."""
+
+    __tablename__ = "org_transfers"
+    __table_args__ = (
+        CheckConstraint("kind IN ('allocate', 'reclaim')", name="kind"),
+        CheckConstraint("amount > 0", name="amount_positive"),
+        UniqueConstraint("created_by", "idempotency_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(String(32), unique=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    from_user_id: Mapped[int]
+    to_user_id: Mapped[int]
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    created_by: Mapped[int]
+    idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

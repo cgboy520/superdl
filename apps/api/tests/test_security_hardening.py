@@ -316,9 +316,6 @@ class TestProdConfigValidation:
         assert Settings(**tenant_mgr).worker_component == "tenant-mgr"
         with pytest.raises(ValidationError, match="k8s_backend"):
             Settings(**{**tenant_mgr, "k8s_backend": "fake"})
-        assert Settings(
-            **{**tenant_mgr, "worker_component": "disk-ops", "config_encryption_key": None}
-        )
         with pytest.raises(ValidationError, match="config_encryption_key"):
             Settings(**{**tenant_mgr, "config_encryption_key": None})
         with pytest.raises(ValidationError, match="admin_edge_token"):

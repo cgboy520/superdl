@@ -194,7 +194,13 @@ function BillingPage() {
   // Only a successful site-config answer without a KYC form hides the warning; a failed
   // /site-config keeps it because the server-side recharge gate stays active.
   const kycMayBeRequired = siteQ.isError || Boolean(site?.kyc_form);
-  if (kycMayBeRequired && policies?.real_name_required_for_recharge && me != null && me.kyc_status !== "verified") {
+  if (
+    kycMayBeRequired &&
+    policies?.real_name_required_for_recharge &&
+    me != null &&
+    !me.managed &&
+    me.kyc_status !== "verified"
+  ) {
     attention.push({
       key: "realName",
       severity: "warning",

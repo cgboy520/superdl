@@ -59,6 +59,14 @@ describe("useTransientRefresh", () => {
     );
   });
 
+  it("a first poll that already differs from the list row invalidates the list (the change beat the poll)", async () => {
+    const fetchOne = vi.fn<FetchOne>().mockResolvedValue({ status: "running" });
+    const { invalidateSpy } = setup(fetchOne, [row("a", "creating")]);
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["t", "pages"] })),
+    );
+  });
+
   it("an item leaving the transitional set clears its baseline; re-entering with a new status reports no false change", async () => {
     const fetchOne = vi.fn<FetchOne>().mockResolvedValue({ status: "creating" });
     const { qc, view, invalidateSpy } = setup(fetchOne, [row("a", "creating")]);

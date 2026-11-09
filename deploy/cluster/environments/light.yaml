@@ -4,7 +4,7 @@ hami: {enabled: true}
 kataDeploy: {enabled: true}
 kps: {enabled: true}
 topolvm: {enabled: true}
-rookCeph: {enabled: true}
+cephCsi: {enabled: true}
 certManager: {enabled: true}
 acmeDns: {enabled: false}
 envoyGateway: {enabled: true}

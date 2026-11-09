@@ -9,7 +9,8 @@ import type { InstanceSubscriptionOut } from './instanceSubscriptionOut';
 
 export interface InstanceOut {
   created_at: string;
-  data_disk_id: number | null;
+  /** Data disks the instance's current (or next) Pod mounts, each at its mount point */
+  data_disk_ids?: number[];
   frozen_deadline: string | null;
   gpu_count: number;
   id: number;
@@ -24,6 +25,8 @@ export interface InstanceOut {
   ssh_port: number | null;
   status: string;
   subscription?: InstanceSubscriptionOut | null;
+  /** Bytes stored on the system disk (size = spec.disk_gb), refreshed by the storage patrol */
+  system_disk_bytes_used?: number | null;
   uuid: string;
   with_ssh: boolean;
   workload_type: string;

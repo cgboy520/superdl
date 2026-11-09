@@ -1,5 +1,6 @@
 # pyright: reportPrivateUsage=false
-"""Data-disk CRUD, cross-instance mounting, idempotent daily settlement and the arrears chain."""
+"""Data-disk CRUD, auto-mount on every instance of the owner, idempotent daily settlement and the
+arrears chain."""
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -8,6 +9,7 @@ import pytest
 from sqlalchemy import select, update
 
 from app.core.money import disk_daily_charge
+from app.core.outbox import OutboxTask, enqueue
 from app.core.timeutil import (
     billing_day_floor,
     billing_day_shift,
@@ -35,12 +37,13 @@ pytestmark = pytest.mark.usefixtures("fake")
 
 
 class TestDiskCrud:
-    async def test_create_list_expand_delete(self, client, sm, fake):
+    async def test_create_list_expand_delete(self, client, sm, fake, ceph):
         headers, user_id, _key = await create_user_with_key(client)
         await fund_wallet(sm, user_id)
         disk = await create_disk(client, headers)
         assert disk["status"] == "active"
         assert disk["price_gb_month"] == "0.0350"
+        await drain(sm)
 
         disks = (await client.get("/api/v1/disks", headers=headers)).json()
         assert len(disks) == 1
@@ -49,6 +52,8 @@ class TestDiskCrud:
             f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 200}, headers=headers
         )
         assert resp.json()["size_gb"] == 200
+        await drain(sm)
+        assert ceph.subvolumes[f"u{user_id}-disk-{disk['uuid']}"].size_bytes == 200 * 1024**3
 
         resp = await client.patch(
             f"/api/v1/disks/{disk['uuid']}", json={"size_gb": 100}, headers=headers
@@ -60,7 +65,8 @@ class TestDiskCrud:
         await drain(sm)
         disks = (await client.get("/api/v1/disks", headers=headers)).json()
         assert disks == []
-        assert fake.deleted_data_disks[-1] == (f"tenant-{user_id}", f"disk-{disk['uuid']}")
+        assert fake.deleted_ceph_volumes[-1] == (f"tenant-{user_id}", f"disk-{disk['uuid']}")
+        assert ceph.removed[-1] == f"u{user_id}-disk-{disk['uuid']}"
 
     async def test_create_requires_balance(self, client, sm, fake):
         headers, _user_id, _key = await create_user_with_key(client, "u13500000001@test.local")
@@ -91,191 +97,187 @@ class TestDiskCrud:
         assert resp.json()["code"] == "VALIDATION_ERROR"
 
 
-class TestMountLifecycle:
-    async def test_attach_rejected_until_provisioned(self, client, sm, fake):
-        """A disk whose quota was not provisioned cannot be mounted; once synced it can."""
-        headers, _user_id, key_id = await funded_user(
+async def _instance(client, headers, sku_id: int, key_id: int) -> str:
+    resp = await client.post(
+        "/api/v1/instances",
+        json={"sku_id": sku_id, "image_ref": "img", "ssh_key_ids": [key_id]},
+        headers=headers,
+    )
+    assert resp.status_code == 202, resp.text
+    return resp.json()["uuid"]
+
+
+async def _running(client, sm, fake, headers, sku_id: int, key_id: int, user_id: int) -> str:
+    uuid = await _instance(client, headers, sku_id, key_id)
+    await drain(sm)
+    fake.mark_ready(f"tenant-{user_id}", uuid)
+    await reconcile_once(sm)
+    assert (await get_instance(client, headers, uuid))["status"] == "running"
+    return uuid
+
+
+async def _stop(client, sm, headers, uuid: str) -> None:
+    await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
+    await drain(sm)
+    await reconcile_once(sm)
+    assert (await get_instance(client, headers, uuid))["status"] == "stopped"
+
+
+def _mounts(fake, user_id: int, uuid: str) -> list[tuple[str, str, bool]]:
+    spec = fake.pods[(f"tenant-{user_id}", uuid)].spec
+    return [(m.pvc_name, m.mount_path, m.read_only) for m in spec.extra_mounts]
+
+
+class TestAutoMount:
+    """Every disk of a user is mounted on all of that user's instances at its mount point."""
+
+    async def test_every_disk_mounts_at_its_path(self, client, sm, fake):
+        headers, user_id, key_id = await funded_user(
             client, sm, "u13500000013@test.local", "500.00"
         )
         sku_id = await create_test_sku(sm)
-        disk = await create_disk(client, headers)
-        resp = await client.post(
-            "/api/v1/instances",
-            json={
-                "sku_id": sku_id,
-                "image_ref": "img",
-                "ssh_key_ids": [key_id],
-                "data_disk_id": disk["id"],
-            },
-            headers=headers,
-        )
-        assert resp.status_code == 409
-        assert resp.json()["message_key"] == "disks.notProvisioned"
+        data = await create_disk(client, headers)
+        assert data["mount_path"] == "/data"
+        models = await create_disk(client, headers, name="models", mount_path="/mnt/models")
         await drain(sm)
-        resp = await client.post(
-            "/api/v1/instances",
-            json={
-                "sku_id": sku_id,
-                "image_ref": "img",
-                "ssh_key_ids": [key_id],
-                "data_disk_id": disk["id"],
-            },
-            headers=headers,
-        )
-        assert resp.status_code == 202, resp.text
+        a = await _running(client, sm, fake, headers, sku_id, key_id, user_id)
+        b = await _running(client, sm, fake, headers, sku_id, key_id, user_id)
+        for uuid in (a, b):
+            assert _mounts(fake, user_id, uuid) == [
+                (f"disk-{data['uuid']}", "/data", False),
+                (f"disk-{models['uuid']}", "/mnt/models", False),
+            ]
+        listed = {d["uuid"]: d for d in (await client.get("/api/v1/disks", headers=headers)).json()}
+        assert {m["uuid"] for m in listed[data["uuid"]]["mounted_by"]} == {a, b}
 
-    async def test_start_after_delete_disk_detaches(self, client, sm, fake):
-        """Deleting the disk after a stop removes the mount reference; the next start does not
-        reference its PVC."""
+    async def test_disk_created_with_the_instance_is_provisioned_before_its_pod(
+        self, client, sm, fake, ceph
+    ):
+        """Disk and instance created back to back (the create page's inline disk): the Pod build
+        provisions the subvolume itself instead of starting without /data."""
+        headers, user_id, key_id = await funded_user(
+            client, sm, "u13500000014@test.local", "500.00"
+        )
+        sku_id = await create_test_sku(sm)
+        disk = await create_disk(client, headers)
+        uuid = await _instance(client, headers, sku_id, key_id)
+        async with sm() as session:
+            await session.execute(
+                update(OutboxTask)
+                .where(OutboxTask.type == "disk.provision")
+                .values(next_retry_at=now_utc() + timedelta(hours=1))
+            )
+            await session.commit()
+        await drain(sm)
+        assert _mounts(fake, user_id, uuid) == [(f"disk-{disk['uuid']}", "/data", False)]
+        assert f"u{user_id}-disk-{disk['uuid']}" in ceph.subvolumes
+
+    async def test_delete_waits_for_stop_and_next_start_drops_the_mount(self, client, sm, fake):
         headers, user_id, key_id = await funded_user(
             client, sm, "u13500000011@test.local", "500.00"
         )
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         await drain(sm)
-        resp = await client.post(
-            "/api/v1/instances",
-            json={
-                "sku_id": sku_id,
-                "image_ref": "img",
-                "ssh_key_ids": [key_id],
-                "data_disk_id": disk["id"],
-            },
-            headers=headers,
-        )
-        assert resp.status_code == 202, resp.text
-        a_uuid = resp.json()["uuid"]
-        await drain(sm)
-        fake.mark_ready(f"tenant-{user_id}", a_uuid)
-        await reconcile_once(sm)
-        await client.post(f"/api/v1/instances/{a_uuid}/stop", headers=headers)
-        await drain(sm)
-        await reconcile_once(sm)
-        assert (await get_instance(client, headers, a_uuid))["status"] == "stopped"
+        uuid = await _running(client, sm, fake, headers, sku_id, key_id, user_id)
+        resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
+        assert resp.json()["code"] == "DISK_IN_USE"
+        assert resp.json()["message_key"] == "disks.inUseDelete"
+        await _stop(client, sm, headers, uuid)
         resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         assert resp.status_code == 200, resp.text
         await drain(sm)
-        async with sm() as session:
-            from app.modules.orchestrator.models import Instance
-
-            inst = (
-                await session.execute(select(Instance).where(Instance.uuid == a_uuid))
-            ).scalar_one()
-            assert inst.data_disk_id is None
-        resp = await client.post(f"/api/v1/instances/{a_uuid}/start", headers=headers)
+        resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
         assert resp.status_code == 200, resp.text
         await drain(sm)
-        pod = fake.pods[(f"tenant-{user_id}", a_uuid)]
-        assert pod.spec.data_disk_pvc is None
+        assert _mounts(fake, user_id, uuid) == []
 
-    async def test_start_rejected_when_disk_deleting(self, client, sm, fake):
-        """A mounted disk in deleting refuses the start."""
+    async def test_mount_path_is_validated_and_unique(self, client, sm, fake):
+        headers, _user_id, _key_id = await funded_user(client, sm, "u13500000015@test.local")
+        await create_disk(client, headers)
+        for bad in ("/etc", "/root/data", "/mnt/org", "/data/../etc", "data"):
+            resp = await client.post(
+                "/api/v1/disks",
+                json={"name": "x", "size_gb": 10, "mount_path": bad},
+                headers=headers,
+            )
+            assert resp.json().get("message_key") == "disks.mountPathInvalid", (bad, resp.text)
+        resp = await client.post(
+            "/api/v1/disks", json={"name": "y", "size_gb": 10}, headers=headers
+        )
+        assert resp.status_code == 409
+        assert resp.json()["message_key"] == "disks.mountPathTaken"
+
+    async def test_moved_mount_point_applies_from_the_next_start(self, client, sm, fake):
         headers, user_id, key_id = await funded_user(
-            client, sm, "u13500000012@test.local", "500.00"
+            client, sm, "u13500000016@test.local", "500.00"
         )
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         await drain(sm)
-        resp = await client.post(
-            "/api/v1/instances",
-            json={
-                "sku_id": sku_id,
-                "image_ref": "img",
-                "ssh_key_ids": [key_id],
-                "data_disk_id": disk["id"],
-            },
-            headers=headers,
+        uuid = await _running(client, sm, fake, headers, sku_id, key_id, user_id)
+        resp = await client.patch(
+            f"/api/v1/disks/{disk['uuid']}", json={"mount_path": "/workspace"}, headers=headers
         )
-        assert resp.status_code == 202, resp.text
-        a_uuid = resp.json()["uuid"]
-        await drain(sm)
-        fake.mark_ready(f"tenant-{user_id}", a_uuid)
-        await reconcile_once(sm)
-        await client.post(f"/api/v1/instances/{a_uuid}/stop", headers=headers)
-        await drain(sm)
-        await reconcile_once(sm)
-        assert (await get_instance(client, headers, a_uuid))["status"] == "stopped"
-        resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
         assert resp.status_code == 200, resp.text
-        async with sm() as session:
-            from app.modules.orchestrator.models import Instance
+        assert _mounts(fake, user_id, uuid)[0][1] == "/data"
+        await _stop(client, sm, headers, uuid)
+        await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
+        await drain(sm)
+        assert _mounts(fake, user_id, uuid)[0][1] == "/workspace"
 
+    async def test_grace_mounts_read_only_and_frozen_is_left_out(self, client, sm, fake):
+        headers, user_id, key_id = await funded_user(
+            client, sm, "u13500000017@test.local", "500.00"
+        )
+        sku_id = await create_test_sku(sm)
+        grace = await create_disk(client, headers)
+        frozen = await create_disk(client, headers, name="f", mount_path="/data2")
+        await drain(sm)
+        async with sm() as session:
             await session.execute(
-                update(Instance).where(Instance.uuid == a_uuid).values(data_disk_id=disk["id"])
+                update(DataDisk).where(DataDisk.uuid == grace["uuid"]).values(status="grace")
+            )
+            await session.execute(
+                update(DataDisk).where(DataDisk.uuid == frozen["uuid"]).values(status="frozen")
             )
             await session.commit()
-        resp = await client.post(f"/api/v1/instances/{a_uuid}/start", headers=headers)
-        assert resp.status_code == 400
-        assert resp.json()["code"] == "VALIDATION_ERROR"
+        uuid = await _instance(client, headers, sku_id, key_id)
+        await drain(sm)
+        assert _mounts(fake, user_id, uuid) == [(f"disk-{grace['uuid']}", "/data", True)]
 
-    async def test_cross_instance_mount(self, client, sm, fake):
-        """The data disk survives the instance release and can be mounted on another instance."""
+    async def test_subvolume_outlives_a_purge_until_the_last_pod_is_gone(
+        self, client, sm, fake, ceph
+    ):
+        """A disk purged while a Pod still mounts it (prepaid instances keep running in arrears):
+        the PVC lingers under pvc-protection and the subvolume stays until the Pod is gone."""
         headers, user_id, key_id = await funded_user(
-            client, sm, "u13500000010@test.local", "500.00"
+            client, sm, "u13500000018@test.local", "500.00"
         )
         sku_id = await create_test_sku(sm)
         disk = await create_disk(client, headers)
         await drain(sm)
-
-        resp = await client.post(
-            "/api/v1/instances",
-            json={
-                "sku_id": sku_id,
-                "image_ref": "img",
-                "ssh_key_ids": [key_id],
-                "data_disk_id": disk["id"],
-            },
-            headers=headers,
-        )
-        assert resp.status_code == 202, resp.text
-        a_uuid = resp.json()["uuid"]
+        uuid = await _running(client, sm, fake, headers, sku_id, key_id, user_id)
+        async with sm() as session:
+            row = (
+                await session.execute(select(DataDisk).where(DataDisk.uuid == disk["uuid"]))
+            ).scalar_one()
+            row.status = "deleting"
+            enqueue(session, "disk.deprovision", {"disk_id": row.id})
+            await session.commit()
         await drain(sm)
-        pod = fake.pods[(f"tenant-{user_id}", a_uuid)]
-        assert pod.spec.data_disk_pvc == f"disk-{disk['uuid']}"
-
-        d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
-        assert d["mounted_instance_id"] is not None
-
-        resp = await client.delete(f"/api/v1/disks/{disk['uuid']}", headers=headers)
-        assert resp.json()["code"] == "DISK_IN_USE"
-
-        resp = await client.post(
-            "/api/v1/instances",
-            json={
-                "sku_id": sku_id,
-                "image_ref": "img",
-                "ssh_key_ids": [key_id],
-                "data_disk_id": disk["id"],
-            },
-            headers=headers,
-        )
-        assert resp.json()["code"] == "DISK_IN_USE"
-
-        fake.mark_ready(f"tenant-{user_id}", a_uuid)
-        await reconcile_once(sm)
-        await client.post(f"/api/v1/instances/{a_uuid}/stop", headers=headers)
+        subvolume = f"u{user_id}-disk-{disk['uuid']}"
+        assert subvolume in ceph.subvolumes
+        fake.kill_pod(f"tenant-{user_id}", uuid)
+        async with sm() as session:
+            await session.execute(
+                update(OutboxTask)
+                .where(OutboxTask.type == "disk.deprovision", OutboxTask.status == "pending")
+                .values(next_retry_at=now_utc() - timedelta(seconds=1))
+            )
+            await session.commit()
         await drain(sm)
-        await reconcile_once(sm)
-        await client.delete(f"/api/v1/instances/{a_uuid}", headers=headers)
-        await drain(sm)
-        await reconcile_once(sm)
-        assert (await get_instance(client, headers, a_uuid))["status"] == "released"
-
-        d = (await client.get("/api/v1/disks", headers=headers)).json()[0]
-        assert d["status"] == "active"
-        assert d["mounted_instance_id"] is None
-
-        resp = await client.post(
-            "/api/v1/instances",
-            json={
-                "sku_id": sku_id,
-                "image_ref": "img",
-                "ssh_key_ids": [key_id],
-                "data_disk_id": disk["id"],
-            },
-            headers=headers,
-        )
-        assert resp.status_code == 202, resp.text
+        assert subvolume not in ceph.subvolumes
 
 
 class TestDailyDiskBilling:
@@ -476,9 +478,11 @@ class TestDiskQuota:
         headers, _user_id, _key = await funded_user(client, sm, "u13500000040@test.local")
         monkeypatch.setattr(get_settings(), "max_disks_per_user", 2, raising=False)
         await create_disk(client, headers, name="d1")
-        await create_disk(client, headers, name="d2")
+        await create_disk(client, headers, name="d2", mount_path="/data2")
         resp = await client.post(
-            "/api/v1/disks", json={"name": "d3", "size_gb": 100}, headers=headers
+            "/api/v1/disks",
+            json={"name": "d3", "size_gb": 100, "mount_path": "/data3"},
+            headers=headers,
         )
         assert resp.status_code == 400
         assert resp.json()["message_key"] == "disks.countQuota"
@@ -489,9 +493,11 @@ class TestDiskQuota:
         headers, _user_id, _key = await funded_user(client, sm, "u13500000041@test.local")
         await set_platform_setting(sm, "max_disk_gb_per_user", "250")
         d1 = await create_disk(client, headers, name="d1", size_gb=100)
-        d2 = await create_disk(client, headers, name="d2", size_gb=100)
+        d2 = await create_disk(client, headers, name="d2", size_gb=100, mount_path="/data2")
         resp = await client.post(
-            "/api/v1/disks", json={"name": "d3", "size_gb": 100}, headers=headers
+            "/api/v1/disks",
+            json={"name": "d3", "size_gb": 100, "mount_path": "/data3"},
+            headers=headers,
         )
         assert resp.status_code == 400
         assert resp.json()["message_key"] == "disks.capacityQuota"
@@ -510,7 +516,9 @@ class TestDiskQuota:
         await client.delete(f"/api/v1/disks/{d2['uuid']}", headers=headers)
         await drain(sm)
         resp = await client.post(
-            "/api/v1/disks", json={"name": "d3", "size_gb": 100}, headers=headers
+            "/api/v1/disks",
+            json={"name": "d3", "size_gb": 100, "mount_path": "/data3"},
+            headers=headers,
         )
         assert resp.status_code == 201, resp.text
 

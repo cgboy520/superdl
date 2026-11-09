@@ -14,7 +14,6 @@ export interface EnrollmentCreate {
      */
   hostname: string;
   note?: string | null;
-  nvme_devices?: string[] | null;
   pool: EnrollmentCreatePool;
   /**
      * @minimum 1

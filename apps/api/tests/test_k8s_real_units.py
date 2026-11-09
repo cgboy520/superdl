@@ -13,8 +13,10 @@ from app.core.k8s.base import (
     NETGW_NAMESPACE,
     NETGW_TENANT_LABEL,
     POOL_NODE_LABEL,
+    CephVolumeSpec,
     InstancePodSpec,
     NodePortTaken,
+    PodVolumeMount,
 )
 from app.core.k8s.real import (
     EGRESS_BLOCKED_TCP_PORTS,
@@ -22,6 +24,9 @@ from app.core.k8s.real import (
     PRIVATE_CIDRS,
     RealOrchestrator,
     _node_is_infra,
+    build_ceph_pv,
+    build_ceph_pvc,
+    build_ceph_secret,
 )
 
 
@@ -135,7 +140,7 @@ class TestInstanceSecretHandling:
             host_users=True,
             vcpu=1,
             mem_gb=1,
-            disk_gb=1,
+            system_disk_pvc="inst-1-root",
             ssh_node_port=31234,
             jupyter_host="inst-1.app.example.com",
             secret_env={"JUPYTER_TOKEN": "plain-token-1"},
@@ -187,56 +192,105 @@ class TestInstanceSecretHandling:
         assert body_holder["stringData"] == {"JUPYTER_TOKEN": "plain-token-1"}
 
 
-class TestDataDiskPvc:
-    """One PVC per data disk, idempotent apply, grow only."""
+def _ceph_spec(**over: Any) -> CephVolumeSpec:
+    base: dict[str, Any] = {
+        "namespace": "tenant-1",
+        "pvc_name": "disk-abc",
+        "pv_name": "superdl-u1-disk-abc",
+        "secret_name": "ceph-u1-disk-abc",
+        "cluster_id": "00000000-0000-4000-8000-0000000000c1",
+        "fs_name": "cephfs",
+        "root_path": "/volumes/cloud/u1-disk-abc/0f2c",
+        "client_id": "cloud.u1-disk-abc",
+        "client_key": "AQBkey==",
+        "size_gb": 100,
+        "mount_options": "ms_mode=prefer-crc",
+    }
+    base.update(over)
+    return CephVolumeSpec(**base)
 
-    def _orch_with_pvc(self, existing_gi: int | None) -> tuple[Any, list[tuple[str, Any]]]:
+
+class TestCephVolumeObjects:
+    """Static CephFS volume = Secret + Retain PV pre-bound to its PVC; ceph-csi reads the node
+    stage Secret, the kernel mounter and the mount options from the PV."""
+
+    def test_pv_is_static_kernel_mount_bound_to_pvc(self):
+        pv = cast(Any, build_ceph_pv(_ceph_spec()))
+        csi = pv.spec.csi
+        assert csi.driver == "cephfs.csi.ceph.com"
+        assert csi.volume_handle == "superdl-u1-disk-abc"
+        assert csi.volume_attributes == {
+            "clusterID": "00000000-0000-4000-8000-0000000000c1",
+            "fsName": "cephfs",
+            "staticVolume": "true",
+            "rootPath": "/volumes/cloud/u1-disk-abc/0f2c",
+            "mounter": "kernel",
+            "kernelMountOptions": "ms_mode=prefer-crc",
+        }
+        assert (csi.node_stage_secret_ref.namespace, csi.node_stage_secret_ref.name) == (
+            "tenant-1",
+            "ceph-u1-disk-abc",
+        )
+        assert pv.spec.persistent_volume_reclaim_policy == "Retain"
+        assert pv.spec.storage_class_name == ""
+        assert (pv.spec.claim_ref.namespace, pv.spec.claim_ref.name) == ("tenant-1", "disk-abc")
+        assert pv.spec.access_modes == ["ReadWriteMany"]
+
+    def test_read_only_volume_is_read_only_many(self):
+        spec = _ceph_spec(read_only=True, mount_options="")
+        pv = cast(Any, build_ceph_pv(spec))
+        assert pv.spec.access_modes == ["ReadOnlyMany"]
+        assert pv.spec.csi.read_only is True
+        assert "kernelMountOptions" not in pv.spec.csi.volume_attributes
+        assert cast(Any, build_ceph_pvc(spec)).spec.access_modes == ["ReadOnlyMany"]
+
+    def test_pvc_names_its_pv_and_secret_holds_the_key(self):
+        pvc = cast(Any, build_ceph_pvc(_ceph_spec()))
+        assert pvc.spec.volume_name == "superdl-u1-disk-abc"
+        assert pvc.spec.storage_class_name == ""
+        secret = cast(Any, build_ceph_secret(_ceph_spec()))
+        assert secret.string_data == {"userID": "cloud.u1-disk-abc", "userKey": "AQBkey=="}
+
+    def _orch(self, *, pv: Any = None, pvc: Any = None) -> tuple[Any, list[str]]:
         orch = _bare()
-        calls: list[tuple[str, Any]] = []
+        calls: list[str] = []
 
-        def read(name: str, ns: str) -> Any:
-            if existing_gi is None:
+        def read_or_404(obj: Any) -> Any:
+            if obj is None:
                 raise k8s_client.ApiException(status=404)
-            return SimpleNamespace(
-                spec=SimpleNamespace(
-                    resources=SimpleNamespace(requests={"storage": f"{existing_gi}Gi"})
-                )
-            )
+            return obj
 
         orch.core = cast(
             Any,
             SimpleNamespace(
-                read_namespaced_persistent_volume_claim=read,
-                create_namespaced_persistent_volume_claim=lambda ns, pvc: calls.append(
-                    ("create", pvc.spec.resources.requests["storage"])
-                ),
-                patch_namespaced_persistent_volume_claim=lambda name, ns, body: calls.append(
-                    ("patch", body["spec"]["resources"]["requests"]["storage"])
+                create_namespaced_secret=lambda ns, body: calls.append("create-secret"),
+                patch_namespaced_secret=lambda name, ns, body: calls.append("patch-secret"),
+                read_persistent_volume=lambda name: read_or_404(pv),
+                create_persistent_volume=lambda body: calls.append("create-pv"),
+                read_namespaced_persistent_volume_claim=lambda name, ns: read_or_404(pvc),
+                create_namespaced_persistent_volume_claim=lambda ns, body: calls.append(
+                    "create-pvc"
                 ),
             ),
         )
         return orch, calls
 
-    def test_creates_when_absent(self):
-        orch, calls = self._orch_with_pvc(None)
-        orch._ensure_data_disk_sync("tenant-u1", "disk-abc", 10)
-        assert calls == [("create", "10Gi")]
+    def test_creates_every_object_when_absent(self):
+        orch, calls = self._orch()
+        orch._ensure_ceph_volume_sync(_ceph_spec())
+        assert calls == ["create-secret", "create-pv", "create-pvc"]
 
-    def test_idempotent_when_same_size(self):
-        orch, calls = self._orch_with_pvc(10)
-        orch._ensure_data_disk_sync("tenant-u1", "disk-abc", 10)
-        assert calls == []
+    def test_existing_objects_are_kept(self):
+        alive = SimpleNamespace(metadata=SimpleNamespace(deletion_timestamp=None))
+        orch, calls = self._orch(pv=alive, pvc=alive)
+        orch._ensure_ceph_volume_sync(_ceph_spec())
+        assert calls == ["create-secret"]
 
-    def test_expands_when_smaller(self):
-        orch, calls = self._orch_with_pvc(10)
-        orch._ensure_data_disk_sync("tenant-u1", "disk-abc", 50)
-        assert calls == [("patch", "50Gi")]
-
-    def test_never_shrinks(self):
-        """A shrink request does not modify the PVC."""
-        orch, calls = self._orch_with_pvc(50)
-        orch._ensure_data_disk_sync("tenant-u1", "disk-abc", 10)
-        assert calls == []
+    def test_terminating_pv_raises_for_retry(self):
+        dying = SimpleNamespace(metadata=SimpleNamespace(deletion_timestamp="2026-11-09T00:00:00Z"))
+        orch, _calls = self._orch(pv=dying)
+        with pytest.raises(RuntimeError, match="terminating"):
+            orch._ensure_ceph_volume_sync(_ceph_spec())
 
 
 def _page(items: list[Any], cont: str | None = None) -> Any:
@@ -457,7 +511,7 @@ def _spec(node_port: int = 31001) -> InstancePodSpec:
         host_users=True,
         vcpu=1,
         mem_gb=1,
-        disk_gb=10,
+        system_disk_pvc="inst-1-root",
         ssh_node_port=node_port,
         jupyter_host="x.app.example.com",
     )
@@ -575,7 +629,7 @@ class TestServiceWorkloadObjects:
             "host_users": True,
             "vcpu": 1,
             "mem_gb": 1,
-            "disk_gb": 1,
+            "system_disk_pvc": "inst-1-root",
             "ssh_node_port": 31234,
             "jupyter_host": "inst-1.app.example.com",
         }
@@ -692,24 +746,28 @@ class TestServiceWorkloadObjects:
 
 
 class TestDataDiskMount:
-    """The instance Pod mounts the data-disk PVC directly without subPath and sets
-    hostUsers=false."""
+    """The instance Pod mounts each data-disk PVC directly at its mount point, without subPath,
+    and keeps hostUsers=false."""
 
     def _pod_with_disk(self) -> Any:
         from app.core.k8s.real import build_instance_pod
 
         spec = InstancePodSpec(
-            **{**_spec().__dict__, "data_disk_pvc": "disk-" + "a" * 32, "host_users": False}
+            **{
+                **_spec().__dict__,
+                "extra_mounts": (PodVolumeMount("disk-" + "a" * 32, "/data"),),
+                "host_users": False,
+            }
         )
         return build_instance_pod(spec)
 
     def test_mounts_own_pvc_without_subpath(self):
         pod = self._pod_with_disk()
         pod_spec = cast(Any, pod).spec
-        vol = next(v for v in pod_spec.volumes if v.name == "data-disk")
+        vol = next(v for v in pod_spec.volumes if v.name == "mount-0")
         assert vol.persistent_volume_claim.claim_name == "disk-" + "a" * 32
-        mount = next(m for m in pod_spec.containers[0].volume_mounts if m.name == "data-disk")
-        assert mount.mount_path == "/root/data"
+        mount = next(m for m in pod_spec.containers[0].volume_mounts if m.name == "mount-0")
+        assert mount.mount_path == "/data"
         assert mount.sub_path is None
 
     def test_keeps_tenant_baseline(self):
@@ -721,7 +779,28 @@ class TestDataDiskMount:
         from app.core.k8s.real import build_instance_pod
 
         pod_spec = cast(Any, build_instance_pod(_spec())).spec
-        assert all(v.name != "data-disk" for v in pod_spec.volumes)
+        assert [v.name for v in pod_spec.volumes] == ["system-disk"]
+
+    def test_system_disk_is_root_and_extra_mounts_keep_their_access(self):
+        from app.core.k8s.real import build_instance_pod
+
+        spec = InstancePodSpec(
+            **{
+                **_spec().__dict__,
+                "extra_mounts": (PodVolumeMount("orgmount-x", "/mnt/datasets", read_only=True),),
+            }
+        )
+        pod_spec = cast(Any, build_instance_pod(spec)).spec
+        claims = {v.name: v.persistent_volume_claim for v in pod_spec.volumes}
+        assert claims["system-disk"].claim_name == "inst-1-root"
+        assert claims["mount-0"].claim_name == "orgmount-x"
+        assert claims["mount-0"].read_only is True
+        mounts = {m.name: m for m in pod_spec.containers[0].volume_mounts}
+        assert mounts["system-disk"].mount_path == "/root"
+        assert (mounts["mount-0"].mount_path, mounts["mount-0"].read_only) == (
+            "/mnt/datasets",
+            True,
+        )
 
 
 class TestInstancePodBandwidth:

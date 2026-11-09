@@ -158,7 +158,9 @@
       "recharge": "Top-up",
       "consume": "Usage",
       "refund": "Refund",
-      "adjust": "Adjustment"
+      "adjust": "Adjustment",
+      "transfer_in": "Transfer in",
+      "transfer_out": "Transfer out"
     },
     "nodeEnroll": {
       "expired": "Expired",
@@ -313,6 +315,18 @@
       "info": "Info",
       "warning": "Warning",
       "critical": "Critical"
+    },
+    "customImage": {
+      "uploading": "Uploading",
+      "importing": "Importing",
+      "ready": "Ready",
+      "failed": "Failed",
+      "deleting": "Deleting"
+    },
+    "orgMount": {
+      "checking": "Checking",
+      "ready": "Ready",
+      "failed": "Check failed"
     }
   },
   "filter": {

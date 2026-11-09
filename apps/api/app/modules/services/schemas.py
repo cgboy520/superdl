@@ -30,7 +30,6 @@ class ServiceSpecIn(BaseModel):
     gpu_count: int = Field(default=1, ge=0, le=8)
     image_ref: str = Field(min_length=1, max_length=256)
     ssh_key_ids: list[int] = Field(default_factory=list, max_length=MAX_SSH_KEYS_PER_REQUEST)
-    data_disk_id: int | None = None
     with_ssh: bool = False
     container_command: list[ArgvItem] | None = Field(default=None, max_length=MAX_CONTAINER_ARGV)
     container_args: list[ArgvItem] | None = Field(default=None, max_length=MAX_CONTAINER_ARGV)

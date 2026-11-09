@@ -112,6 +112,7 @@ type = "independence"
 modules = [
     "app.modules.account",
     "app.modules.catalog",
+    "app.modules.customimages",
     "app.modules.orchestrator",
     "app.modules.services",
     "app.modules.billing",

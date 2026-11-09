@@ -11,7 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 WRITERS = (
     "superdl-api", "superdl-worker", "superdl-worker-tenant-mgr",
-    "superdl-worker-node-mgr", "superdl-worker-prewarm", "superdl-worker-disk-ops",
+    "superdl-worker-node-mgr", "superdl-worker-prewarm", "superdl-worker-image-ops",
 )
 COUNTS = dict(zip(WRITERS, (3, 4, 2, 1, 0, 2)))
 PREFIX = "registry.invalid/superdl"

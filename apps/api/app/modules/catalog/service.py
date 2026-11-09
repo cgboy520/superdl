@@ -114,10 +114,12 @@ async def list_market_skus(
         stmt = stmt.where(Sku.gpu_model == gpu_model)
     skus = list((await session.execute(stmt)).scalars().all())
     counts = await inventory.get_available_counts(session, skus)
+    archs = await nodes_service.archs_by_pool(session)
     out: list[SkuMarketOut] = []
     for sku in skus:
         item = SkuMarketOut.model_validate(sku)
         item.available_count = counts.get(sku.id, 0)
+        item.archs = sorted(archs.get(sku.pool_label, ()))
         out.append(item)
     return out
 

@@ -20,6 +20,7 @@ from app.modules.account.schemas import (
     HandleConfirmRequest,
     KycSubmitRequest,
     LoginRequest,
+    PasswordChange,
     PasswordResetRequest,
     RegisterRequest,
     SshKeyCreate,
@@ -168,6 +169,22 @@ async def reset_password(
         client_ip=client_ip(request),
     )
     set_audit_target(request, f"user:{pair.user.id}", detail={"action": "password_reset"})
+    _set_refresh_cookie(response, pair.refresh_token)
+    return _token_pair_out(pair)
+
+
+@router.post("/me/password")
+async def change_password(
+    body: PasswordChange,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+    response: Response,
+) -> TokenPairOut:
+    """Change the password of the signed-in account with the current one (tenant usernames have
+    no code channel); every other session is revoked and a fresh token pair is issued."""
+    pair = await service.change_password(session, user, body.current_password, body.new_password)
+    set_audit_target(request, f"user:{user.id}", detail={"action": "password_change"})
     _set_refresh_cookie(response, pair.refresh_token)
     return _token_pair_out(pair)
 

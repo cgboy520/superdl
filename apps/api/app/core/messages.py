@@ -19,6 +19,7 @@ MESSAGES: dict[str, str] = {
     "account.codeSendFailed": "Could not send the verification code, please try again later",
     "account.codeTooFrequent": "Too many requests, try again in {seconds} s",
     "account.credentialRequired": "Provide an SMS code or password",
+    "account.currentPasswordWrong": "The current password is incorrect",
     "account.deletionBalanceRemaining": (
         "Balance {balance} not withdrawn — withdraw it via the refund process first, then "
         "delete the account after it arrives"
@@ -31,11 +32,13 @@ MESSAGES: dict[str, str] = {
         "You still have {instances} unreleased instance(s) and {disks} undeleted data disk(s) "
         "— clear all resources before deleting your account"
     ),
+    "account.deletionManaged": (
+        "This account was created by your tenant; ask the tenant's admins to delete it"
+    ),
     "account.deletionNotCancellable": "Deletion request is {status} and cannot be cancelled",
     "account.deletionNotPending": "Deletion request is {status} and cannot be processed",
     "account.deletionOrgOwner": (
-        "You own an organization with {members} other member(s) — transfer ownership or "
-        "dissolve it first"
+        "You own a tenant with {members} other member(s) — transfer ownership or dissolve it first"
     ),
     "account.emailRequiredFirst": "Add an email address before removing the phone number",
     "account.emailTaken": "This email is already registered — sign in instead",
@@ -45,6 +48,7 @@ MESSAGES: dict[str, str] = {
     "account.kycRegionUnsupported": (
         "The identity-verification provider needs a +86 phone number on the account"
     ),
+    "account.loginDisabled": "Sign-in to this account is turned off by your tenant's admins",
     "account.loginFailed": "Incorrect account or credentials",
     "account.phoneRegionNotAllowed": (
         "This site only accepts phone numbers with dial codes: {codes}"
@@ -73,6 +77,11 @@ MESSAGES: dict[str, str] = {
         "Please read and accept the Terms of Service and Privacy Policy first"
     ),
     "account.userFrozen": "Account frozen — contact support",
+    "account.userNotFound": "Account not found",
+    "account.usernameNoCode": (
+        "Tenant usernames have no email or SMS channel: sign in with the password, or ask "
+        "the tenant's admins to reset it"
+    ),
     "adminapi.adjustAlreadyProcessed": "Adjustment already processed",
     "adminapi.adjustNotZero": "Adjustment amount cannot be 0",
     "adminapi.adjustReviewerTooNew": (
@@ -321,6 +330,49 @@ MESSAGES: dict[str, str] = {
     "common.retryableConflict": "Conflicts with another operation in progress — please retry",
     "common.unauthorized": "Not signed in or session expired",
     "common.validation": "Request validation failed",
+    "customImages.archUnavailable": "This image is built for {arch}; the spec's nodes run {archs}",
+    "customImages.chunkIndex": "Chunk index out of range",
+    "customImages.chunkMismatch": "The chunk's size or checksum does not match; send it again",
+    "customImages.chunksMissing": "Some chunks have not arrived yet; upload them before completing",
+    "customImages.countQuota": (
+        "You already have {max} uploaded images, the limit; delete unused ones"
+    ),
+    "customImages.differentFile": "This is not the file the upload was started with",
+    "customImages.formatUnsupported": "Upload a Docker image archive: .tar, .tar.gz, .tgz or .zip",
+    "customImages.import.archUnsupported": "Only amd64 and arm64 images are supported",
+    "customImages.import.corrupt": "The archive is damaged or truncated",
+    "customImages.import.interrupted": "The import was interrupted; upload the archive again",
+    "customImages.import.layerMismatch": (
+        "A layer does not match the image config; the archive is inconsistent"
+    ),
+    "customImages.import.multipleImages": (
+        "The archive holds several images; save one image per archive"
+    ),
+    "customImages.import.notDockerArchive": (
+        "This is not a docker save archive (manifest.json is missing or invalid)"
+    ),
+    "customImages.import.notLinux": "Only Linux images are supported",
+    "customImages.import.registryNotConfigured": (
+        "The image registry is not set up for uploads yet; contact support"
+    ),
+    "customImages.import.tooLarge": "The unpacked image is too large",
+    "customImages.import.tooManyLayers": "The image has too many layers (at most 127)",
+    "customImages.importing": "The image is still being imported; wait until it finishes",
+    "customImages.inUse": "{count} instance(s) still use this image; release them first",
+    "customImages.nameTagTaken": "You already have an image {ref}; choose another tag",
+    "customImages.notFound": "Image not found",
+    "customImages.notUsable": (
+        "This image is not yours and not shared with your tenant, or not ready"
+    ),
+    "customImages.realNameRequired": (
+        "Regulations require identity verification before uploading images — complete it "
+        "under Settings · Identity Verification first"
+    ),
+    "customImages.storageQuota": "Your uploaded images would exceed {max} GB; delete unused ones",
+    "customImages.uploadClosed": (
+        "The upload is closed (finished, expired or deleted); start a new one"
+    ),
+    "customImages.uploadTooLarge": "The archive is larger than {max} GB, the limit",
     "disks.capacityQuota": (
         "Total data disk capacity would exceed the limit ({max} GB) — delete unused disks or "
         "contact support to raise it"
@@ -329,12 +381,14 @@ MESSAGES: dict[str, str] = {
         "Data disk limit reached ({max}) — delete unused disks or contact support to raise it"
     ),
     "disks.expandNeedsActive": "Only active data disks can be expanded",
-    "disks.inUseDelete": "The data disk is mounted — release the instance first",
-    "disks.mountedElsewhere": "The data disk is mounted on another instance",
-    "disks.notMountable": "The data disk cannot be mounted in its current state",
-    "disks.notProvisioned": (
-        "Data disk is still being provisioned — retry shortly; contact support if it persists"
+    "disks.inUseDelete": (
+        "The data disk is mounted on running instances ({names}) — stop them first"
     ),
+    "disks.mountPathInvalid": (
+        "Mount point must be /data, /data<suffix>, /workspace<suffix> or /mnt/<name> "
+        "(letters, digits, dot, dash, underscore; /mnt/org is reserved)"
+    ),
+    "disks.mountPathTaken": "Another of your disks already mounts at {path}",
     "disks.realNameRequired": (
         "Regulations require identity verification before provisioning storage — complete it "
         "under Settings · Identity Verification first"
@@ -395,11 +449,11 @@ MESSAGES: dict[str, str] = {
     "netgw.nameReserved": "The name {name} is reserved",
     "netgw.nameTaken": "The name {name} is already used by one of your gateways or forwards",
     "netgw.notFound": "Gateway not found",
-    "netgw.orgGatewayQuota": "The organization already has the maximum of {max} gateways",
-    "netgw.orgL3Required": "Organization gateways provide whole-subnet access — enable it",
-    "netgw.orgNameTaken": "The organization already has a gateway named {name}",
+    "netgw.orgGatewayQuota": "The tenant already has the maximum of {max} gateways",
+    "netgw.orgL3Required": "Tenant gateways provide whole-subnet access — enable it",
+    "netgw.orgNameTaken": "The tenant already has a gateway named {name}",
     "netgw.orgRemoteNotPrivate": (
-        "Organization gateways tunnel private networks only: {cidr} is not inside 10.0.0.0/8, "
+        "Tenant gateways tunnel private networks only: {cidr} is not inside 10.0.0.0/8, "
         "172.16.0.0/12, 192.168.0.0/16 or 100.64.0.0/10"
     ),
     "netgw.openvpnProfileInvalid": "The OpenVPN profile is not accepted: {reason}",
@@ -441,9 +495,8 @@ MESSAGES: dict[str, str] = {
         "console and regenerate"
     ),
     "nodes.nodeHasInstances": (
-        "This node still has {count} instance(s) that are not released. Release them first (a "
-        "stopped instance's instance disk is pinned to this node and will not start after a "
-        "pool change)."
+        "{count} instance(s) still run on this node. Stop or release them first (stopped "
+        "instances keep their disks on the storage cluster and start on any node)."
     ),
     "nodes.enrollmentNotFound": "Enrollment record not found",
     "nodes.nodeNotFound": (
@@ -468,9 +521,9 @@ MESSAGES: dict[str, str] = {
     "nodes.regenerateNotAllowed": (
         "Status {status} does not allow regeneration (only pending/expired/failed)"
     ),
-    "nodes.storageClassMissing": (
-        "Cluster storage is not ready (missing {names}), so this cannot be provisioned right "
-        "now — please contact platform operations"
+    "nodes.storageNotReady": (
+        "Cluster storage is not ready, so this cannot be provisioned right now — please contact "
+        "platform operations"
     ),
     "orchestrator.accessNeedsRunning": "Connection info is available while the instance is running",
     "orchestrator.convertNeedsRunningOrStopped": (
@@ -534,11 +587,6 @@ MESSAGES: dict[str, str] = {
         "The {pool} pool has no allocatable CPU capacity right now. Try again later or pick "
         "another spec"
     ),
-    "orchestrator.nodeUnreachable": (
-        "The node hosting this instance's disk is unreachable and the instance cannot start "
-        "for now — the platform is handling it. Data stays on that node's local disk; contact "
-        "support if it persists"
-    ),
     "orchestrator.periodNotEnabled": (
         "This spec does not support subscriptions; choose pay-as-you-go"
     ),
@@ -582,28 +630,62 @@ MESSAGES: dict[str, str] = {
         "CPU instances would exceed your vCPU limit ({max} vCPU). Release one first or "
         "contact support to raise the limit"
     ),
-    "orgs.alreadyMember": "You already belong to an organization — leave it first",
+    "orgs.alreadyMember": "You already belong to a tenant — leave it first",
     "orgs.cannotRemoveOwner": "The owner cannot be removed",
-    "orgs.confirmNameMismatch": "The name you typed does not match the organization name",
+    "orgs.codeLocked": (
+        "The tenant code is part of the usernames of the accounts it created and cannot "
+        "change while any exists"
+    ),
+    "orgs.codeTaken": "The tenant code {code} is already used",
+    "orgs.confirmNameMismatch": "The name you typed does not match the tenant name",
     "orgs.consentOutdated": (
         "What administrators can see has changed — review it again before accepting"
     ),
-    "orgs.dissolved": "The organization has been dissolved",
+    "orgs.dissolveHasManagedUsers": (
+        "The tenant still has {count} account(s) it created; delete them first"
+    ),
+    "orgs.dissolved": "The tenant has been dissolved",
     "orgs.invitationNotFound": "Invitation not found",
     "orgs.invitationNotPending": "The invitation is {status}",
-    "orgs.invitationQuota": "The organization already has the maximum of {max} pending invitations",
+    "orgs.invitationQuota": "The tenant already has the maximum of {max} pending invitations",
+    "orgs.managedCannotLeave": (
+        "This account was created by the tenant and cannot leave it; ask its admins"
+    ),
+    "orgs.managedHasBalance": (
+        "The account still holds {balance}; take the balance back before deleting it"
+    ),
+    "orgs.managedHasResources": (
+        "The account still has {instances} instance(s) and {disks} data disk(s); release them first"
+    ),
+    "orgs.managedSelf": "Use your own account settings for your own account",
+    "orgs.managedUseDelete": (
+        "Accounts the tenant created are not removed from it: delete the account instead"
+    ),
     "orgs.memberNotFound": "Member not found",
-    "orgs.memberQuota": "The organization already has the maximum of {max} members",
-    "orgs.notFound": "Organization not found",
-    "orgs.notMember": "You are not in an organization",
+    "orgs.memberQuota": "The tenant already has the maximum of {max} members",
+    "orgs.notFound": "Tenant not found",
+    "orgs.mountNameTaken": "The tenant already has a mount named {name}",
+    "orgs.mountNotFound": "Storage mount not found",
+    "orgs.mountQuota": "The tenant already has {max} storage mounts, the limit",
+    "orgs.mountUserReserved": ("This cephx id belongs to the platform; enter the tenant's own key"),
+    "orgs.notManaged": "Only accounts this tenant created can be managed this way",
+    "orgs.notMember": "You are not in a tenant",
     "orgs.ownerCannotLeave": (
-        "The owner cannot leave — transfer ownership or dissolve the organization first"
+        "The owner cannot leave — transfer ownership or dissolve the tenant first"
+    ),
+    "orgs.ownerMustBeOwnAccount": (
+        "The owner must be an account that signed up by itself, not one the tenant created"
     ),
     "orgs.ownerRoleViaTransfer": "Use ownership transfer to change the owner",
-    "orgs.realNameRequired": "Identity verification is required before creating an organization",
-    "orgs.roleNotAllowed": "Your role in the organization does not allow this",
-    "orgs.transferTargetInvalid": "Choose another member of the organization as the new owner",
-    "orgs.useLeave": "To remove yourself, leave the organization",
+    "orgs.realNameRequired": "Identity verification is required before creating a tenant",
+    "orgs.reclaimNotManaged": "Balance can only be taken back from accounts this tenant created",
+    "orgs.roleNotAllowed": "Your role in the tenant does not allow this",
+    "orgs.transferAmount": "Enter an amount above zero",
+    "orgs.transferSelf": "Choose another member",
+    "orgs.transferTargetInvalid": "Choose another member of the tenant as the new owner",
+    "orgs.useLeave": "To remove yourself, leave the tenant",
+    "orgs.usernamesDuplicate": "The list repeats a username",
+    "orgs.usernamesTaken": "These usernames already exist: {names}",
     "services.apiKeyInvalid": "Invalid API key",
     "services.apiKeyNotFound": "API key not found",
     "services.apiKeyQuota": (

@@ -1,3 +1,7 @@
+# Local LVM volumes for platform components only (Prometheus, Loki, acme-dns, CloudNativePG):
+# tenant system and data disks live on the external Ceph cluster. lvmd and the node plugin run on
+# the nodes labelled superdl.io/infra-storage=true, which carry the superdl-infra volume group
+# (see runbooks/ceph-storage.md); GPU nodes carry none.
 storageClasses:
   - name: topolvm-provisioner
     storageClass:
@@ -8,10 +12,14 @@ storageClasses:
       allowVolumeExpansion: true
 lvmd:
   deviceClasses:
-    - name: nvme
-      volume-group: superdl-nvme
+    - name: infra
+      volume-group: superdl-infra
       default: true
-      spare-gb: 50
+      spare-gb: 10
+  nodeSelector:
+    superdl.io/infra-storage: "true"
+  tolerations:
+    - operator: Exists
   volumeMounts:
     - name: lvmd-socket-dir
       mountPath: /run/topolvm
@@ -22,3 +30,8 @@ lvmd:
     - name: lvm-config
       configMap:
         name: topolvm-lvm-config
+node:
+  nodeSelector:
+    superdl.io/infra-storage: "true"
+  tolerations:
+    - operator: Exists

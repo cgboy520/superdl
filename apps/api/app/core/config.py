@@ -58,7 +58,7 @@ _WORKER_SECRET_DOMAINS: dict[str, frozenset[str]] = {
     "tenant-mgr": frozenset({"crypto", "registry"}),
     "node-mgr": frozenset({"crypto"}),
     "prewarm": frozenset({"crypto", "registry"}),
-    "disk-ops": frozenset(),
+    "image-ops": frozenset({"crypto", "registry"}),
 }
 
 
@@ -112,6 +112,10 @@ class Settings(BaseSettings):
     recharge_min: str = "1.00"
     recharge_max: str = "50000.00"
     recharge_presets: str = "50,100,500"
+    max_custom_images_per_user: int = 20
+    max_custom_image_gb_per_user: int = 200
+    custom_image_max_upload_gb: int = 50
+    image_upload_dir: str = "/var/lib/superdl/uploads"
     disk_min_gb: int = 10
     disk_max_gb: int = 4096
     disk_grace_days: int = 7
@@ -155,7 +159,20 @@ class Settings(BaseSettings):
     registry_robot_secret: str = ""
     registry_ca_pem: str = ""
     registry_proxy_projects: str = ""
+    registry_user_project: str = "superdl-users"
+    registry_push_robot_name: str = ""
+    registry_push_robot_secret: str = ""
     image_allowed_registries: str = ""
+    ceph_fsid: str = ""
+    ceph_mon_host: str = ""
+    ceph_fs_name: str = "cephfs"
+    ceph_subvolume_group: str = ""
+    ceph_pool_layout: str = ""
+    ceph_namespace_isolated: bool = True
+    ceph_admin_id: str = ""
+    ceph_admin_key: str = ""
+    ceph_auth_prefix: str = "superdl."
+    ceph_mount_options: str = "ms_mode=prefer-crc"
 
     max_instances_per_user: int = 10
     max_gpus_per_user: int = 8
@@ -225,6 +242,7 @@ class Settings(BaseSettings):
 
     org_max_members: int = Field(default=50, ge=2, le=500)
     org_max_pending_invitations: int = Field(default=50, ge=1, le=500)
+    org_max_mounts: int = Field(default=8, ge=0, le=64)
 
     alertmanager_token: str | None = None
     grafana_url: str = ""

@@ -19,6 +19,10 @@ import {
   getWalletApiV1WalletGet,
   instancesMetricsSummaryApiV1MetricsInstancesGet,
   listDisksApiV1DisksGet,
+  getImageApiV1CustomImagesUuidGet,
+  listImagesApiV1CustomImagesGet,
+  listMountsApiV1OrgMountsGet,
+  listTransfersApiV1OrgTransfersGet,
   getConfigApiV1NetgwConfigGet,
   getDisclosureApiV1OrgDisclosureGet,
   getMyOrgApiV1OrgGet,
@@ -57,9 +61,11 @@ import {
 import type {
   ApiError,
   ApiKeyOut,
+  CustomImageOut,
   GatewayLogsApiV1NetgwGatewaysUuidLogsGetParams,
   GatewayOut,
   OrgGatewayOut,
+  OrgMountOut,
   GetInstanceLogsApiV1InstancesUuidLogsGetParams,
   GetInstanceMetricsApiV1InstancesUuidMetricsGetParams,
   GetServiceLogsApiV1ServicesSlugLogsGetParams,
@@ -149,6 +155,22 @@ export const useImages = () => useQuery({ queryKey: keys.images, queryFn: () => 
 export const useSshKeys = () => useQuery({ queryKey: keys.sshKeys, queryFn: () => listSshKeysApiV1SshKeysGet() });
 export const useDisks = (opts?: QueryOpts) =>
   useQuery({ queryKey: keys.disks, queryFn: () => listDisksApiV1DisksGet(), ...opts });
+/** Uploaded images: the caller's own (any state) plus the ready ones tenant members share; polled while any imports. */
+export const useCustomImages = (opts?: QueryOpts<CustomImageOut[]>) =>
+  useQuery({
+    queryKey: keys.customImages.all,
+    queryFn: () => listImagesApiV1CustomImagesGet(),
+    refetchInterval: (query) =>
+      query.state.data?.some((i) => i.status === "importing" || i.status === "deleting") ? POLL.transient : false,
+    ...opts,
+  });
+/** One upload with its received-chunk bitmap (resume after a reload). */
+export const useCustomImage = (uuid: string, opts?: QueryOpts<CustomImageOut>) =>
+  useQuery({
+    queryKey: keys.customImages.detail(uuid),
+    queryFn: () => getImageApiV1CustomImagesUuidGet(uuid),
+    ...opts,
+  });
 /** Private-network gateways: availability / limits / egress addresses, then the gateway list (with forwards). */
 export const useNetgwConfig = () =>
   useQuery({ queryKey: keys.netgw.config, queryFn: () => getConfigApiV1NetgwConfigGet() });
@@ -203,6 +225,17 @@ export const useReceivedInvitations = (opts?: QueryOpts) =>
   });
 export const useOrgFinance = (opts?: QueryOpts) =>
   useQuery({ queryKey: keys.org.finance, queryFn: () => orgFinanceApiV1OrgFinanceGet(), staleTime: 0, ...opts });
+/** Tenant storage mounts (admins see the Ceph user and path); polled while a check runs. */
+export const useOrgMounts = (opts?: QueryOpts<OrgMountOut[]>) =>
+  useQuery({
+    queryKey: keys.org.mounts,
+    queryFn: () => listMountsApiV1OrgMountsGet(),
+    refetchInterval: (query) => (query.state.data?.some((m) => m.status === "checking") ? POLL.transient : false),
+    ...opts,
+  });
+/** Balance moves between tenant admins and the accounts they created, newest first. */
+export const useOrgTransfers = (opts?: QueryOpts) =>
+  useQuery({ queryKey: keys.org.transfers, queryFn: () => listTransfersApiV1OrgTransfersGet(), staleTime: 0, ...opts });
 /** Lightweight whole-table view (first 100; dashboard counts / storage page / support link selection); the list page uses useInstancePages. */
 export const useInstances = (opts?: QueryOpts<PageInstanceOut>) =>
   useQuery<PageInstanceOut, ApiError, InstanceOut[]>({
@@ -251,23 +284,32 @@ export function useTransientRefresh<T>(opts: {
         q.state.data && isTransient(q.state.data.status) ? POLL.transient : false,
     })),
   });
-  const statusesKey = results.map((r) => r.data?.status ?? "").join(",");
+  const statusesKey = results.map((r) => `${r.data?.status ?? ""}@${String(r.dataUpdatedAt)}`).join(",");
+  const rowsKey = rows.map((r) => `${idOf(r)}=${statusOf(r)}`).join(",");
+  /** Per transitional id: the detail's dataUpdatedAt when the row entered the set (cached data is not a fresh poll). */
+  const entered = useRef(new Map<string, number>());
   const lastSeen = useRef(new Map<string, string>());
   useEffect(() => {
+    const rowStatus = new Map(rowsKey.split(",").map((pair) => pair.split("=") as [string, string]));
     let changed = false;
     const alive = new Set(transientIds);
     for (const [i, id] of transientIds.entries()) {
-      const status = results[i]?.data?.status;
-      if (!status) continue;
-      const prev = lastSeen.current.get(id);
+      const result = results[i];
+      if (!entered.current.has(id)) entered.current.set(id, result?.dataUpdatedAt ?? 0);
+      const status = result?.data?.status;
+      if (!status || result.dataUpdatedAt === entered.current.get(id)) continue;
+      if (lastSeen.current.get(id) === status) continue;
       lastSeen.current.set(id, status);
-      if (prev !== undefined && prev !== status) changed = true;
+      if (status !== rowStatus.get(id)) changed = true;
     }
-    for (const id of [...lastSeen.current.keys()]) {
-      if (!alive.has(id)) lastSeen.current.delete(id);
+    for (const id of [...entered.current.keys()]) {
+      if (!alive.has(id)) {
+        entered.current.delete(id);
+        lastSeen.current.delete(id);
+      }
     }
     if (changed) void queryClient.invalidateQueries({ queryKey: listPrefix });
-  }, [statusesKey, transientIds, results, queryClient, listPrefix]);
+  }, [statusesKey, rowsKey, transientIds, results, queryClient, listPrefix]);
 }
 
 /** Light per-instance polling of transitional instances (creating/starting/stopping/releasing). */

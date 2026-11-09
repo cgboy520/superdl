@@ -145,7 +145,7 @@ class TestBlockedPortRecheck:
 
 
 class TestStartingTimeout:
-    async def test_starting_timeout_fails_and_keeps_disk(self, client, sm, fake):
+    async def test_starting_timeout_fails_and_keeps_disk(self, client, sm, fake, ceph):
         """starting timeout takes the starting→failed edge: Pod cleared, port returned, instance
         disk kept."""
         headers, uuid, user_id = await provision_running(
@@ -156,7 +156,7 @@ class TestStartingTimeout:
         await drain(sm)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "stopped"
-        disk_marker = fake.instance_disks[(ns, uuid)]
+        disk_marker = fake.ceph_volumes[(ns, f"{uuid}-root")]
 
         await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
         await drain(sm)
@@ -166,20 +166,21 @@ class TestStartingTimeout:
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
         assert (ns, uuid) not in fake.pods
         await drain(sm)
-        assert fake.instance_disks[(ns, uuid)] == disk_marker
+        assert fake.ceph_volumes[(ns, f"{uuid}-root")] == disk_marker
+        assert not ceph.removed
         async with sm() as session:
             ports = (await session.execute(select(PortAllocation.instance_id))).scalars().all()
         assert all(p is None for p in ports)
 
 
 class TestFailedRecovery:
-    async def test_start_from_failed_reuses_instance_disk(self, client, sm, fake):
+    async def test_start_from_failed_reuses_instance_disk(self, client, sm, fake, ceph):
         """failed → start recovery edge: restarts on the same instance disk."""
         headers, uuid, user_id = await provision_running(
             client, sm, fake, "u13900000101@test.local"
         )
         ns = f"tenant-{user_id}"
-        disk_marker = fake.instance_disks[(ns, uuid)]
+        disk_marker = fake.ceph_volumes[(ns, f"{uuid}-root")]
         fake.kill_pod(ns, uuid)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
@@ -191,7 +192,8 @@ class TestFailedRecovery:
         fake.mark_ready(ns, uuid)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "running"
-        assert fake.instance_disks[(ns, uuid)] == disk_marker
+        assert fake.ceph_volumes[(ns, f"{uuid}-root")] == disk_marker
+        assert not ceph.removed
         events = (await client.get(f"/api/v1/instances/{uuid}/events", headers=headers)).json()[
             "items"
         ]
@@ -199,9 +201,9 @@ class TestFailedRecovery:
         assert ("failed", "stopped") in chain
         assert ("stopped", "starting") in chain
 
-    async def test_start_from_failed_rejects_unprovisioned_disk(self, client, sm, fake):
-        """failed recovery start goes through the mount gate: data disk provisioned=false → 409,
-        the instance stays failed."""
+    async def test_start_from_failed_mounts_a_growing_disk(self, client, sm, fake):
+        """failed recovery start while the data disk is being grown: the disk already has its
+        subvolume, so the new Pod mounts it at /data and the quota catches up in place."""
         headers, user_id, key_id = await funded_user(
             client, sm, "u13900000109@test.local", "500.00"
         )
@@ -210,12 +212,7 @@ class TestFailedRecovery:
         await drain(sm)
         resp = await client.post(
             "/api/v1/instances",
-            json={
-                "sku_id": sku_id,
-                "image_ref": "img",
-                "ssh_key_ids": [key_id],
-                "data_disk_id": disk["id"],
-            },
+            json={"sku_id": sku_id, "image_ref": "img", "ssh_key_ids": [key_id]},
             headers=headers,
         )
         assert resp.status_code == 202, resp.text
@@ -234,9 +231,10 @@ class TestFailedRecovery:
         assert resp.json()["provisioned"] is False
 
         resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
-        assert resp.status_code == 409, resp.text
-        assert resp.json()["message_key"] == "disks.notProvisioned"
-        assert (await get_instance(client, headers, uuid))["status"] == "failed"
+        assert resp.status_code == 200, resp.text
+        await drain(sm)
+        mounts = fake.pods[(ns, uuid)].spec.extra_mounts
+        assert [(m.pvc_name, m.mount_path) for m in mounts] == [(f"disk-{disk['uuid']}", "/data")]
 
     async def test_release_from_stuck_stopping(self, client, sm, fake):
         """A user may release a stuck stop directly (stopping → releasing edge)."""
@@ -338,7 +336,7 @@ class TestStuckEscape:
         assert counts["to_released"] == 1
         assert (await get_instance(client, headers, uuid))["status"] == "released"
         await drain(sm)
-        assert (ns, uuid) not in fake.instance_disks
+        assert (ns, f"{uuid}-root") not in fake.ceph_volumes
 
     async def test_stopping_reenqueue_ignores_expired_lease(self, client, sm, fake):
         """An expired locked_at lease on the running delete task is not in flight; the stuck check
@@ -582,7 +580,7 @@ class TestRetentionGC:
         fake.kill_pod(ns, uuid)
         await reconcile_once(sm)
         assert (await get_instance(client, headers, uuid))["status"] == "failed"
-        assert (ns, uuid) in fake.instance_disks
+        assert (ns, f"{uuid}-root") in fake.ceph_volumes
 
         await _backdate_status(sm, uuid, "failed", timedelta(days=8))
         await _backdate_created(sm, uuid, timedelta(days=8))
@@ -594,7 +592,7 @@ class TestRetentionGC:
         await drain(sm)
         await reconcile_once(sm)
         await drain(sm)
-        assert (ns, uuid) not in fake.instance_disks
+        assert (ns, f"{uuid}-root") not in fake.ceph_volumes
 
     async def test_stopped_instance_gc_warn_then_reclaim(self, client, sm, fake):
         """stopped retention (default 30 days): warned first (default 7 days ahead), then released
@@ -920,7 +918,7 @@ class TestNeverReadyOccupancy:
             assert sum(b.amount for b in bills) > 0
             assert await wallet.get_balance(session, user_id) < before
         await drain(sm)
-        assert (ns, uuid) in fake.instance_disks
+        assert (ns, f"{uuid}-root") in fake.ceph_volumes
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         assert any("health check timed out" in n["title"] for n in notes)
 
@@ -996,7 +994,7 @@ class TestNeverReadyOccupancy:
         await drain(sm)
         async with sm() as session:
             assert (await session.execute(select(BillHourly))).scalars().all() == []
-        assert (ns, uuid) not in fake.instance_disks
+        assert (ns, f"{uuid}-root") not in fake.ceph_volumes
 
     async def test_billing_candidates_include_boot_failures(self, sm):
         inst, _ = await seed_instance(

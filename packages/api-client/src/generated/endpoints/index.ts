@@ -3,6 +3,7 @@ export * from "./admin/admin";
 export * from "./admin-netgw/admin-netgw";
 export * from "./billing/billing";
 export * from "./catalog/catalog";
+export * from "./custom-images/custom-images";
 export * from "./disks/disks";
 export * from "./instances/instances";
 export * from "./legal/legal";

@@ -75,7 +75,10 @@ class Instance(Base):
     ssh_port: Mapped[int | None]
     jupyter_token: Mapped[str] = mapped_column(String(160))
     authorized_keys: Mapped[list[str]] = mapped_column(JSONB, default=list)
-    data_disk_id: Mapped[int | None]
+    data_disk_ids: Mapped[list[int]] = mapped_column(JSONB, default=list, server_default="[]")
+    system_disk_path: Mapped[str | None] = mapped_column(String(255))
+    system_disk_bytes_used: Mapped[int | None] = mapped_column(BigInteger)
+    disk_usage_checked_at: Mapped[datetime | None]
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     frozen_deadline: Mapped[datetime | None]
@@ -122,17 +125,19 @@ class PortAllocation(Base):
 
 
 class DataDisk(Base):
-    """Data disk: independent of the instance lifecycle; one CephFS PVC per disk (named
-    disk-<uuid>), mount point /root/data."""
+    """Data disk: independent of the instance lifecycle; one subvolume of the external CephFS
+    cluster per disk, bound as the static PVC disk-<uuid>. Every disk of a user is mounted on all
+    of that user's instances at mount_path (default /data, unique per user)."""
 
     __tablename__ = "data_disks"
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key"),
         Index(
-            "uq_data_disks_mounted_instance",
-            "mounted_instance_id",
+            "uq_data_disks_user_mount_path",
+            "user_id",
+            "mount_path",
             unique=True,
-            postgresql_where=text("mounted_instance_id IS NOT NULL"),
+            postgresql_where=text("status <> 'deleted'"),
         ),
     )
 
@@ -145,9 +150,12 @@ class DataDisk(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
-    mounted_instance_id: Mapped[int | None] = mapped_column(index=True)
+    mount_path: Mapped[str] = mapped_column(String(64), default="/data", server_default="/data")
     grace_started_at: Mapped[datetime | None]
     grace_ended_at: Mapped[datetime | None]
     frozen_started_at: Mapped[datetime | None]
     provisioned: Mapped[bool] = mapped_column(default=False, server_default="false")
+    ceph_path: Mapped[str | None] = mapped_column(String(255))
+    bytes_used: Mapped[int | None] = mapped_column(BigInteger)
+    usage_checked_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

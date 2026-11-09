@@ -37,7 +37,7 @@ import { useCreateDisk, useCreateService } from "../api/mutations";
 import { useDisks, usePolicies, useSkus, useWallet } from "../api/queries";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { useConsentGate } from "../components/ConsentGate";
-import { DataDiskCard, defaultDiskName, type DiskMode } from "../components/create/DataDiskCard";
+import { StorageCard, hasDataDisk, type DiskMode } from "../components/create/StorageCard";
 import { SkuPicker } from "../components/create/SkuPicker";
 import { SshKeyPicker } from "../components/create/SshKeyPicker";
 import { PeriodQuoteRows, periodQuoteOf, usePeriodDiscounts } from "../components/periodBilling";
@@ -46,6 +46,7 @@ import { PublicAccessFields } from "../components/services/PublicAccessCard";
 import { BillingModeCard, type BillingMode } from "../components/skuTable";
 import { SpotPriceInline, spotPriceOf, useSpotPolicy } from "../components/spotBilling";
 import { parseDeployDeepLink } from "../lib/deployLink";
+import { DEFAULT_MOUNT_PATH, defaultDiskName } from "../lib/disks";
 import { requireAuth } from "../lib/guard";
 import {
   commandToList,
@@ -104,7 +105,6 @@ function DeployPage() {
   const [diskMode, setDiskMode] = useState<DiskMode>("none");
   const [newDiskName, setNewDiskName] = useState(defaultDiskName);
   const [newDiskGb, setNewDiskGb] = useState<number>();
-  const [existingDiskId, setExistingDiskId] = useState<number>();
   const [servicePort, setServicePort] = useState<number | null>(null);
   const [healthPath, setHealthPath] = useState("");
   const [requireApiKey, setRequireApiKey] = useState(true);
@@ -131,7 +131,6 @@ function DeployPage() {
     diskMode !== "none" ||
     newDiskName !== mountSnapshot.newDiskName ||
     newDiskGb != null ||
-    existingDiskId != null ||
     servicePort != null ||
     healthPath.trim() !== "" ||
     !requireApiKey ||
@@ -171,12 +170,8 @@ function DeployPage() {
       : undefined;
   const expiresAt = period ? new Date(mountedAt + PERIOD_HOURS[period] * periodCount * 3_600_000).toISOString() : null;
   const diskPriceGbMonth = policies?.disk_price_gb_month;
-  const diskGb =
-    diskMode === "new"
-      ? diskGbValue
-      : diskMode === "existing"
-        ? ((disks ?? []).find((d) => d.id === existingDiskId)?.size_gb ?? 0)
-        : 0;
+  const creatingDisk = diskMode === "new" && !hasDataDisk(disks);
+  const diskGb = creatingDisk ? diskGbValue : 0;
   const diskDaily =
     diskPriceGbMonth === undefined
       ? undefined
@@ -248,10 +243,9 @@ function DeployPage() {
       imageRef,
       (withSsh ? [...keyIds].sort((a, b) => a - b) : []).join(","),
       name.trim() || null,
-      diskMode,
-      existingDiskId ?? null,
-      diskMode === "new" ? newDiskName.trim() : null,
-      diskMode === "new" ? diskGbValue : null,
+      creatingDisk ? 1 : 0,
+      creatingDisk ? newDiskName.trim() : null,
+      creatingDisk ? diskGbValue : null,
       servicePort,
       commandList.join(" "),
       argList.join(" "),
@@ -262,18 +256,20 @@ function DeployPage() {
       String(withSsh),
     ]);
     try {
-      let diskId: number | null = diskMode === "existing" ? (existingDiskId ?? null) : null;
-      if (diskMode === "new") {
-        let disk: DiskOut;
+      let createdDisk: DiskOut | null = null;
+      if (creatingDisk) {
         try {
-          disk = await createDisk.mutateAsync({
-            body: { name: newDiskName.trim() || defaultDiskName(), size_gb: diskGbValue },
+          createdDisk = await createDisk.mutateAsync({
+            body: {
+              name: newDiskName.trim() || defaultDiskName(),
+              size_gb: diskGbValue,
+              mount_path: DEFAULT_MOUNT_PATH,
+            },
             idempotencyKey,
           });
         } catch {
           return;
         }
-        diskId = disk.id;
       }
       try {
         await createService.mutateAsync({
@@ -283,7 +279,6 @@ function DeployPage() {
             image_ref: imageRef,
             ssh_key_ids: withSsh ? keyIds : [],
             name: name.trim() || null,
-            data_disk_id: diskId,
             ...(period
               ? { market: "subscription" as const, period, period_count: periodCount }
               : isSpot
@@ -306,7 +301,7 @@ function DeployPage() {
         } else {
           message.error(errText(err));
         }
-        if (diskMode === "new" && diskId != null) {
+        if (createdDisk) {
           message.warning(t("services.form.diskCreatedButDeployFailed"), 6);
         }
       }
@@ -386,8 +381,9 @@ function DeployPage() {
               onArgRows={setArgRows}
               envRows={envRows}
               onEnvRows={setEnvRows}
+              {...(sku?.archs ? { archs: sku.archs } : {})}
             />
-            <DataDiskCard
+            <StorageCard
               variant="section"
               mode={diskMode}
               onModeChange={setDiskMode}
@@ -395,8 +391,7 @@ function DeployPage() {
               onNewNameChange={setNewDiskName}
               newGb={diskGbValue}
               onNewGbChange={setNewDiskGb}
-              existingId={existingDiskId}
-              onExistingIdChange={setExistingDiskId}
+              {...(sku ? { systemDiskGb: sku.disk_gb } : {})}
             />
           </Space>
         </SectionAnchor>

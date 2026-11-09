@@ -154,7 +154,7 @@ class TestCreateLifecycle:
 
 
 class TestStopStartRestart:
-    async def test_stop_then_start(self, client, sm, fake):
+    async def test_stop_then_start(self, client, sm, fake, ceph):
         headers, uuid, user_id = await provision_running(client, sm, fake)
 
         resp = await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
@@ -167,7 +167,7 @@ class TestStopStartRestart:
 
         port_before = (await get_instance(client, headers, uuid))["ssh_port"]
 
-        disk_before = fake.instance_disks[(f"tenant-{user_id}", uuid)]
+        disk_before = fake.ceph_volumes[(f"tenant-{user_id}", f"{uuid}-root")]
 
         resp = await client.post(f"/api/v1/instances/{uuid}/start", headers=headers)
         assert resp.json()["status"] == "starting"
@@ -177,7 +177,8 @@ class TestStopStartRestart:
         data = await get_instance(client, headers, uuid)
         assert data["status"] == "running"
         assert data["ssh_port"] == port_before
-        assert fake.instance_disks[(f"tenant-{user_id}", uuid)] == disk_before
+        assert fake.ceph_volumes[(f"tenant-{user_id}", f"{uuid}-root")] == disk_before
+        assert not ceph.removed
 
     async def test_restart_waits_for_pod_to_actually_disappear(self, client, sm, fake):
         """Restart waits for the old Pod to vanish before recreating it under the same name."""
@@ -283,7 +284,7 @@ class TestFailureModes:
         ]
         assert events[0]["from_status"] == "running"
         assert events[0]["to_status"] == "failed"
-        assert (f"tenant-{user_id}", uuid) in fake.instance_disks
+        assert (f"tenant-{user_id}", f"{uuid}-root") in fake.ceph_volumes
         async with sm() as session:
             ports = (await session.execute(select(PortAllocation.instance_id))).scalars().all()
         assert all(p is None for p in ports)
@@ -315,7 +316,7 @@ class TestFailureModes:
         assert (f"tenant-{user_id}", uuid) not in fake.pods
         await drain(sm)
         await reconcile_once(sm)
-        assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
+        assert (f"tenant-{user_id}", f"{uuid}-root") not in fake.ceph_volumes
         notes = (await client.get("/api/v1/notifications", headers=headers)).json()["items"]
         assert any("scheduling timed out" in n["title"] for n in notes)
 
@@ -431,7 +432,7 @@ class TestRelease:
         await client.post(f"/api/v1/instances/{uuid}/stop", headers=headers)
         await drain(sm)
         await reconcile_once(sm)
-        assert (f"tenant-{user_id}", uuid) in fake.instance_disks
+        assert (f"tenant-{user_id}", f"{uuid}-root") in fake.ceph_volumes
         port = (await get_instance(client, headers, uuid))["ssh_port"]
 
         resp = await client.delete(f"/api/v1/instances/{uuid}", headers=headers)
@@ -448,7 +449,7 @@ class TestRelease:
             "items"
         ]
         assert events[0]["to_status"] == "released"
-        assert (f"tenant-{user_id}", uuid) not in fake.instance_disks
+        assert (f"tenant-{user_id}", f"{uuid}-root") not in fake.ceph_volumes
 
         async with sm() as session:
             row = (

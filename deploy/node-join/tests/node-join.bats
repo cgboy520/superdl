@@ -7,7 +7,6 @@ setup() {
   export SUPERDL_JOIN_STATE_DIR="$TMP/state"
   export SUPERDL_JOIN_LOG_FILE="$TMP/join.log"
   export SUPERDL_JOIN_ETC_DIR="$TMP/etc"
-  export SUPERDL_JOIN_LVM_DIR="$TMP/lvm"
   export SUPERDL_JOIN_RANCHER_STATE_DIR="$TMP/rancher"
   export SUPERDL_JOIN_IOMMU_DIR="$TMP/iommu_groups"
   mkdir -p "$TMP/iommu_groups/0"
@@ -56,7 +55,6 @@ data = {
     "cluster_server_url": "https://10.0.0.10:9345" if distro == "rke2" else "https://10.0.0.10:6443",
     "cluster_join_token": os.environ.get("FIXTURE_JOIN_TOKEN", "superdl-agent-fixture-token-0123456789"),
     "driver_version": "580",
-    "nvme_devices": [],
     "registries_yaml": os.environ.get("FIXTURE_REGISTRIES_YAML", 'mirrors:\n  "*": {}\n'),
     "registry_ca_pem": os.environ.get("FIXTURE_REGISTRY_CA", ""),
     "progress_token": "sdlp_fixturetoken",
@@ -121,6 +119,11 @@ fi
 [[ -n "$v" ]] || exit 1
 echo "$v"
 EOF
+  cat > "$TMP/bin/modinfo" <<'EOF'
+#!/usr/bin/env bash
+[[ "${MODINFO_CEPH:-1}" == "1" ]] || exit 1
+echo "filename: /lib/modules/fixture/kernel/fs/ceph/ceph.ko"
+EOF
   cat > "$TMP/bin/lspci" <<'EOF'
 #!/usr/bin/env bash
 [[ "${LSPCI_NVIDIA:-1}" == "1" ]] || exit 0
@@ -161,22 +164,11 @@ EOF
 #!/usr/bin/env bash
 echo "NVIDIA Container Toolkit CLI version 1.20.0"
 EOF
-  cat > "$TMP/bin/losetup" <<'EOF'
-#!/usr/bin/env bash
-echo "losetup $*" >> "$SHIM_CALLS"
-echo "/dev/loop7"
-EOF
-  cat > "$TMP/bin/truncate" <<'EOF'
-#!/usr/bin/env bash
-echo "truncate $*" >> "$SHIM_CALLS"
-f="${@: -1}"; : > "$f" 2>/dev/null || true
-EOF
   local name
-  for name in update-initramfs sysctl update-grub apt-get vgs pvcreate vgcreate lsmod; do
+  for name in update-initramfs sysctl update-grub apt-get lsmod; do
     cat > "$TMP/bin/$name" <<EOF
 #!/usr/bin/env bash
 echo "$name \$*" >> "\$SHIM_CALLS"
-$([[ "$name" == vgs ]] && echo 'exit 1')
 exit 0
 EOF
   done
@@ -264,7 +256,7 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   [ "$(stat -c %a "$TMP/etc/rancher/rke2/registries.yaml")" = "600" ]
   [ "$(stat -c %a "$SUPERDL_JOIN_STATE_DIR")" = "700" ]
   [ "$(stat -c %a "$TMP/join.log")" = "644" ]
-  for m in bootstrap precheck nouveau sysctl iommu driver nvidia_toolkit nvme_vg registries agent_config agent_install agent_start completed; do
+  for m in bootstrap precheck nouveau sysctl iommu driver nvidia_toolkit registries agent_config agent_install agent_start completed; do
     [ -f "$SUPERDL_JOIN_STATE_DIR/done.d/$m" ]
   done
   [[ "$output" == *"nvidia-container-toolkit 1.17.8 >= 1.17.8, skipping"* ]]
@@ -294,7 +286,6 @@ run_script() { run bash "$SCRIPT" --token-file "$TMP/token" --api-base http://fa
   [ "$status" -eq 0 ]
   [[ "$output" == *"already joined"* ]]
   [ "$(grep -c 'node-enroll/bootstrap' "$CURL_LOG")" = "1" ]
-  ! grep -q "vgcreate superdl-nvme" "$SHIM_CALLS"
 }
 
 @test "--force clears markers and reinstalls from scratch (needs a newly issued token)" {
@@ -656,28 +647,13 @@ EOF
   done
 }
 
-@test "loop fallback must be registered explicitly (nvme_devices=loop:80G): creates the loop VG and the boot-time unit" {
-  python3 - > "$BOOTSTRAP_FIXTURE" <<'PYEOF'
-import json
-print(json.dumps({"pool":"hami","k8s_distro":"rke2","install_mirror":"cn",
-  "cluster_agent_version":"v1.36.2+rke2r1","cluster_server_url":"https://10.0.0.10:9345","cluster_join_token":"superdl-agent-fixture-token-0123456789",
-  "driver_version":"580","nvme_devices":["loop:80G"],"registries_yaml":"","progress_token":"sdlp_fixturetoken"}))
-PYEOF
+@test "no CephFS kernel client: precheck fails before touching the host" {
+  export MODINFO_CEPH=0
   run_script
-  [ "$status" -eq 0 ]
-  grep -q "truncate -s 80G" "$SHIM_CALLS"
-  grep -q "losetup --find --show" "$SHIM_CALLS"
-  grep -q "vgcreate superdl-nvme /dev/loop7" "$SHIM_CALLS"
-  [ -f "$TMP/etc/systemd/system/superdl-nvme-loop.service" ]
-  [[ "$output" == *"loop file as the instance disk"* ]]
-}
-
-@test "no NVMe registered: explicit warning, nothing guessed (no VG created)" {
-  run_script
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"nothing guessed"* ]]
-  ! grep -q "vgcreate superdl-nvme" "$SHIM_CALLS"
-  [ ! -f "$TMP/etc/systemd/system/superdl-nvme-loop.service" ]
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no ceph module"* ]]
+  grep -q '"phase":"precheck","state":"failed"' "$CURL_LOG"
+  [ ! -f "$TMP/etc/modprobe.d/blacklist-nouveau.conf" ]
 }
 
 @test "reboot loop guard: still not ready after 2 reboots reports failed and exits 1" {
@@ -690,7 +666,7 @@ PYEOF
   grep -q '"phase":"reboot","state":"failed"' "$CURL_LOG"
 }
 
-@test "--uninstall: stops the agent, removes everything this script wrote and the state dir, leaves the VG and driver alone" {
+@test "--uninstall: stops the agent, removes everything this script wrote and the state dir, leaves the driver alone" {
   run_script
   [ "$status" -eq 0 ]
   run bash "$SCRIPT" --uninstall --token-file "$TMP/token" --api-base http://fake.local
@@ -702,7 +678,6 @@ PYEOF
   [ ! -f "$TMP/etc/rancher/rke2/harbor-ca.crt" ]
   [ ! -f "$TMP/etc/sysctl.d/99-superdl.conf" ]
   [ ! -f "$TMP/etc/modprobe.d/blacklist-nouveau.conf" ]
-  ! grep -q "vgremove" "$SHIM_CALLS"
   ! grep -q "apt-get remove" "$SHIM_CALLS"
   [[ "$output" == *"kubectl delete node"* ]]
 }

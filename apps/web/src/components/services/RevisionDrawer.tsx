@@ -110,7 +110,6 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
       gpu_count: inst.gpu_count,
       image_ref: imageRef,
       ssh_key_ids: withSsh ? keyIds : [],
-      data_disk_id: null,
       with_ssh: withSsh,
       container_command: commandList.length > 0 ? commandList : null,
       container_args: argList.length > 0 ? argList : null,
@@ -201,7 +200,9 @@ function RevisionForm({ service, onClose }: { service: ServiceOut; onClose: () =
                 <Typography.Text type="secondary">{t("services.revision.keptHint")}</Typography.Text>
               </Space>
             )}
-            {inst?.data_disk_id != null && <Alert type="info" showIcon title={t("services.revision.diskNote")} />}
+            {(inst?.data_disk_ids ?? []).length > 0 && (
+              <Alert type="info" showIcon title={t("services.revision.diskNote")} />
+            )}
           </Space>
         </Card>
         <Card size="small" title={t("services.revision.sectionAccess")}>

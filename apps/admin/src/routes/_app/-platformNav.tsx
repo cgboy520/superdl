@@ -21,7 +21,7 @@ export const NAV = [
     labelKey: "platform.navChannels",
     groups: ["captcha", "email", "sms", "real_name", "payment_wechat", "payment_alipay", "payment_stripe"],
   },
-  { labelKey: "platform.navInfra", groups: ["registry", "cluster", "observability"] },
+  { labelKey: "platform.navInfra", groups: ["registry", "storage", "cluster", "observability"] },
   { labelKey: "platform.navSite", groups: ["branding", "compliance", "support"] },
 ] as const satisfies readonly { labelKey: string; groups: readonly Group[] }[];
 export const GROUP_LABEL_KEY = {
@@ -34,6 +34,7 @@ export const GROUP_LABEL_KEY = {
   payment_alipay: "platform.tabAlipay",
   payment_stripe: "platform.tabStripe",
   registry: "platform.tabRegistry",
+  storage: "platform.tabStorage",
   cluster: "platform.tabCluster",
   observability: "platform.tabObservability",
   branding: "platform.tabBranding",

@@ -8,7 +8,6 @@ import type { InstanceCreateMarket } from './instanceCreateMarket';
 import type { InstanceCreatePeriod } from './instanceCreatePeriod';
 
 export interface InstanceCreate {
-  data_disk_id?: number | null;
   /**
      * @minimum 0
      * @maximum 8

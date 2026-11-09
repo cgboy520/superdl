@@ -6,6 +6,7 @@ the account-deletion rules."""
 
 from datetime import timedelta
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -34,8 +35,14 @@ async def org_user(client: AsyncClient, n: int) -> tuple[dict[str, str], int]:
     return await user_headers_with_id(client, org_email(n))
 
 
-async def create_org(client: AsyncClient, headers: dict[str, str], name: str = "Acme Lab") -> Any:
-    resp = await client.post("/api/v1/org", json={"name": name}, headers=headers)
+async def create_org(
+    client: AsyncClient,
+    headers: dict[str, str],
+    name: str = "Acme Lab",
+    code: str | None = None,
+) -> Any:
+    body = {"name": name, "code": code or f"t{uuid4().hex[:8]}"}
+    resp = await client.post("/api/v1/org", json=body, headers=headers)
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -97,15 +104,18 @@ class TestCreate:
         """Fails when a user can belong to two organizations."""
         headers, _ = await org_user(client, 1)
         await create_org(client, headers)
-        resp = await client.post("/api/v1/org", json={"name": "Second"}, headers=headers)
+        resp = await client.post(
+            "/api/v1/org", json={"name": "Second", "code": "second"}, headers=headers
+        )
         assert resp.status_code == 409
         assert resp.json()["message_key"] == "orgs.alreadyMember"
 
     async def test_idempotency_key_replays_the_same_organization(self, client: AsyncClient):
         headers, _ = await org_user(client, 1)
         idem = {**headers, "Idempotency-Key": "org-create-1"}
-        first = await client.post("/api/v1/org", json={"name": "Acme"}, headers=idem)
-        second = await client.post("/api/v1/org", json={"name": "Acme"}, headers=idem)
+        body = {"name": "Acme", "code": "acme"}
+        first = await client.post("/api/v1/org", json=body, headers=idem)
+        second = await client.post("/api/v1/org", json=body, headers=idem)
         assert first.status_code == 201
         assert second.status_code == 200
         assert second.headers.get("X-Idempotent-Replay") == "true"
@@ -116,7 +126,9 @@ class TestCreate:
         """Fails when an attacker-chosen organization name can carry a link or markup to
         invitees."""
         headers, _ = await org_user(client, 1)
-        resp = await client.post("/api/v1/org", json={"name": name}, headers=headers)
+        resp = await client.post(
+            "/api/v1/org", json={"name": name, "code": "acme"}, headers=headers
+        )
         assert resp.status_code == 422
 
     async def test_real_name_gate(self, client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
@@ -127,7 +139,9 @@ class TestCreate:
         monkeypatch.setattr(settings, "compliance_profile", "cn")
         monkeypatch.setattr(settings, "real_name_enabled", True)
         monkeypatch.setattr(settings, "real_name_required_for_recharge", True)
-        resp = await client.post("/api/v1/org", json={"name": "Acme"}, headers=headers)
+        resp = await client.post(
+            "/api/v1/org", json={"name": "Acme", "code": "acme"}, headers=headers
+        )
         assert resp.status_code == 403
         assert resp.json()["message_key"] == "orgs.realNameRequired"
 
