@@ -109,3 +109,19 @@ class ChunkAck(BaseModel):
 
 class AdminCustomImageOut(CustomImageOut):
     user_id: int
+
+
+class CustomImageUsageOut(BaseModel):
+    """One user's quota usage: images and bytes as the upload quota counts them."""
+
+    user_id: int
+    images: int
+    bytes: int
+
+
+class CustomImageUsageListOut(BaseModel):
+    """Per-user limits (policy parameters) and the users with images, largest first."""
+
+    max_images: int
+    max_bytes: int
+    users: list[CustomImageUsageOut]

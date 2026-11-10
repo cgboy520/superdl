@@ -79,6 +79,7 @@ import type {
   CapacityPreviewOut,
   ClusterStatusOut,
   ComponentProbeOut,
+  CustomImageUsageListOut,
   DeadTaskOut,
   DeploymentIdentityOut,
   EmailTestOut,
@@ -1100,6 +1101,30 @@ export const adminListCustomImagesApiAdminV1CustomImagesGet = async (params?: Ad
 );}
 
 
+export const getAdminCustomImageUsageApiAdminV1CustomImagesUsageGetUrl = () => {
+
+
+
+
+  return `/api/admin/v1/custom-images/usage`
+}
+
+/**
+ * Per-user quota usage of uploaded images (largest 200) with the per-user limits.
+ * @summary Admin Custom Image Usage
+ */
+export const adminCustomImageUsageApiAdminV1CustomImagesUsageGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<CustomImageUsageListOut> => {
+
+  return customFetch<CustomImageUsageListOut>(getAdminCustomImageUsageApiAdminV1CustomImagesUsageGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
 export const getAdminDeleteCustomImageApiAdminV1CustomImagesUuidDeleteUrl = (uuid: string,) => {
 
 
@@ -1654,7 +1679,7 @@ export const getAdminImageNodesApiAdminV1ImagesImageIdNodesGetUrl = (imageId: nu
 }
 
 /**
- * Per-node cache details (failed rows carry last_error).
+ * Per-node cache details with the node's pool (failed rows carry last_error).
  * @summary Admin Image Nodes
  */
 export const adminImageNodesApiAdminV1ImagesImageIdNodesGet = async (imageId: number, options?: Parameters<typeof customFetch>[1]): Promise<ImageNodeCacheOut[]> => {

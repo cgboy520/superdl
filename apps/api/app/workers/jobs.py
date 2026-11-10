@@ -14,6 +14,7 @@ from app.modules.billing.reconcile import reconcile_funds
 from app.modules.billing.settlement import settle_daily_disks, settle_due_hours
 from app.modules.billing.subscriptions import subscription_patrol
 from app.modules.catalog.prewarm import prewarm_patrol
+from app.modules.catalog.sizes import image_size_patrol
 from app.modules.customimages.patrol import custom_image_patrol
 from app.modules.metering.service import aggregate_previous_hour
 from app.modules.netgw.patrol import netgw_patrol
@@ -143,6 +144,14 @@ JOBS: tuple[ScheduledJob, ...] = (
         IMAGE_OPS,
         600,
         _interval(minutes=10),
+        max_instances=1,
+    ),
+    ScheduledJob(
+        "image_size_patrol",
+        image_size_patrol,
+        IMAGE_OPS,
+        300,
+        _interval(minutes=5),
         max_instances=1,
     ),
     ScheduledJob(

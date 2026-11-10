@@ -84,7 +84,7 @@ OpenAPI-first: the FastAPI schema is exported to `openapi.json` and orval genera
 
 **Reconciler.** Every 30 s it compares the desired state in the DB with the actual state in K8s (listing by tenant namespace prefix): Pod gone while the DB says running → `failed`, billing stops and an alert fires; Pod present while the DB says released → force-deleted and alerted; `creating` timed out → failed and refunded. The reconciler must never be switched off.
 
-Other scheduled worker jobs: stuck-outbox reaping, hourly settlement, daily disk settlement, fund reconciliation, usage aggregation, balance patrol, subscription expiry patrol, payment lookup and order expiry, image prewarm patrol, node spec patrol and enrollment reconciler, storage patrol (Ceph reachability and volume usage), uploaded-image patrol, stale-ticket patrol, data cleanup. Each job first takes a PG advisory lock so it runs on one instance; the list and periods are in `apps/api/app/workers/jobs.py` (every job declares its worker component).
+Other scheduled worker jobs: stuck-outbox reaping, hourly settlement, daily disk settlement, fund reconciliation, usage aggregation, balance patrol, subscription expiry patrol, payment lookup and order expiry, image prewarm patrol, image size patrol (registry download size of platform images), node spec patrol and enrollment reconciler, storage patrol (Ceph reachability and volume usage), uploaded-image patrol, stale-ticket patrol, data cleanup. Each job first takes a PG advisory lock so it runs on one instance; the list and periods are in `apps/api/app/workers/jobs.py` (every job declares its worker component).
 
 ## 5. Access layer
 

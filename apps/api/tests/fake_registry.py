@@ -1,5 +1,5 @@
-"""In-memory OCI distribution registry (bearer token flow, chunked uploads, manifests) plus the
-Harbor artifact delete call, as an httpx transport for push tests."""
+"""In-memory OCI distribution registry (bearer token flow, chunked uploads, manifest PUT and GET,
+blob GET) plus the Harbor artifact delete call, as an httpx transport for push and size tests."""
 
 import hashlib
 import json
@@ -20,6 +20,8 @@ class FakeRegistry:
     uploads: dict[str, bytearray] = field(default_factory=dict)
     deleted: list[tuple[str, str]] = field(default_factory=list)
     patches: int = 0
+    # (scope, whether the token request carried credentials) per token request
+    token_requests: list[tuple[str, bool]] = field(default_factory=list)
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self._handle)
@@ -30,6 +32,9 @@ class FakeRegistry:
     def _handle(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path == "/service/token":
+            self.token_requests.append(
+                (request.url.params.get("scope", ""), "authorization" in request.headers)
+            )
             return httpx.Response(200, json={"token": TOKEN})
         if path.startswith("/api/v2.0/"):
             match = re.match(
@@ -73,7 +78,13 @@ class FakeRegistry:
             self.blobs[digest] = data
             return httpx.Response(201)
         if m := re.match(r"/v2/(.+)/blobs/(sha256:[0-9a-f]+)$", path):
-            return httpx.Response(200 if m.group(2) in self.blobs else 404)
+            if m.group(2) not in self.blobs:
+                return httpx.Response(404)
+            body = self.blobs[m.group(2)] if request.method == "GET" else b""
+            return httpx.Response(200, content=body)
+        if (m := re.match(r"/v2/(.+)/manifests/(.+)$", path)) and request.method == "GET":
+            stored = self.manifests.get((m.group(1), m.group(2)))
+            return httpx.Response(404) if stored is None else httpx.Response(200, content=stored)
         if m := re.match(r"/v2/(.+)/manifests/(.+)$", path):
             body = request.content
             for layer in [json.loads(body)["config"], *json.loads(body)["layers"]]:

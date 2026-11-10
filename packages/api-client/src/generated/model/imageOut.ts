@@ -5,8 +5,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * is_prewarmed: cached on enough of the target nodes (with sku_id: of that SKU's pool; never
+ * for a CPU pool). download_bytes: compressed bytes a node downloads on a cold start (with
+ * sku_id: the largest among the pool's architectures), null until the size patrol read it.
+ */
 export interface ImageOut {
   cuda_version: string;
+  download_bytes?: number | null;
   framework: string;
   framework_version: string;
   id: number;

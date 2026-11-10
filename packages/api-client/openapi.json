@@ -1063,14 +1063,41 @@
         "type": "object"
       },
       "AdminImageOut": {
-        "description": "Public catalog fields + admin prewarm view.",
+        "description": "Public catalog fields + admin prewarm view: coverage over every target node and per pool,\ndownload bytes per architecture.",
         "properties": {
           "coverage": {
             "$ref": "#/components/schemas/ImageCoverageOut"
           },
+          "coverage_by_pool": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PoolCoverageOut"
+            },
+            "title": "Coverage By Pool",
+            "type": "array"
+          },
           "cuda_version": {
             "title": "Cuda Version",
             "type": "string"
+          },
+          "download_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Bytes"
+          },
+          "download_bytes_by_arch": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Download Bytes By Arch",
+            "type": "object"
           },
           "failed_nodes": {
             "title": "Failed Nodes",
@@ -4105,6 +4132,57 @@
         "title": "CustomImageUpdate",
         "type": "object"
       },
+      "CustomImageUsageListOut": {
+        "description": "Per-user limits (policy parameters) and the users with images, largest first.",
+        "properties": {
+          "max_bytes": {
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "max_images": {
+            "title": "Max Images",
+            "type": "integer"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/CustomImageUsageOut"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "max_images",
+          "max_bytes",
+          "users"
+        ],
+        "title": "CustomImageUsageListOut",
+        "type": "object"
+      },
+      "CustomImageUsageOut": {
+        "description": "One user's quota usage: images and bytes as the upload quota counts them.",
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "images": {
+            "title": "Images",
+            "type": "integer"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id",
+          "images",
+          "bytes"
+        ],
+        "title": "CustomImageUsageOut",
+        "type": "object"
+      },
       "DailySummaryOut": {
         "description": "Today's consumption summary (local day boundary via tz_offset_minutes, default the billing\nzone's current offset).",
         "properties": {
@@ -5352,6 +5430,17 @@
             "title": "Node Name",
             "type": "string"
           },
+          "pool_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pool Label"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -5373,10 +5462,22 @@
         "type": "object"
       },
       "ImageOut": {
+        "description": "is_prewarmed: cached on enough of the target nodes (with sku_id: of that SKU's pool; never\nfor a CPU pool). download_bytes: compressed bytes a node downloads on a cold start (with\nsku_id: the largest among the pool's architectures), null until the size patrol read it.",
         "properties": {
           "cuda_version": {
             "title": "Cuda Version",
             "type": "string"
+          },
+          "download_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Bytes"
           },
           "framework": {
             "title": "Framework",
@@ -10815,6 +10916,35 @@
         "title": "PolicyUpdateRequest",
         "type": "object"
       },
+      "PoolCoverageOut": {
+        "description": "Coverage of one pool; pool_label is empty for nodes the node inventory does not know.",
+        "properties": {
+          "cached": {
+            "title": "Cached",
+            "type": "integer"
+          },
+          "pct": {
+            "title": "Pct",
+            "type": "integer"
+          },
+          "pool_label": {
+            "title": "Pool Label",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cached",
+          "total",
+          "pct",
+          "pool_label"
+        ],
+        "title": "PoolCoverageOut",
+        "type": "object"
+      },
       "PortPoolStatsOut": {
         "description": "SSH port pool level (admin); blocked = ports held by other cluster objects.",
         "properties": {
@@ -15904,6 +16034,33 @@
         ]
       }
     },
+    "/api/admin/v1/custom-images/usage": {
+      "get": {
+        "description": "Per-user quota usage of uploaded images (largest 200) with the per-user limits.",
+        "operationId": "admin_custom_image_usage_api_admin_v1_custom_images_usage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomImageUsageListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Admin Custom Image Usage",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/v1/custom-images/{uuid}": {
       "delete": {
         "description": "Remove an uploaded image (abuse, policy): its registry artifact is deleted even while\ninstances use it; their next start cannot pull it. reason required.",
@@ -16780,7 +16937,7 @@
     },
     "/api/admin/v1/images/{image_id}/nodes": {
       "get": {
-        "description": "Per-node cache details (failed rows carry last_error).",
+        "description": "Per-node cache details with the node's pool (failed rows carry last_error).",
         "operationId": "admin_image_nodes_api_admin_v1_images__image_id__nodes_get",
         "parameters": [
           {
@@ -23110,8 +23267,27 @@
     },
     "/api/v1/images": {
       "get": {
-        "description": "Platform image catalog; is_prewarmed is computed (node coverage meets the threshold).",
+        "description": "Platform image catalog. is_prewarmed: node coverage meets the threshold (with sku_id: in\nthat SKU's pool); download_bytes: what a cold start downloads.",
         "operationId": "list_images_api_v1_images_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sku_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sku Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -23126,6 +23302,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Images",

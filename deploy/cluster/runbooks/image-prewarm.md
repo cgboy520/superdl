@@ -4,7 +4,7 @@ Three layers:
 
 1. **Spegel P2P** (RKE2 / k3s `embedded-registry: true` + `mirrors "*"` in every node's `registries.yaml`): nodes pull already-cached images from each other over the internal network.
 2. **Harbor**: the authoritative source of platform images and tenant instance images; image references are always Harbor fully qualified names pinned to a digest, `<host>/<project>/<name>:<tag>@sha256:<digest>`. The connection parameters (address / project / robot account and Secret / self-signed CA / proxy cache mappings) live under admin "Platform configuration · Image registry"; use "Test connection" after saving.
-3. **Platform prewarm** (admin "Images and prewarm" page + worker patrol): one pull Job per image × node, coverage visible live.
+3. **Platform prewarm** (admin "Images · Platform images" tab + worker patrol): one pull Job per image × node, coverage per pool visible live; the create page promises a fast start only where the SKU's pool is covered and shows the download size elsewhere.
 
 ## Pull credentials (never on nodes)
 
@@ -23,7 +23,7 @@ Three layers:
 
 The 12 bundled instance images are built and pushed from `deploy/instance-images/` (build, pre-push self-check and how to read the digest are in that README). After pushing:
 
-1. Create / edit the entry under admin "Images and prewarm" with `image_ref` = `harbor.<domain>/superdl/<name>:<tag>@sha256:<digest>`. When editing an existing entry the page warns that changing the image address clears every node cache record and prewarms again from the new address.
+1. Create / edit the entry under admin "Images · Platform images" with `image_ref` = `harbor.<domain>/superdl/<name>:<tag>@sha256:<digest>`. When editing an existing entry the page warns that changing the image address clears every node cache record and prewarms again from the new address.
 2. Wait for the patrol to spread (nodes discovered within 60 s) and watch the per-node coverage on the page; failed rows show the error and can be retried with one click.
 
 Rules:

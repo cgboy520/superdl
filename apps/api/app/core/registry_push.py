@@ -1,7 +1,7 @@
-"""Push client for the platform registry (Harbor, OCI distribution API v2): bearer-token or basic
-auth, chunked blob uploads whose digest is computed while streaming, manifest PUT, and artifact
-deletion through the Harbor API. Synchronous (runs in a worker thread next to the archive
-reader); the transport parameter injects a mock in tests."""
+"""Client for the platform registry (Harbor, OCI distribution API v2): bearer-token or basic
+auth, chunked blob uploads whose digest is computed while streaming, manifest PUT and read
+(per-architecture download size), and artifact deletion through the Harbor API. Synchronous
+(runs in a worker thread); the transport parameter injects a mock in tests."""
 
 import base64
 import hashlib
@@ -9,6 +9,7 @@ import re
 import urllib.parse
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 
@@ -17,6 +18,14 @@ from app.core.registry import ssl_verify
 UPLOAD_CHUNK_BYTES = 16 * 1024 * 1024
 _TIMEOUT = httpx.Timeout(60.0, connect=15.0)
 _CHALLENGE = re.compile(r'(\w+)="([^"]*)"')
+_MANIFEST_ACCEPT = ", ".join(
+    (
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    )
+)
 
 
 class RegistryPushError(Exception):
@@ -34,6 +43,8 @@ class RegistryTarget:
     username: str
     password: str
     ca_pem: str = ""
+    # token scope actions: the importer pushes, the size reader only pulls
+    actions: str = "pull,push"
 
 
 @dataclass(frozen=True)
@@ -80,14 +91,18 @@ class RegistryClient:
             return
         header = probe.headers.get("www-authenticate", "")
         scheme, params = _challenge(header)
-        basic = httpx.BasicAuth(self.target.username, self.target.password)
+        basic = (
+            httpx.BasicAuth(self.target.username, self.target.password)
+            if self.target.username
+            else None
+        )
         if scheme == "basic":
             pair = f"{self.target.username}:{self.target.password}".encode()
             self._auth_header = f"Basic {base64.b64encode(pair).decode()}"
             return
         if scheme != "bearer" or "realm" not in params:
             raise RegistryPushError(f"unsupported registry auth challenge: {header[:120]}")
-        scope = f"repository:{self.target.repository}:pull,push"
+        scope = f"repository:{self.target.repository}:{self.target.actions}"
         token = self._client.get(
             params["realm"],
             params={"service": params.get("service", ""), "scope": scope},
@@ -189,6 +204,41 @@ class RegistryClient:
 
     # ------------------------------------------------------------------ manifests
 
+    def _manifest(self, reference: str) -> dict[str, Any]:
+        resp = self._send(
+            "GET", self._repo_url(f"manifests/{reference}"), headers={"Accept": _MANIFEST_ACCEPT}
+        )
+        if resp.status_code != 200:
+            raise RegistryPushError("manifest read refused", status=resp.status_code)
+        body: dict[str, Any] = resp.json()
+        return body
+
+    def _blob_json(self, digest: str) -> dict[str, Any]:
+        """A small JSON blob (image config); a redirect to the storage backend is followed without
+        the registry credentials."""
+        resp = self._send("GET", self._repo_url(f"blobs/{digest}"))
+        if resp.status_code in (301, 302, 303, 307, 308):
+            resp = self._client.get(self._location(resp))
+        if resp.status_code != 200:
+            raise RegistryPushError("blob read refused", status=resp.status_code)
+        body: dict[str, Any] = resp.json()
+        return body
+
+    def download_sizes(self, reference: str) -> dict[str, int]:
+        """Compressed layer bytes per linux CPU architecture of a manifest or an index
+        (attestation entries without a platform are skipped)."""
+        doc = self._manifest(reference)
+        if "manifests" in doc:
+            out: dict[str, int] = {}
+            for entry in doc["manifests"]:
+                platform = entry.get("platform") or {}
+                arch = platform.get("architecture")
+                if platform.get("os") == "linux" and arch and arch != "unknown":
+                    out[arch] = _layer_bytes(self._manifest(entry["digest"]))
+            return out
+        arch = self._blob_json(doc["config"]["digest"]).get("architecture")
+        return {arch: _layer_bytes(doc)} if arch else {}
+
     def put_manifest(self, reference: str, body: bytes, media_type: str) -> str:
         resp = self._send(
             "PUT",
@@ -199,6 +249,10 @@ class RegistryClient:
         if resp.status_code not in (200, 201):
             raise RegistryPushError("manifest refused", status=resp.status_code)
         return f"sha256:{hashlib.sha256(body).hexdigest()}"
+
+
+def _layer_bytes(manifest: dict[str, Any]) -> int:
+    return sum(int(layer.get("size", 0)) for layer in manifest.get("layers", []))
 
 
 def delete_harbor_artifact(

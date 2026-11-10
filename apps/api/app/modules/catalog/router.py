@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from app.core.compliance import current_profile
 from app.core.config import get_settings
@@ -57,6 +59,9 @@ async def list_skus(
 
 
 @router.get("/images")
-async def list_images(session: DbSession) -> list[ImageOut]:
-    """Platform image catalog; is_prewarmed is computed (node coverage meets the threshold)."""
-    return await service.list_images_out(session)
+async def list_images(
+    session: DbSession, sku_id: Annotated[int | None, Query(ge=1)] = None
+) -> list[ImageOut]:
+    """Platform image catalog. is_prewarmed: node coverage meets the threshold (with sku_id: in
+    that SKU's pool); download_bytes: what a cold start downloads."""
+    return await service.list_images_out(session, sku_id)

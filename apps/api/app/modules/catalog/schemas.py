@@ -208,6 +208,10 @@ class SkuUpdate(BaseModel):
 
 
 class ImageOut(BaseModel):
+    """is_prewarmed: cached on enough of the target nodes (with sku_id: of that SKU's pool; never
+    for a CPU pool). download_bytes: compressed bytes a node downloads on a cold start (with
+    sku_id: the largest among the pool's architectures), null until the size patrol read it."""
+
     id: int
     framework: str
     framework_version: str
@@ -215,6 +219,7 @@ class ImageOut(BaseModel):
     cuda_version: str
     image_ref: str
     is_prewarmed: bool
+    download_bytes: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -279,17 +284,27 @@ class ImageCoverageOut(BaseModel):
     pct: int
 
 
+class PoolCoverageOut(ImageCoverageOut):
+    """Coverage of one pool; pool_label is empty for nodes the node inventory does not know."""
+
+    pool_label: str
+
+
 class AdminImageOut(ImageOut):
-    """Public catalog fields + admin prewarm view."""
+    """Public catalog fields + admin prewarm view: coverage over every target node and per pool,
+    download bytes per architecture."""
 
     prewarm_enabled: bool
     sort: int
     coverage: ImageCoverageOut
+    coverage_by_pool: list[PoolCoverageOut] = []
+    download_bytes_by_arch: dict[str, int] = {}
     failed_nodes: int
 
 
 class ImageNodeCacheOut(BaseModel):
     node_name: str
+    pool_label: str | None = None
     status: str
     last_error: str | None
     checked_at: datetime | None

@@ -4,14 +4,20 @@
  * SuperDL API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminImageOutDownloadBytesByArch } from './adminImageOutDownloadBytesByArch';
 import type { ImageCoverageOut } from './imageCoverageOut';
+import type { PoolCoverageOut } from './poolCoverageOut';
 
 /**
- * Public catalog fields + admin prewarm view.
+ * Public catalog fields + admin prewarm view: coverage over every target node and per pool,
+ * download bytes per architecture.
  */
 export interface AdminImageOut {
   coverage: ImageCoverageOut;
+  coverage_by_pool?: PoolCoverageOut[];
   cuda_version: string;
+  download_bytes?: number | null;
+  download_bytes_by_arch?: AdminImageOutDownloadBytesByArch;
   failed_nodes: number;
   framework: string;
   framework_version: string;

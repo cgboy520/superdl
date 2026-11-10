@@ -4,7 +4,7 @@ from decimal import ROUND_HALF_EVEN, Decimal
 from typing import TYPE_CHECKING, Any
 
 from fastapi import status
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,8 +34,10 @@ from app.modules.catalog.schemas import (
     CapacityWarningOut,
     ImageCoverageOut,
     ImageCreate,
+    ImageNodeCacheOut,
     ImageOut,
     ImageUpdate,
+    PoolCoverageOut,
     SkuAdminOut,
     SkuCreate,
     SkuMarketOut,
@@ -160,34 +162,74 @@ async def is_catalog_image(session: AsyncSession, image_ref: str) -> bool:
     ).scalar_one_or_none() is not None
 
 
-async def image_coverage(session: AsyncSession) -> dict[int, tuple[int, int, int]]:
-    """Prewarm coverage aggregate: image_id → (cached nodes, total rows, failed nodes)."""
-    rows = (
-        await session.execute(
-            select(
-                ImageNodeCache.image_id,
-                func.count().filter(ImageNodeCache.status == "cached"),
-                func.count(),
-                func.count().filter(ImageNodeCache.status == "failed"),
-            ).group_by(ImageNodeCache.image_id)
-        )
-    ).all()
-    return {image_id: (cached, total, failed) for image_id, cached, total, failed in rows}
+# image_id → pool label ("" for nodes the inventory does not know) → [cached, total, failed]
+Coverage = dict[int, dict[str, tuple[int, int, int]]]
+
+
+async def image_coverage(session: AsyncSession) -> Coverage:
+    """Prewarm coverage per image and pool (cache rows joined to the node inventory's pools)."""
+    pools = await nodes_service.pools_by_node(session)
+    rows = await session.execute(
+        select(ImageNodeCache.image_id, ImageNodeCache.node_name, ImageNodeCache.status)
+    )
+    acc: dict[int, dict[str, list[int]]] = {}
+    for image_id, node_name, status_ in rows.all():
+        counts = acc.setdefault(image_id, {}).setdefault(pools.get(node_name, ""), [0, 0, 0])
+        counts[1] += 1
+        if status_ == "cached":
+            counts[0] += 1
+        elif status_ == "failed":
+            counts[2] += 1
+    return {i: {p: (c[0], c[1], c[2]) for p, c in by.items()} for i, by in acc.items()}
+
+
+def _sum_coverage(by_pool: dict[str, tuple[int, int, int]]) -> tuple[int, int, int]:
+    cached = sum(c[0] for c in by_pool.values())
+    total = sum(c[1] for c in by_pool.values())
+    failed = sum(c[2] for c in by_pool.values())
+    return cached, total, failed
 
 
 def _is_prewarmed(img: PlatformImage, cached: int, total: int, threshold: int) -> bool:
-    """True when prewarm is enabled and (no cache rows or coverage percentage reaches threshold)."""
-    return img.prewarm_enabled and (total == 0 or cached * 100 >= threshold * total)
+    """Prewarm enabled and the cached share of the target nodes reaches the threshold; no target
+    node means not prewarmed."""
+    return img.prewarm_enabled and total > 0 and cached * 100 >= threshold * total
 
 
-async def list_images_out(session: AsyncSession) -> list[ImageOut]:
-    """Public image catalog, is_prewarmed is computed."""
+def _pct(cached: int, total: int) -> int:
+    return (cached * 100 // total) if total else 0
+
+
+def _download_sizes(img: PlatformImage) -> dict[str, int]:
+    """Measured sizes, or none while they belong to an earlier image_ref."""
+    return dict(img.download_bytes or {}) if img.download_ref == img.image_ref else {}
+
+
+def _download_bytes(img: PlatformImage, archs: set[str] | None) -> int | None:
+    """Largest measured size among the given architectures (all measured ones without archs)."""
+    sizes = _download_sizes(img)
+    values = [v for a, v in sizes.items() if not archs or a in archs]
+    return max(values) if values else None
+
+
+async def list_images_out(session: AsyncSession, sku_id: int | None = None) -> list[ImageOut]:
+    """Public image catalog. With a SKU, is_prewarmed and download_bytes refer to the SKU's pool
+    and that pool's node architectures."""
+    pool: str | None = None
+    archs: set[str] | None = None
+    if sku_id is not None:
+        pool = (await get_sku(session, sku_id)).pool_label
+        archs = await nodes_service.pool_archs(session, pool) or None
     images = await list_images(session)
     coverage = await image_coverage(session)
     threshold = (await get_runtime_config(session)).prewarm_min_coverage_pct
     out: list[ImageOut] = []
     for img in images:
-        cached, total, _failed = coverage.get(img.id, (0, 0, 0))
+        by_pool = coverage.get(img.id, {})
+        if pool is None:
+            cached, total, _failed = _sum_coverage(by_pool)
+        else:
+            cached, total, _failed = by_pool.get(pool, (0, 0, 0))
         out.append(
             ImageOut(
                 id=img.id,
@@ -196,7 +238,8 @@ async def list_images_out(session: AsyncSession) -> list[ImageOut]:
                 python_version=img.python_version,
                 cuda_version=img.cuda_version,
                 image_ref=img.image_ref,
-                is_prewarmed=_is_prewarmed(img, cached, total, threshold),
+                is_prewarmed=pool != POOL_CPU and _is_prewarmed(img, cached, total, threshold),
+                download_bytes=_download_bytes(img, archs),
             )
         )
     return out
@@ -210,17 +253,16 @@ async def admin_image_out(session: AsyncSession, img: PlatformImage) -> AdminIma
 
 
 async def admin_list_images_out(session: AsyncSession) -> list[AdminImageOut]:
-    """Image catalog + prewarm coverage per image (pure DB aggregate, no K8s call)."""
+    """Image catalog + prewarm coverage per image and pool (pure DB aggregate, no K8s call)."""
     images = await list_images(session)
     coverage = await image_coverage(session)
     threshold = (await get_runtime_config(session)).prewarm_min_coverage_pct
     return [_admin_image_out(img, coverage, threshold) for img in images]
 
 
-def _admin_image_out(
-    img: PlatformImage, coverage: dict[int, tuple[int, int, int]], threshold: int
-) -> AdminImageOut:
-    cached, total, failed = coverage.get(img.id, (0, 0, 0))
+def _admin_image_out(img: PlatformImage, coverage: Coverage, threshold: int) -> AdminImageOut:
+    by_pool = coverage.get(img.id, {})
+    cached, total, failed = _sum_coverage(by_pool)
     return AdminImageOut(
         id=img.id,
         framework=img.framework,
@@ -229,11 +271,15 @@ def _admin_image_out(
         cuda_version=img.cuda_version,
         image_ref=img.image_ref,
         is_prewarmed=_is_prewarmed(img, cached, total, threshold),
+        download_bytes=_download_bytes(img, None),
         prewarm_enabled=img.prewarm_enabled,
         sort=img.sort,
-        coverage=ImageCoverageOut(
-            cached=cached, total=total, pct=(cached * 100 // total) if total else 0
-        ),
+        coverage=ImageCoverageOut(cached=cached, total=total, pct=_pct(cached, total)),
+        coverage_by_pool=[
+            PoolCoverageOut(pool_label=p, cached=c[0], total=c[1], pct=_pct(c[0], c[1]))
+            for p, c in sorted(by_pool.items())
+        ],
+        download_bytes_by_arch=_download_sizes(img),
         failed_nodes=failed,
     )
 
@@ -484,17 +530,30 @@ async def admin_prewarm_image(session: AsyncSession, image_id: int) -> int:
     return n
 
 
-async def image_node_rows(session: AsyncSession, image_id: int) -> list[ImageNodeCache]:
+async def image_node_rows(session: AsyncSession, image_id: int) -> list[ImageNodeCacheOut]:
+    """Per-node cache rows with the node's pool from the inventory."""
     await get_image(session, image_id)
-    return list(
-        (
-            await session.execute(
-                select(ImageNodeCache)
-                .where(ImageNodeCache.image_id == image_id)
-                .order_by(ImageNodeCache.node_name)
-            )
-        ).scalars()
-    )
+    pools = await nodes_service.pools_by_node(session)
+    rows = (
+        await session.execute(
+            select(ImageNodeCache)
+            .where(ImageNodeCache.image_id == image_id)
+            .order_by(ImageNodeCache.node_name)
+        )
+    ).scalars()
+    return [
+        ImageNodeCacheOut.model_validate(
+            {
+                "node_name": r.node_name,
+                "pool_label": pools.get(r.node_name),
+                "status": r.status,
+                "last_error": r.last_error,
+                "checked_at": r.checked_at,
+                "updated_at": r.updated_at,
+            }
+        )
+        for r in rows
+    ]
 
 
 async def admin_skus_out(session: AsyncSession) -> list[SkuAdminOut]:

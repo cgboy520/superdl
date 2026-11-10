@@ -1,4 +1,4 @@
-/** Images page: platform image list, prewarm actions, per-node cache expansion panel and edit drawer; below it the images users uploaded. */
+/** Images page, two tabs: platform images (catalog, download size, node prewarm coverage per pool, per-node cache expansion panel, edit drawer) and user images (per-user quota usage, every upload). */
 
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import {
@@ -6,6 +6,7 @@ import {
   drawerWidth,
   imageCacheStatusMap,
   fontSize,
+  formatBytes,
   formatDateTime,
   iconSize,
   layout,
@@ -40,6 +41,7 @@ import {
   Space,
   Switch,
   Table,
+  Tabs,
   Tag,
   Tooltip,
   Typography,
@@ -64,14 +66,35 @@ import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { ReasonAction } from "../../components/ReasonAction";
 import { StatusTag } from "@superdl/ui/components";
 import { canWriteOps, useAdminRole } from "../../stores/auth";
-import { UserImagesCard } from "./-UserImagesCard";
+import { UserImagesTab } from "./-UserImagesTab";
+
+type ImagesTab = "platform" | "user";
 
 export const Route = createFileRoute("/_app/images")({
-  validateSearch: (search: Record<string, unknown>): { image?: number } => ({
+  validateSearch: (search: Record<string, unknown>): { image?: number; tab?: "user" } => ({
     image: Number.isInteger(Number(search.image)) && Number(search.image) > 0 ? Number(search.image) : undefined,
+    tab: search.tab === "user" ? "user" : undefined,
   }),
   component: ImagesPage,
 });
+
+/** Largest measured download size and its per-architecture breakdown; dash until the size patrol has read it. */
+function DownloadSize({ sizes }: { sizes: Record<string, number> }) {
+  const { t } = useTranslation(["admin", "shared"]);
+  const entries = Object.entries(sizes).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) {
+    return (
+      <Tooltip title={t("images.downloadPending")}>
+        <Typography.Text type="secondary">—</Typography.Text>
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip title={entries.map(([arch, bytes]) => `${arch}: ${formatBytes(bytes)}`).join(" · ")}>
+      <span>{formatBytes(Math.max(...entries.map(([, bytes]) => bytes)))}</span>
+    </Tooltip>
+  );
+}
 
 interface ImageFormValues {
   framework: string;
@@ -107,6 +130,7 @@ function ImageNodesPanel({ imageId }: { imageId: number }) {
       }}
       columns={[
         { title: t("nodes.colNode"), dataIndex: "node_name", render: (v: string) => <Mono>{v}</Mono> },
+        { title: t("nodes.colPool"), dataIndex: "pool_label", render: (v: string | null) => v ?? "—" },
         {
           title: t("images.colCacheStatus"),
           dataIndex: "status",
@@ -177,8 +201,11 @@ function ImagesPage() {
   const confirm = useConfirm();
   const navigate = useNavigate({ from: "/images" });
   const expandedImage = Route.useSearch({ select: (s) => s.image });
+  const tab: ImagesTab = Route.useSearch({ select: (s) => s.tab }) ?? "platform";
   const setExpandedImage = (id: number | undefined) =>
     void navigate({ to: "/images", replace: true, search: (prev) => ({ ...prev, image: id }) });
+  const setTab = (key: string) =>
+    void navigate({ to: "/images", replace: true, search: key === "user" ? { tab: "user" } : {} });
 
   const refresh = () => void qc.invalidateQueries({ queryKey });
   const create = useCreateImage({
@@ -248,27 +275,47 @@ function ImagesPage() {
     <PageContainer
       width="full"
       title={t("menu.images")}
-      freshness={{
-        updatedAt: dataUpdatedAt,
-        intervalMs: autoRefresh.intervalMs,
-        paused: autoRefresh.paused,
-        onTogglePause: autoRefresh.toggle,
-        onRefresh: () => void refetch(),
-        refreshing: isRefetching,
-      }}
+      freshness={
+        tab === "platform"
+          ? {
+              updatedAt: dataUpdatedAt,
+              intervalMs: autoRefresh.intervalMs,
+              paused: autoRefresh.paused,
+              onTogglePause: autoRefresh.toggle,
+              onRefresh: () => void refetch(),
+              refreshing: isRefetching,
+            }
+          : undefined
+      }
       extra={
-        <GatedButton
-          type="primary"
-          reason={writable ? undefined : t("common.readonlyNoCreate")}
-          onClick={() => openEdit("new")}
-        >
-          {t("images.newImage")}
-        </GatedButton>
+        tab === "platform" ? (
+          <GatedButton
+            type="primary"
+            reason={writable ? undefined : t("common.readonlyNoCreate")}
+            onClick={() => openEdit("new")}
+          >
+            {t("images.newImage")}
+          </GatedButton>
+        ) : undefined
       }
     >
+      <Tabs
+        activeKey={tab}
+        onChange={setTab}
+        items={[
+          { key: "platform", label: t("images.tabPlatform"), children: platformTab() },
+          { key: "user", label: t("images.tabUser"), children: <UserImagesTab writable={writable} /> },
+        ]}
+      />
+      {leave.modal}
+    </PageContainer>
+  );
+
+  function platformTab() {
+    return (
       <Card>
         <Table<ImageRow>
-          scroll={{ x: 1100 }}
+          scroll={{ x: 1300 }}
           sticky={{ offsetHeader: layout.topBarHeight }}
           rowKey="id"
           loading={isLoading}
@@ -297,17 +344,17 @@ function ImagesPage() {
               width: 180,
               render: (_, r) => `${r.framework} ${r.framework_version}`,
             },
-            { title: "Python", dataIndex: "python_version" },
-            { title: "CUDA", dataIndex: "cuda_version" },
+            { title: "Python", dataIndex: "python_version", width: 80 },
+            { title: "CUDA", dataIndex: "cuda_version", width: 80 },
             {
               title: t("images.colImageRef"),
               dataIndex: "image_ref",
-              width: 320,
+              width: 280,
               render: (v: string) => (
                 <CopyField
                   value={v}
                   display={
-                    <Typography.Text ellipsis={{ tooltip: true }} style={{ maxWidth: 260 }}>
+                    <Typography.Text ellipsis={{ tooltip: true }} style={{ maxWidth: 220 }}>
                       {v}
                     </Typography.Text>
                   }
@@ -315,8 +362,15 @@ function ImagesPage() {
               ),
             },
             {
+              title: t("images.colDownload"),
+              width: 110,
+              align: "right",
+              render: (_, r) => <DownloadSize sizes={r.download_bytes_by_arch ?? {}} />,
+            },
+            {
               title: t("images.colPrewarm"),
               dataIndex: "prewarm_enabled",
+              width: 80,
               render: (v: boolean, r) => (
                 <Tooltip title={writable ? "" : t("nodes.readonlyNoOp")}>
                   <Switch
@@ -362,18 +416,24 @@ function ImagesPage() {
                   </Tooltip>
                 </Space>
               ),
-              align: "right",
+              width: 260,
               render: (_, r) => {
                 if (!r.prewarm_enabled) return <Tag>{t("images.disabled")}</Tag>;
                 if (r.coverage.total === 0) return <Tag color="default">{t("images.awaitingPatrol")}</Tag>;
                 return (
                   <Space>
-                    <Progress
-                      percent={r.coverage.pct}
-                      size="small"
-                      style={{ width: 120 }}
-                      status={r.failed_nodes > 0 ? "exception" : undefined}
-                    />
+                    <Tooltip
+                      title={(r.coverage_by_pool ?? [])
+                        .map((p) => `${p.pool_label || t("images.poolUnknown")}: ${p.cached}/${p.total}`)
+                        .join(" · ")}
+                    >
+                      <Progress
+                        percent={r.coverage.pct}
+                        size="small"
+                        style={{ width: 120 }}
+                        status={r.failed_nodes > 0 ? "exception" : undefined}
+                      />
+                    </Tooltip>
                     <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                       {r.coverage.cached}/{r.coverage.total}
                     </Typography.Text>
@@ -514,11 +574,7 @@ function ImagesPage() {
             </Form.Item>
           </Form>
         </Drawer>
-        {leave.modal}
       </Card>
-      <div style={{ marginTop: space.lg }}>
-        <UserImagesCard writable={writable} />
-      </div>
-    </PageContainer>
-  );
+    );
+  }
 }

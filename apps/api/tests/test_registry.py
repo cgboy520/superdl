@@ -18,6 +18,7 @@ from app.core.registry import (
     parse_proxy_projects,
     probe_harbor,
     pull_secret_fingerprint,
+    split_image_ref,
 )
 
 
@@ -98,6 +99,23 @@ def test_allowlist_normalizes_trailing_slash_against_prefix_spoofing():
     assert effective_image_allowlist(
         allowed_registries="docker.io//\nquay.io", registry_host="harbor.example.com/"
     ) == ["harbor.example.com/", "docker.io/", "quay.io/"]
+
+
+@pytest.mark.parametrize(
+    ("ref", "parts"),
+    [
+        (
+            "registry.yesgpu.com/superdl/pytorch:2.13@sha256:" + "a" * 64,
+            ("registry.yesgpu.com", "superdl/pytorch", "sha256:" + "a" * 64),
+        ),
+        ("harbor.local:8443/p/x:1", ("harbor.local:8443", "p/x", "1")),
+        ("localhost/x", ("localhost", "x", "latest")),
+        ("nvidia/cuda:12.9", ("docker.io", "nvidia/cuda", "12.9")),
+        ("ubuntu", ("docker.io", "library/ubuntu", "latest")),
+    ],
+)
+def test_split_image_ref(ref: str, parts: tuple[str, str, str]):
+    assert split_image_ref(ref) == parts
 
 
 def test_parse_proxy_projects():

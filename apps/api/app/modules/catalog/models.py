@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -61,6 +62,10 @@ class PlatformImage(Base):
     image_ref: Mapped[str] = mapped_column(String(256), unique=True)
     prewarm_enabled: Mapped[bool] = mapped_column(default=True)
     sort: Mapped[int] = mapped_column(default=0)
+    # Compressed layer bytes a node downloads, per CPU architecture, read from the registry by the
+    # image size patrol; download_ref is the image_ref they were measured for.
+    download_bytes: Mapped[dict[str, int] | None] = mapped_column(JSONB)
+    download_ref: Mapped[str | None] = mapped_column(String(256))
 
 
 class ImageNodeCache(Base):

@@ -911,6 +911,14 @@ async def archs_by_pool(session: AsyncSession) -> dict[str, set[str]]:
     return out
 
 
+async def pools_by_node(session: AsyncSession) -> dict[str, str]:
+    """Pool label of every node that has one (image prewarm coverage per pool)."""
+    rows = await session.execute(
+        select(NodeSpec.node_name, NodeSpec.pool_label).where(NodeSpec.pool_label.is_not(None))
+    )
+    return {name: pool for name, pool in rows.all() if pool}
+
+
 async def pool_archs(session: AsyncSession, pool_label: str) -> set[str]:
     """CPU architectures of the pool's Ready nodes (kubernetes.io/arch); empty when unknown."""
     rows = await session.scalars(

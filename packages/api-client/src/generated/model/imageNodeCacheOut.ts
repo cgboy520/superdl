@@ -9,6 +9,7 @@ export interface ImageNodeCacheOut {
   checked_at: string | null;
   last_error: string | null;
   node_name: string;
+  pool_label?: string | null;
   status: string;
   updated_at: string;
 }

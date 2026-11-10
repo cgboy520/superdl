@@ -6,6 +6,7 @@
  */
 import type {
   ImageOut,
+  ListImagesApiV1ImagesGetParams,
   ListSkusApiV1SkusGetParams,
   SiteConfigOut,
   SkuMarketOut
@@ -13,21 +14,29 @@ import type {
 
 import { customFetch } from '../../../mutator';
 
-export const getListImagesApiV1ImagesGetUrl = () => {
+export const getListImagesApiV1ImagesGetUrl = (params?: ListImagesApiV1ImagesGetParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/images`
+  return stringifiedParams.length > 0 ? `/api/v1/images?${stringifiedParams}` : `/api/v1/images`
 }
 
 /**
- * Platform image catalog; is_prewarmed is computed (node coverage meets the threshold).
+ * Platform image catalog. is_prewarmed: node coverage meets the threshold (with sku_id: in
+ * that SKU's pool); download_bytes: what a cold start downloads.
  * @summary List Images
  */
-export const listImagesApiV1ImagesGet = async ( options?: Parameters<typeof customFetch>[1]): Promise<ImageOut[]> => {
+export const listImagesApiV1ImagesGet = async (params?: ListImagesApiV1ImagesGetParams, options?: Parameters<typeof customFetch>[1]): Promise<ImageOut[]> => {
 
-  return customFetch<ImageOut[]>(getListImagesApiV1ImagesGetUrl(),
+  return customFetch<ImageOut[]>(getListImagesApiV1ImagesGetUrl(params),
   {
     ...options,
     method: 'GET'
