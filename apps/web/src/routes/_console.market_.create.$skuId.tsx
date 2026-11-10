@@ -7,6 +7,7 @@ import {
   controlWidth,
   diskDailyEstimate,
   fontSize,
+  formatBytes,
   formatDate,
   GPU_COUNT_STEPS,
   idemKeyOf,
@@ -37,7 +38,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useFormat } from "@superdl/ui";
 import { useApiErrorText } from "@superdl/ui";
 import { useCreateDisk, useCreateInstance } from "../api/mutations";
-import { useDisks, useImages, usePolicies, useSkus, useWallet } from "../api/queries";
+import { useCustomImages, useDisks, useImages, usePolicies, useSkus, useWallet } from "../api/queries";
 import { CheckoutBar } from "../components/CheckoutBar";
 import { useConsentGate } from "../components/ConsentGate";
 import { MyImagePicker } from "../components/create/MyImagePicker";
@@ -109,8 +110,9 @@ function CreatePage() {
   const { data: skus, isLoading: skusLoading, isError: skusError, refetch: refetchSkus } = useSkus();
   const sku = (skus ?? []).find((s) => s.id === Number(skuId));
 
-  const imagesQ = useImages();
+  const imagesQ = useImages(Number(skuId) || undefined);
   const { data: images } = imagesQ;
+  const { data: uploadedImages } = useCustomImages();
   const { data: disks } = useDisks();
   const walletQ = useWallet();
   const { data: wallet } = walletQ;
@@ -256,6 +258,10 @@ function CreatePage() {
   const imageRef =
     imageTab === "platform" ? effectivePlatformImage?.[3] : imageTab === "mine" ? myImage : customImage.trim();
   const selectedImage = usableImages.find((i) => i.image_ref === imageRef);
+  /** First start on a server that has not cached the image: the download size when known. */
+  const coldStartText = (bytes: number | null | undefined) =>
+    bytes ? t("create.coldStart", { size: formatBytes(bytes) }) : t("create.coldStartUnknown");
+  const myUpload = uploadedImages?.find((i) => i.image_ref === myImage);
   const customInvalid = imageTab === "custom" && customImage.trim() !== "" && !isPinnedImageRef(customImage.trim());
 
   const imageIssue = !imageRef
@@ -517,9 +523,11 @@ function CreatePage() {
                             description: [
                               /^\d/.test(img.cuda_version) ? `CUDA ${img.cuda_version}` : img.cuda_version,
                               `Py ${img.python_version}`,
-                              ...(isCpu
-                                ? []
-                                : [img.is_prewarmed ? t("create.tilePrewarmed") : t("create.tileNotPrewarmed")]),
+                              ...(!isCpu && img.is_prewarmed
+                                ? [t("create.tileFastStart")]
+                                : img.download_bytes
+                                  ? [t("create.tileDownload", { size: formatBytes(img.download_bytes) })]
+                                  : []),
                             ].join(" · "),
                           }))}
                         />
@@ -545,10 +553,12 @@ function CreatePage() {
                             <CopyField value={selectedImage.image_ref} code />
                             <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
                               {isCpu
-                                ? t("create.prewarmedNotForCpu")
+                                ? selectedImage.download_bytes
+                                  ? t("create.cpuColdStart", { size: formatBytes(selectedImage.download_bytes) })
+                                  : t("create.prewarmedNotForCpu")
                                 : selectedImage.is_prewarmed
                                   ? t("create.prewarmed")
-                                  : t("create.notPrewarmed")}
+                                  : coldStartText(selectedImage.download_bytes)}
                             </Typography.Text>
                           </Space>
                         )}
@@ -559,15 +569,22 @@ function CreatePage() {
                     key: "mine",
                     label: t("create.tabMine"),
                     children: (
-                      <MyImagePicker
-                        value={myImage}
-                        onChange={(ref) => {
-                          touch(ANCHOR.image);
-                          setMyImage(ref);
-                        }}
-                        purpose="dev"
-                        archs={skuNN.archs ?? []}
-                      />
+                      <Space orientation="vertical" size={space.sm} style={{ width: "100%" }}>
+                        <MyImagePicker
+                          value={myImage}
+                          onChange={(ref) => {
+                            touch(ANCHOR.image);
+                            setMyImage(ref);
+                          }}
+                          purpose="dev"
+                          archs={skuNN.archs ?? []}
+                        />
+                        {myUpload && (
+                          <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
+                            {coldStartText(myUpload.size_bytes)}
+                          </Typography.Text>
+                        )}
+                      </Space>
                     ),
                   },
                   {
@@ -590,7 +607,7 @@ function CreatePage() {
                           <Typography.Text type="danger">{tErr("orchestrator.imageRefNotPinned")}</Typography.Text>
                         )}
                         <Typography.Text type="secondary" style={{ fontSize: fontSize.caption }}>
-                          {t("create.customImageHint")}
+                          {t("create.customImageHint")} {t("create.coldStartUnknown")}
                         </Typography.Text>
                       </Space>
                     ),

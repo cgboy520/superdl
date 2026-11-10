@@ -57,6 +57,7 @@ import {
   adminCreateSkuApiAdminV1SkusPost,
   adminDeleteImageApiAdminV1ImagesImageIdDelete,
   adminDeleteCustomImageApiAdminV1CustomImagesUuidDelete,
+  adminCustomImageUsageApiAdminV1CustomImagesUsageGet,
   adminListCustomImagesApiAdminV1CustomImagesGet,
   adminImageNodesApiAdminV1ImagesImageIdNodesGet,
   adminListEnrollmentsApiAdminV1NodeEnrollmentsGet,
@@ -486,6 +487,16 @@ export function useAdminCustomImages(params?: { user_id?: number }, options?: { 
     ["admin", "custom-images", params ?? null],
     () => adminListCustomImagesApiAdminV1CustomImagesGet(params),
     { refetchInterval: options?.refetchInterval },
+  );
+}
+/** Per-user quota usage of uploaded images with the per-user limits. */
+export function useAdminCustomImageUsage(options?: { refetchInterval?: number | false }) {
+  return useKeyedQuery(
+    ["admin", "custom-images", "usage"],
+    () => adminCustomImageUsageApiAdminV1CustomImagesUsageGet(),
+    {
+      refetchInterval: options?.refetchInterval,
+    },
   );
 }
 export const useAdminDeleteCustomImage = adminMutation((v: { uuid: string; reason: string }) =>

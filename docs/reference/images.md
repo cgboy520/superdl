@@ -4,19 +4,19 @@ Admin CRUD of the platform image catalog, in-cluster P2P cache and per-node prew
 
 ## Data model
 
-- `images`: framework / version / python / cuda / image_ref, `prewarm_enabled`
+- `images`: framework / version / python / cuda / image_ref, `prewarm_enabled`, `download_bytes` (JSONB: CPU architecture → compressed layer bytes a node downloads) and `download_ref` (the image_ref those sizes were read for)
 - `image_node_cache`: image_id (FK CASCADE), node_name, status (pending / pulling / cached / failed), cached_ref, last_error, checked_at; Unique(image_id, node_name)
 
 ## Contract
 
-| Endpoint                                       | Role / auth  | Notes                                                                                                                  |
-| ---------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/admin/v1/images`                     | ops/readonly | List + `coverage{cached,total,pct}` + `failed_nodes`, pure DB aggregation                                              |
-| `POST /api/admin/v1/images`                    | ops          | Create; image_ref conflict 409; audited                                                                                |
-| `PATCH /api/admin/v1/images/{image_id}`        | ops          | Incl. prewarm_enabled; an image_ref change clears that image's cache rows in the same transaction; audited             |
-| `DELETE /api/admin/v1/images/{image_id}`       | ops          | reason required; cache rows CASCADE; audited                                                                           |
-| `POST /api/admin/v1/images/{image_id}/prewarm` | ops          | Sets non-cached rows to pending + enqueues in the same transaction, returns `{enqueued}`; zero K8s on the request path |
-| `GET /api/admin/v1/images/{image_id}/nodes`    | ops/readonly | Per-node status / last_error / checked_at                                                                              |
+| Endpoint                                       | Role / auth  | Notes                                                                                                                                              |
+| ---------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/admin/v1/images`                     | ops/readonly | List + `coverage{cached,total,pct}` over every target node + `coverage_by_pool[]` + `download_bytes_by_arch` + `failed_nodes`, pure DB aggregation |
+| `POST /api/admin/v1/images`                    | ops          | Create; image_ref conflict 409; audited                                                                                                            |
+| `PATCH /api/admin/v1/images/{image_id}`        | ops          | Incl. prewarm_enabled; an image_ref change clears that image's cache rows in the same transaction; audited                                         |
+| `DELETE /api/admin/v1/images/{image_id}`       | ops          | reason required; cache rows CASCADE; audited                                                                                                       |
+| `POST /api/admin/v1/images/{image_id}/prewarm` | ops          | Sets non-cached rows to pending + enqueues in the same transaction, returns `{enqueued}`; zero K8s on the request path                             |
+| `GET /api/admin/v1/images/{image_id}/nodes`    | ops/readonly | Per-node pool (from the node inventory) / status / last_error / checked_at                                                                         |
 
 ## Default image catalog (shipped with the platform)
 
@@ -25,10 +25,11 @@ The image matrix, version selection rules, per-image tags, mandatory Jupyter pac
 
 ## Rules and invariants
 
-- `is_prewarmed` on the public `GET /api/v1/images` is computed: `prewarm_enabled AND` (no cache rows → equals prewarm_enabled; rows present → coverage ≥ `prewarm_min_coverage_pct`).
+- `is_prewarmed` on the public `GET /api/v1/images` is computed: `prewarm_enabled AND` at least one cache row `AND` cached rows ≥ `prewarm_min_coverage_pct` of them. With `?sku_id=` only the rows of that SKU's pool count (cache rows are joined to `node_specs.pool_label` by node name) and a CPU pool is never prewarmed; without it every target node counts. No target node means not prewarmed, so the console never promises a fast start that no node can deliver.
+- `download_bytes` on the public list is what a cold start downloads: with `?sku_id=` the largest measured size among the pool's Ready node architectures, otherwise the largest measured one; null until measured or while the sizes belong to an earlier `image_ref`. The image size patrol (image-ops, 5 min, advisory lock 1018) reads them from the registry for every image whose `download_ref` differs from `image_ref` (manifest or index; attestation entries skipped; the pull robot is sent only to the configured `registry_host`, other registries are read anonymously); a failed read is retried next round.
 - Policy parameters (ops-adjustable): `prewarm_min_coverage_pct` and `prewarm_recheck_hours`; defaults in [limits.md](./limits.md).
 - Prewarming is driven by the `image.prewarm` outbox handler (idempotent) plus the `prewarm_patrol` (60 s, advisory lock 1008) that seeds rows, converges and re-checks; node additions and removals are discovered by the patrol. The executor is a per-node pinned Job. The patrol lists nodes without GPU usage (`list_nodes(gpu_usage=False)`): the prewarm SA holds only nodes get/list and Jobs, no Pod read.
-- The cpu pool is not prewarmed (the patrol's `target_nodes` excludes `pool_label == cpu`): a CPU SKU pulls its image on first start and the create page does not promise second-level start-up for it.
+- The cpu pool is not prewarmed (the patrol's `target_nodes` excludes `pool_label == cpu`): a CPU SKU pulls its image on first start, and the create page shows the download size instead of a fast start.
 - Deleting an image does not affect running instances: instances store an image_ref snapshot.
 - An instance's image_ref snapshot never changes: stop / start / restart all use it; there is no "change image" endpoint; image fixes apply to new instances only.
 - The in-cluster P2P cache is the distribution's embedded registry mirror (Spegel); `latest` tags do not take part in P2P, platform images always pin a version tag.
@@ -58,6 +59,7 @@ Users upload their own Docker images as `docker save` archives; the platform imp
 | `PATCH /api/v1/custom-images/{uuid}`          | user         | `{description?, shared_with_org?}`                                                                                                                                         |
 | `DELETE /api/v1/custom-images/{uuid}`         | user         | Uploads and failed imports go at once; a ready image only while no unreleased instance uses it (`customImages.inUse`); refused while importing                             |
 | `GET /api/admin/v1/custom-images`             | ops/readonly | Every upload, optional `user_id` / `status` filters                                                                                                                        |
+| `GET /api/admin/v1/custom-images/usage`       | ops/readonly | Per-user quota usage (images, bytes as the upload quota counts them), largest 200 first, with `max_images` / `max_bytes`                                                   |
 | `DELETE /api/admin/v1/custom-images/{uuid}`   | ops          | reason required; same in-use rule; audited                                                                                                                                 |
 
 ### Rules and invariants

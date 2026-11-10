@@ -26,6 +26,7 @@ class LockKey(IntEnum):
     NETGW_PATROL = 1015
     STORAGE_PATROL = 1016
     CUSTOM_IMAGE_PATROL = 1017
+    IMAGE_SIZE_PATROL = 1018
 
 
 @asynccontextmanager

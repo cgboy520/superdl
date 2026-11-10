@@ -151,7 +151,12 @@ export const useNotificationPages = (params?: { unread?: boolean }) =>
   useCursorPages(keys.notifications.pages(params), listNotificationsApiV1NotificationsGet, params, 20);
 export const useSkus = (opts?: QueryOpts) =>
   useQuery({ queryKey: keys.skus, queryFn: () => listSkusApiV1SkusGet(), ...opts });
-export const useImages = () => useQuery({ queryKey: keys.images, queryFn: () => listImagesApiV1ImagesGet() });
+/** Platform image catalog; with a SKU, is_prewarmed and download_bytes refer to that SKU's pool. */
+export const useImages = (skuId?: number) =>
+  useQuery({
+    queryKey: [...keys.images, skuId ?? null],
+    queryFn: () => listImagesApiV1ImagesGet(skuId ? { sku_id: skuId } : undefined),
+  });
 export const useSshKeys = () => useQuery({ queryKey: keys.sshKeys, queryFn: () => listSshKeysApiV1SshKeysGet() });
 export const useDisks = (opts?: QueryOpts) =>
   useQuery({ queryKey: keys.disks, queryFn: () => listDisksApiV1DisksGet(), ...opts });

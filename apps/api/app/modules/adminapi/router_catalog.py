@@ -25,7 +25,11 @@ from app.modules.catalog.schemas import (
     SkuUpdate,
 )
 from app.modules.customimages import service as customimages_service
-from app.modules.customimages.schemas import AdminCustomImageOut, ImageStatus
+from app.modules.customimages.schemas import (
+    AdminCustomImageOut,
+    CustomImageUsageListOut,
+    ImageStatus,
+)
 
 router = APIRouter(tags=["admin"])
 
@@ -172,9 +176,8 @@ async def admin_prewarm_image(
 
 @router.get("/images/{image_id}/nodes", dependencies=[require_roles("ops", "readonly")])
 async def admin_image_nodes(image_id: int, session: DbSession) -> list[ImageNodeCacheOut]:
-    """Per-node cache details (failed rows carry last_error)."""
-    rows = await catalog_service.image_node_rows(session, image_id)
-    return [ImageNodeCacheOut.model_validate(r) for r in rows]
+    """Per-node cache details with the node's pool (failed rows carry last_error)."""
+    return await catalog_service.image_node_rows(session, image_id)
 
 
 @router.get("/custom-images", dependencies=[require_roles("ops", "readonly")])
@@ -189,6 +192,12 @@ async def admin_list_custom_images(
         AdminCustomImageOut.model_validate({**out.model_dump(), "user_id": row.user_id})
         for row, out in rows
     ]
+
+
+@router.get("/custom-images/usage", dependencies=[require_roles("ops", "readonly")])
+async def admin_custom_image_usage(session: DbSession) -> CustomImageUsageListOut:
+    """Per-user quota usage of uploaded images (largest 200) with the per-user limits."""
+    return await customimages_service.admin_usage(session)
 
 
 @router.delete("/custom-images/{uuid}", dependencies=[require_roles("ops")], status_code=204)

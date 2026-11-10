@@ -9,7 +9,7 @@ import hashlib
 import math
 from uuid import uuid4
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import ColumnElement, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ErrorCode, conflict, not_found
@@ -37,6 +37,8 @@ from app.modules.customimages.schemas import (
     CustomImageCreate,
     CustomImageOut,
     CustomImageUpdate,
+    CustomImageUsageListOut,
+    CustomImageUsageOut,
     archive_format_of,
 )
 from app.modules.orchestrator import queries as orchestrator_queries
@@ -105,21 +107,47 @@ def to_out(image: CustomImage, *, owned: bool, owner_label: str | None = None) -
     )
 
 
+def _used_bytes() -> ColumnElement[int]:
+    """Quota bytes: registry size when ready, archive size while uploading, importing or failed."""
+    return func.coalesce(
+        func.sum(func.coalesce(CustomImage.size_bytes, CustomImage.upload_bytes)), 0
+    )
+
+
 async def _usage(session: AsyncSession, user_id: int) -> tuple[int, int]:
-    """(images counted against the quota, bytes: registry size when ready, archive size while
-    uploading or importing)."""
+    """(images counted against the quota, bytes counted against it)."""
     row = (
         await session.execute(
-            select(
-                func.count(),
-                func.coalesce(
-                    func.sum(func.coalesce(CustomImage.size_bytes, CustomImage.upload_bytes)),
-                    0,
-                ),
-            ).where(CustomImage.user_id == user_id, CustomImage.status.in_(_LIVE))
+            select(func.count(), _used_bytes()).where(
+                CustomImage.user_id == user_id, CustomImage.status.in_(_LIVE)
+            )
         )
     ).one()
     return int(row[0]), int(row[1])
+
+
+async def admin_usage(session: AsyncSession, *, limit: int = 200) -> CustomImageUsageListOut:
+    """Quota usage of the users with images (the counting of the upload quota), largest first,
+    with the per-user limits."""
+    cfg = await get_runtime_config(session)
+    used = _used_bytes()
+    rows = (
+        await session.execute(
+            select(CustomImage.user_id, func.count(), used)
+            .where(CustomImage.status.in_(_LIVE))
+            .group_by(CustomImage.user_id)
+            .order_by(used.desc(), CustomImage.user_id)
+            .limit(limit)
+        )
+    ).all()
+    return CustomImageUsageListOut(
+        max_images=cfg.max_custom_images_per_user,
+        max_bytes=cfg.max_custom_image_gb_per_user * GIB,
+        users=[
+            CustomImageUsageOut(user_id=user_id, images=int(n), bytes=int(b))
+            for user_id, n, b in rows
+        ],
+    )
 
 
 async def _check_quota(session: AsyncSession, cfg: RuntimeConfig, user_id: int, size: int) -> None:

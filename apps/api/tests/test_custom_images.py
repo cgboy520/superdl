@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.modules.customimages import handlers, staging
 from tests.fake_registry import FakeRegistry
 from tests.helpers import (
+    admin_headers,
     create_test_sku,
     drain,
     fund_wallet,
@@ -272,3 +273,29 @@ class TestUseAndDelete:
         assert resp.json()["message_key"] == "customImages.archUnavailable"
         skus = (await client.get("/api/v1/skus")).json()
         assert {tuple(s["archs"]) for s in skus if s["pool_label"] == "hami"} == {("arm64",)}
+
+
+class TestAdminUsage:
+    async def test_usage_counts_like_the_upload_quota(self, client, sm, registry):
+        h1, uid1 = await user_headers_with_id(client, "img-usage-1@test.local")
+        h2, uid2 = await user_headers_with_id(client, "img-usage-2@test.local")
+        ready = await _upload(client, sm, h1, classic([layer_tar(11)]))
+        assert ready["status"] == "ready", ready
+        pending = classic([layer_tar(12)])
+        await _start(client, h1, pending, name="second")
+        other = classic([layer_tar(13), layer_tar(14)])
+        await _start(client, h2, other, name="other")
+        gone = await _start(client, h2, classic([layer_tar(15)]), name="gone")
+        assert (await client.delete(f"{BASE}/{gone['uuid']}", headers=h2)).status_code == 204
+
+        ah = await admin_headers(sm, client, role="readonly")
+        resp = await client.get("/api/admin/v1/custom-images/usage", headers=ah)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert (body["max_images"], body["max_bytes"]) == (20, 200 * 1024**3)
+        # ready counts its registry size, an upload its archive size, a deleted one nothing
+        by_user = {u["user_id"]: (u["images"], u["bytes"]) for u in body["users"]}
+        assert by_user[uid1] == (2, ready["size_bytes"] + len(pending))
+        assert by_user[uid2] == (1, len(other))
+        sizes = [u["bytes"] for u in body["users"]]
+        assert sizes == sorted(sizes, reverse=True)

@@ -64,6 +64,20 @@ def is_valid_image_ref(image_ref: str) -> bool:
     return bool(_IMAGE_REF_RE.fullmatch(image_ref))
 
 
+def split_image_ref(image_ref: str) -> tuple[str, str, str]:
+    """(registry host, repository, reference) of a valid reference: the digest when pinned, else
+    the tag, else latest; a first segment without a dot, colon or `localhost` is a Docker Hub
+    repository."""
+    name, _, digest = image_ref.partition("@")
+    first, _, rest = name.partition("/")
+    if rest and ("." in first or ":" in first or first == "localhost"):
+        host, path = first, rest
+    else:
+        host, path = "docker.io", name if "/" in name else f"library/{name}"
+    repository, _, tag = path.partition(":")
+    return host, repository, digest or tag or "latest"
+
+
 def is_pinned_image_ref(image_ref: str) -> bool:
     """Whether the reference pins a version (digest, or a non-latest tag; no tag counts as
     latest)."""
