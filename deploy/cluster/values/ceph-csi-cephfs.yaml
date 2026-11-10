@@ -17,6 +17,10 @@ nodeplugin:
 
 provisioner:
   replicaCount: 0
+  # CephFS volumes need no attach step and no provisioner runs the external-attacher: the
+  # CSIDriver says attachRequired: false, otherwise every mount waits for a VolumeAttachment.
+  attacher:
+    enabled: false
 
 storageClass:
   create: false
